@@ -1,0 +1,52 @@
+{{define "content"}}
+<div class="admin-section">
+  <nav class="admin-nav card">
+    <a href="/app/admin/" class="admin-nav-link">Dashboard</a>
+    <a href="/app/admin/tenants" class="admin-nav-link">Tenants</a>
+    <a href="/app/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link">Provider</a>
+    <a href="/app/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link is-active">Lokale Benutzer</a>
+  </nav>
+
+  <h1>{{if .IsEdit}}Lokalen Benutzer bearbeiten{{else}}Lokalen Benutzer anlegen{{end}}</h1>
+
+  {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
+  {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+
+  <form method="POST" action="{{.FormAction}}" class="admin-form card stack">
+    <input type="hidden" name="user_id" value="{{if .IsEdit}}{{.AdminLocalUser.UserID}}{{end}}">
+
+    <div class="form-group">
+      <label for="login_name">Login-Name *</label>
+      <input type="text" id="login_name" name="login_name" required value="{{.AdminLocalUser.LoginName}}" placeholder="z.B. admin">
+    </div>
+
+    <div class="form-group">
+      <label for="display_name">Anzeigename</label>
+      <input type="text" id="display_name" name="display_name" value="{{.AdminLocalUser.DisplayName}}" placeholder="z.B. Max Mustermann">
+    </div>
+
+    <div class="form-group">
+      <label for="email">E-Mail</label>
+      <input type="email" id="email" name="email" value="{{.AdminLocalUser.Email}}" placeholder="name@example.com">
+    </div>
+
+    <div class="form-group">
+      <label for="role">Rolle *</label>
+      <select id="role" name="role" required>
+        <option value="viewer" {{if eq .AdminLocalUser.Role "viewer"}}selected{{end}}>viewer</option>
+        <option value="admin" {{if or (eq .AdminLocalUser.Role "admin") (not .AdminLocalUser.Role)}}selected{{end}}>admin</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="password">Passwort {{if .IsEdit}}(leer lassen = unverändert){{else}}*{{end}}</label>
+      <input type="password" id="password" name="password" {{if not .IsEdit}}required{{end}} placeholder="Sicheres Passwort">
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="button">Speichern</button>
+      <a href="/app/admin/tenants/{{.AdminTenant.ID}}/local-users" class="button button-secondary">Abbrechen</a>
+    </div>
+  </form>
+</div>
+{{end}}

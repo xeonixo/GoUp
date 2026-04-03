@@ -1,0 +1,63 @@
+{{define "layout"}}
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <a class="brand" href="/app/">GoUp</a>
+      <span class="subtitle">leichtes Uptime-Monitoring</span>
+    </div>
+    <nav>
+      {{if .User}}
+      <span class="user-pill">{{if .User.Name}}{{.User.Name}}{{else}}{{.User.Email}}{{end}}</span>
+      <a class="button button-secondary" href="/auth/logout">Logout</a>
+      {{else if .AuthEnabled}}
+      <a class="button" href="/auth/login">Login</a>
+      {{end}}
+    </nav>
+  </header>
+  <main class="container">
+    {{template "content" .}}
+  </main>
+  <script>
+    (function () {
+      var scrollKey = "goup:scroll:" + window.location.pathname;
+
+      window.addEventListener("beforeunload", function () {
+        try {
+          sessionStorage.setItem(scrollKey, String(window.scrollY || 0));
+        } catch (_) {}
+      });
+
+      window.addEventListener("DOMContentLoaded", function () {
+        try {
+          if (!window.location.hash) {
+            var y = parseInt(sessionStorage.getItem(scrollKey) || "0", 10);
+            if (!isNaN(y) && y > 0) {
+              window.scrollTo({ top: y, behavior: "auto" });
+            }
+          }
+        } catch (_) {}
+
+        var nodes = document.querySelectorAll(".js-local-datetime[data-utc]");
+        for (var i = 0; i < nodes.length; i++) {
+          var el = nodes[i];
+          var raw = el.getAttribute("data-utc");
+          if (!raw) continue;
+          var d = new Date(raw);
+          if (isNaN(d.getTime())) continue;
+          el.textContent = d.toLocaleString();
+          el.title = raw;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
+{{end}}

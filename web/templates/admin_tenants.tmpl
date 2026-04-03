@@ -1,0 +1,70 @@
+{{define "content"}}
+<div class="admin-section">
+  <nav class="admin-nav card">
+    <a href="/app/admin/" class="admin-nav-link">Dashboard</a>
+    <a href="/app/admin/tenants" class="admin-nav-link is-active">Tenants</a>
+  </nav>
+
+  {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
+  {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+
+  <div class="admin-header">
+    <div>
+      <p class="eyebrow">Mandanten</p>
+      <h1>Tenants</h1>
+    </div>
+    <a href="/app/admin/tenants/new" class="button">+ Neuer Tenant</a>
+  </div>
+
+  <div class="card table-card">
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Slug</th>
+        <th>Name</th>
+        <th>DB Path</th>
+        <th>Status</th>
+        <th>Aktionen</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{if .AdminTenants}}
+      {{range .AdminTenants}}
+      <tr>
+        <td>{{.ID}}</td>
+        <td>{{.Slug}}</td>
+        <td>{{.Name}}</td>
+        <td class="break-all">{{.DBPath}}</td>
+        <td>
+          {{if .Active}}
+          <span class="status-badge status-badge-success">Aktiv</span>
+          {{else}}
+          <span class="status-badge status-badge-muted">Deaktiviert</span>
+          {{end}}
+        </td>
+        <td class="admin-actions-inline">
+          <a href="/app/admin/tenants/{{.ID}}/edit" class="button button-secondary button-small">Bearbeiten</a>
+          <a href="/app/admin/tenants/{{.ID}}/providers" class="button button-secondary button-small">Provider</a>
+          <a href="/app/admin/tenants/{{.ID}}/local-users" class="button button-secondary button-small">Lokale Benutzer</a>
+          {{if .Active}}
+          <form method="POST" action="/app/admin/tenants/{{.ID}}/delete" class="inline-form" onsubmit="return confirm('Tenant wirklich deaktivieren?');">
+            <button type="submit" class="button button-danger button-small">Deaktivieren</button>
+          </form>
+          {{end}}
+          <form method="POST" action="/app/admin/tenants/{{.ID}}/purge" class="inline-form" onsubmit="return confirm('Tenant WIRKLICH restlos löschen?\n\nEs werden Control-Plane-Daten, Mitgliedschaften, Provider und die Tenant-DB-Datei entfernt.');">
+            <button type="submit" class="button button-danger button-small">Restlos löschen</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+      {{else}}
+      <tr>
+        <td colspan="6" class="muted">Keine Tenants vorhanden.</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+</div>
+{{end}}

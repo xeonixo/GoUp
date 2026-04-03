@@ -1,0 +1,47 @@
+{{define "content"}}
+<div class="admin-section">
+  <nav class="admin-nav card">
+    <a href="/app/admin/" class="admin-nav-link">Dashboard</a>
+    <a href="/app/admin/tenants" class="admin-nav-link is-active">Tenants</a>
+  </nav>
+
+  <h1>{{if .IsEdit}}Tenant bearbeiten{{else}}Neuen Tenant anlegen{{end}}</h1>
+
+  {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
+  {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+  
+  <form method="POST" action="{{.FormAction}}" class="admin-form card stack">
+    <div class="form-group">
+      <input type="hidden" id="id" name="id" value="{{if .IsEdit}}{{.AdminTenant.ID}}{{end}}">
+    </div>
+
+    <div class="form-group">
+      <label for="slug">Slug *</label>
+      <input type="text" id="slug" name="slug" value="{{.AdminTenant.Slug}}" {{if .IsEdit}}readonly{{else}}required{{end}} placeholder="z.B. default, tenant-a">
+      {{if .IsEdit}}<small class="muted">Slug kann nach Erstellung nicht geändert werden.</small>{{end}}
+    </div>
+
+    <div class="form-group">
+      <label for="name">Name *</label>
+      <input type="text" id="name" name="name" value="{{.AdminTenant.Name}}" required placeholder="z.B. Default, Tenant A">
+    </div>
+
+    <div class="form-group">
+      <label for="db_path">Datenbankpfad *</label>
+      <input type="text" id="db_path" name="db_path" value="{{.AdminTenant.DBPath}}" {{if .IsEdit}}required{{end}} placeholder="z.B. /data/goup.db, /data/tenant_a.db">
+    </div>
+
+    <div class="form-group">
+      <label for="active">
+        <input type="checkbox" id="active" name="active" value="1" {{if .IsEdit}}{{if .AdminTenant.Active}}checked{{end}}{{else}}checked{{end}}>
+        Aktiv
+      </label>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="button">Speichern</button>
+      <a href="/app/admin/tenants" class="button button-secondary">Abbrechen</a>
+    </div>
+  </form>
+</div>
+{{end}}

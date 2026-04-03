@@ -1,0 +1,12 @@
+.DS_Store
+.env
+/data/
+/tmp/
+/bin/
+/dist/
+coverage.out
+*.db
+*.db-shm
+*.db-wal
+.tmp*
+tmp_*

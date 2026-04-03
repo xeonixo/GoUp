@@ -1,0 +1,66 @@
+{{define "content"}}
+<div class="admin-section">
+  <nav class="admin-nav card">
+    <a href="/app/admin/" class="admin-nav-link">Dashboard</a>
+    <a href="/app/admin/tenants" class="admin-nav-link">Tenants</a>
+    <a href="/app/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link is-active">Provider</a>
+    <a href="/app/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link">Lokale Benutzer</a>
+  </nav>
+
+  <h1>{{if .IsEdit}}Auth Provider bearbeiten{{else}}Neuen Auth Provider anlegen{{end}}</h1>
+
+  {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
+  {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+  
+  <form method="POST" action="{{.FormAction}}" class="admin-form card stack">
+    <div class="form-group">
+      <label for="tenant_id">Tenant ID *</label>
+      <input type="number" id="tenant_id" name="tenant_id" required readonly value="{{.AdminTenant.ID}}">
+    </div>
+
+    <div class="form-group">
+      <label for="provider_key">Provider Key *</label>
+      <input type="text" id="provider_key" name="provider_key" value="{{.AdminProvider.ProviderKey}}" required {{if .IsEdit}}readonly{{end}} placeholder="z.B. oidc-primary">
+    </div>
+
+    <div class="form-group">
+      <label for="kind">Typ *</label>
+      <select id="kind" name="kind" required>
+        <option value="oidc" {{if eq .AdminProvider.Kind "oidc"}}selected{{end}}>OIDC</option>
+        <option value="local" {{if eq .AdminProvider.Kind "local"}}selected{{end}}>Local Auth</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="display_name">Anzeigename</label>
+      <input type="text" id="display_name" name="display_name" value="{{.AdminProvider.DisplayName}}" placeholder="z.B. Google, Keycloak">
+    </div>
+
+    <div id="oidc-fields">
+      <div class="form-group">
+        <label for="issuer_url">Issuer URL</label>
+        <input type="url" id="issuer_url" name="issuer_url" value="{{.AdminProvider.IssuerURL}}" placeholder="https://auth.example.com">
+      </div>
+
+      <div class="form-group">
+        <label for="client_id">Client ID</label>
+        <input type="text" id="client_id" name="client_id" value="{{.AdminProvider.ClientID}}" placeholder="Your client ID">
+      </div>
+
+      <div class="form-group">
+        <label for="client_secret">Client Secret {{if .IsEdit}}(leer lassen = unverändert){{else}}*{{end}}</label>
+        <input type="password" id="client_secret" name="client_secret" value="" {{if not .IsEdit}}required{{end}} placeholder="Your client secret">
+      </div>
+
+      <div class="form-note">
+        <strong>Hinweis:</strong> Das Secret wird verschlüsselt im Control-Plane-Store abgelegt.
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="button">Speichern</button>
+      <a href="/app/admin/tenants/{{.AdminTenant.ID}}/providers" class="button button-secondary">Abbrechen</a>
+    </div>
+  </form>
+</div>
+{{end}}

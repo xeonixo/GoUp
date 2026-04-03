@@ -1,0 +1,981 @@
+{{define "content"}}
+<section class="hero">
+  <div class="hero-copy">
+    <span class="eyebrow">GoUp Control Center</span>
+    <h1>Admin Dashboard</h1>
+    <p>Leichtes Uptime-Monitoring mit Fokus auf schnelle Übersicht, klare Problemzonen und detailreiche Verlaufsdaten.</p>
+    <p class="muted compact">Zeiten werden im Browser in <span id="client-timezone">deiner Zeitzone</span> angezeigt.</p>
+  </div>
+  <div class="hero-actions">
+    <button class="button" type="button" id="open-create-monitor">+ Monitor</button>
+    {{if .AuthDisabled}}
+    <div class="notice warning">OIDC ist aktuell deaktiviert. Das ist nur für lokales Scaffolding sinnvoll.</div>
+    {{end}}
+  </div>
+</section>
+
+{{if .Notice}}
+<section class="notice success">{{.Notice}}</section>
+{{end}}
+{{if .Error}}
+<section class="notice error">{{.Error}}</section>
+{{end}}
+
+<section class="stats-grid stats-grid-wide">
+  <article class="card stat-card stat-card-primary">
+    <h2>Monitore</h2>
+    <div class="metric">{{.Stats.MonitorCount}}</div>
+    <p class="muted compact">Gesamtbestand aller konfigurierten Checks</p>
+  </article>
+  <article class="card stat-card">
+    <h2>Aktiv</h2>
+    <div class="metric">{{.Stats.EnabledMonitorCount}}</div>
+    <p class="muted compact">Werden aktuell durch den Scheduler ausgeführt</p>
+  </article>
+  <article class="card stat-card">
+    <h2>Offene Incidents</h2>
+    <div class="metric">{{.Stats.OpenIncidentCount}}</div>
+    <p class="muted compact">Noch nicht gelöste Ausfälle oder degradierte Zustände</p>
+  </article>
+  <article class="card stat-card stat-card-soft">
+    <h2>Trendfenster</h2>
+    <div class="metric metric-small">{{.TrendLabel}}</div>
+    <p class="muted compact">Verlaufsdaten und Uptime im aktuell gewählten Zeitraum</p>
+  </article>
+</section>
+
+<dialog id="monitor-modal" class="monitor-modal">
+  <form method="post" action="/app/monitors/save" class="stack form-grid" id="monitor-form">
+    <input type="hidden" name="id" id="monitor-id">
+    <h2 id="monitor-modal-title">Monitor anlegen</h2>
+
+    <label>
+      <span>Typ</span>
+      <select name="kind" id="monitor-kind">
+        <option value="https">HTTPS</option>
+        <option value="tcp">TCP</option>
+        <option value="icmp">ICMP</option>
+        <option value="smtp">SMTP</option>
+        <option value="imap">IMAP</option>
+        <option value="dovecot">Dovecot</option>
+      </select>
+    </label>
+
+    <label id="tls-mode-row">
+      <span>TLS-Modus</span>
+      <select name="tls_mode" id="monitor-tls-mode">
+        <option value="tls">TLS</option>
+        <option value="starttls">STARTTLS</option>
+      </select>
+    </label>
+
+    <label>
+      <span>Name</span>
+      <input type="text" name="name" id="monitor-name" placeholder="Produktiv-Website" required>
+    </label>
+
+    <label>
+      <span>Gruppe</span>
+      <input type="text" name="group" id="monitor-group" list="monitor-group-options" placeholder="z. B. Mailcow, Nextcloud oder Core">
+    </label>
+
+    <datalist id="monitor-group-options">
+      {{range .AvailableGroups}}
+      <option value="{{.}}"></option>
+      {{end}}
+    </datalist>
+
+    <label>
+      <span>Ziel</span>
+      <input type="text" name="target" id="monitor-target" placeholder="https://example.com/health, example.com:443 oder 1.1.1.1" required>
+    </label>
+
+    <div class="inline-grid">
+      <label>
+        <span>Intervall (Sekunden)</span>
+        <input type="number" name="interval_seconds" id="monitor-interval" min="15" value="60" required>
+      </label>
+      <label>
+        <span>Timeout (Sekunden)</span>
+        <input type="number" name="timeout_seconds" id="monitor-timeout" min="1" value="10" required>
+      </label>
+    </div>
+
+    <label id="expected-status-row">
+      <span>Erwarteter HTTP-Status (nur HTTPS)</span>
+      <input type="number" name="expected_status_code" id="monitor-expected-status" min="100" max="599" placeholder="200">
+    </label>
+
+    <label class="checkbox-row">
+      <input type="checkbox" name="enabled" id="monitor-enabled" checked>
+      <span>Monitor aktiv</span>
+    </label>
+
+    <label class="checkbox-row">
+      <input type="checkbox" name="notify_on_recovery" id="monitor-notify" checked>
+      <span>Recovery-Benachrichtigung senden</span>
+    </label>
+
+    <div class="modal-actions">
+      <button class="button button-secondary" type="button" id="monitor-cancel">Abbrechen</button>
+      <button class="button" type="submit">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="group-modal" class="monitor-modal group-modal">
+  <form method="post" action="/app/groups/save" class="stack" id="group-form">
+    <input type="hidden" name="group" id="group-name-field">
+    <input type="hidden" name="trend" value="{{.TrendValue}}">
+    <input type="hidden" name="icon_slug" id="group-icon-slug">
+
+    <div class="modal-header">
+      <div>
+        <h2 id="group-modal-title">Gruppe konfigurieren</h2>
+        <p class="muted compact">Wähle ein Icon aus Dashboard Icons oder hinterlege einen eigenen Slug.</p>
+      </div>
+      <button class="button button-secondary button-small" type="button" id="group-cancel">Schließen</button>
+    </div>
+
+    <div class="group-icon-preview-panel">
+      <div class="group-icon-preview-frame" id="group-icon-preview-frame" hidden>
+        <img id="group-icon-preview" alt="Gruppen-Icon Vorschau">
+      </div>
+      <p class="muted compact">Quelle: Dashboard Icons via jsDelivr CDN</p>
+    </div>
+
+    <label>
+      <span>Dashboard Icons durchsuchen</span>
+      <input type="search" id="group-icon-search" placeholder="z. B. mailcow, nextcloud, postgres" autocomplete="off" spellcheck="false">
+    </label>
+
+    <p class="muted compact" id="group-icon-search-status">Suche nach Namen, Aliasen oder Kategorien.</p>
+    <div class="group-icon-results" id="group-icon-results" aria-live="polite"></div>
+
+    <label>
+      <span>Eigener Dashboardicons-Slug</span>
+      <input type="text" id="group-icon-custom" placeholder="z. B. mailcow oder nextcloud">
+    </label>
+
+    <p class="muted compact" id="group-icon-selection">Kein Icon ausgewählt.</p>
+
+    <div class="modal-actions">
+      <button class="button button-secondary" type="button" id="group-reset-icon">Icon entfernen</button>
+      <button class="button" type="submit">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="trend-detail-modal" class="monitor-modal trend-detail-modal">
+  <div class="stack">
+    <div class="modal-header">
+      <div>
+        <h2 id="trend-detail-title">Trenddetails</h2>
+        <p class="muted compact" id="trend-detail-subtitle">Historie</p>
+      </div>
+      <button class="button button-secondary button-small" type="button" id="trend-detail-close">Schließen</button>
+    </div>
+
+    <div class="trend-detail-meta">
+      <article class="card trend-detail-card">
+        <span class="muted">Status</span>
+        <strong id="trend-detail-status">—</strong>
+      </article>
+      <article class="card trend-detail-card">
+        <span class="muted">Uptime</span>
+        <strong id="trend-detail-uptime">—</strong>
+      </article>
+      <article class="card trend-detail-card">
+        <span class="muted">Letzter Lauf</span>
+        <strong id="trend-detail-last-check">—</strong>
+      </article>
+      <article class="card trend-detail-card">
+        <span class="muted">Ø / Min / Max</span>
+        <strong id="trend-detail-latency">—</strong>
+      </article>
+      <article class="card trend-detail-card">
+        <span class="muted">Checks</span>
+        <strong id="trend-detail-checks">—</strong>
+      </article>
+      <article class="card trend-detail-card">
+        <span class="muted">Ziel</span>
+        <strong id="trend-detail-target">—</strong>
+      </article>
+    </div>
+
+    <section class="card stack">
+      <h3 id="trend-detail-range-title">Verlauf</h3>
+      <div id="trend-detail-bars" class="trend-bars trend-bars-large" style="--trend-columns: 1;"></div>
+    </section>
+
+    <section class="card stack">
+      <h3>Historie</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Zeitraum</th>
+              <th>Ergebnis</th>
+            </tr>
+          </thead>
+          <tbody id="trend-detail-history"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</dialog>
+
+<p class="muted compact">TCP/SMTP/IMAP/Dovecot-Ziele werden als <strong>host:port</strong> angegeben. ICMP verwendet nur <strong>Hostname oder IP</strong>, zum Beispiel <strong>1.1.1.1</strong> oder <strong>router.local</strong>.</p>
+
+<section class="card stack dashboard-board">
+  <div class="section-header">
+    <div>
+      <h2>Monitore</h2>
+      <p class="muted compact">Gruppiert nach aktuellem Zustand, mit Fokus auf schnelle Erfassung und viel Detailtiefe.</p>
+    </div>
+    <div class="trend-range-toggle" role="tablist" aria-label="Trend-Zeitraum">
+    {{range .TrendRanges}}
+    <a href="/app/?trend={{.Value}}" class="button button-small {{if not .Selected}}button-secondary{{end}}" {{if .Selected}}aria-current="page"{{end}}>{{.Label}}</a>
+    {{end}}
+    </div>
+  </div>
+  {{range .MonitorGroups}}
+  <section class="monitor-group {{.AccentClass}} stack">
+    <div class="section-header">
+      <div>
+        <h3>{{.Title}}</h3>
+          <p class="muted compact">{{.Subtitle}} · {{.ServiceHint}}</p>
+      </div>
+        <span class="group-count">{{.Count}}</span>
+    </div>
+    {{if .Monitors}}
+      <div class="service-group-list">
+        {{range .Services}}
+        {{$serviceTitle := .Title}}
+        <details class="service-cluster" {{if .Open}}open{{end}} draggable="true" data-group="{{.Title}}">
+          <summary class="service-cluster-header">
+            <div class="service-cluster-title">
+              {{if .IconURL}}
+              <img class="group-icon" src="{{.IconURL}}" alt="{{.Title}} Icon" loading="lazy" referrerpolicy="no-referrer">
+              {{end}}
+              <div>
+              <h4>{{.Title}}</h4>
+              <p class="muted compact">{{.Subtitle}}</p>
+              </div>
+            </div>
+            <span class="service-count">{{len .Monitors}}</span>
+          </summary>
+          <div class="service-cluster-actions">
+            <form method="post" action="/app/groups/reorder">
+              <input type="hidden" name="group" value="{{.Title}}">
+              <input type="hidden" name="trend" value="{{$.TrendValue}}">
+              <input type="hidden" name="direction" value="up">
+              <button class="button button-secondary button-tiny reorder-button" type="submit" {{if not .CanMoveUp}}disabled{{end}} aria-label="Gruppe {{.Title}} nach oben verschieben">↑ Gruppe</button>
+            </form>
+            <form method="post" action="/app/groups/reorder">
+              <input type="hidden" name="group" value="{{.Title}}">
+              <input type="hidden" name="trend" value="{{$.TrendValue}}">
+              <input type="hidden" name="direction" value="down">
+              <button class="button button-secondary button-tiny reorder-button" type="submit" {{if not .CanMoveDown}}disabled{{end}} aria-label="Gruppe {{.Title}} nach unten verschieben">↓ Gruppe</button>
+            </form>
+            <button
+              class="button button-secondary button-tiny group-settings"
+              type="button"
+              data-group="{{.Title}}"
+              data-icon-slug="{{.IconSlug}}"
+              aria-label="Gruppen-Icon für {{.Title}} konfigurieren">Icon</button>
+          </div>
+          <div class="monitor-grid">
+      {{range .Monitors}}
+      <article class="card monitor-card {{.StatusClass}}" draggable="true" data-monitor-id="{{.ID}}" data-group="{{$serviceTitle}}">
+        <div class="monitor-card-header">
+          <div>
+              <h5>{{.Name}}</h5>
+            <p class="muted compact">{{.Kind}}{{if .TLSMode}} / {{.TLSMode}}{{end}} · alle {{.Interval}} · Timeout {{.Timeout}}</p>
+          </div>
+          <span class="status-pill {{.StatusClass}}">{{.StatusLabel}}</span>
+        </div>
+
+        <div class="monitor-card-body stack compact-stack">
+          <div class="info-row">
+            <span class="muted">Ziel</span>
+            <strong class="break-all">{{.TargetLabel}}</strong>
+          </div>
+          <div class="info-row">
+            <span class="muted">Status</span>
+            <strong>{{.StatusSummary}}</strong>
+          </div>
+
+          <div class="monitor-metrics">
+            <div class="monitor-metric">
+              <span class="muted">Latenz</span>
+              <strong>{{if .LastLatency}}{{.LastLatency}}{{else}}—{{end}}</strong>
+            </div>
+            <div class="monitor-metric">
+              <span class="muted">HTTP</span>
+              <strong>{{if .HTTPStatusCode}}{{.HTTPStatusCode}}{{else}}—{{end}}</strong>
+            </div>
+            <div class="monitor-metric">
+              <span class="muted">Letzter Lauf</span>
+              <strong>{{if .LastCheckedAtRaw}}<time class="client-time" datetime="{{.LastCheckedAtRaw}}" data-format="datetime">{{.LastCheckedAt}}</time>{{else}}—{{end}}</strong>
+            </div>
+            <div class="monitor-metric">
+              <span class="muted">Zertifikat</span>
+              <strong>{{if .TLSNotAfterRaw}}<time class="client-time" datetime="{{.TLSNotAfterRaw}}" data-format="minute">{{.TLSNotAfter}}</time>{{else}}—{{end}}</strong>
+              {{if .TLSDaysRemaining}}<span class="muted compact">{{.TLSDaysRemaining}} verbleibend</span>{{end}}
+            </div>
+          </div>
+
+          <button
+            class="trend-trigger trend-panel"
+            type="button"
+            data-monitor-name="{{.Name}}"
+            data-monitor-kind="{{.Kind}}"
+            data-target="{{.TargetLabel}}"
+            data-status="{{.StatusLabel}}"
+            data-uptime="{{.UptimeLabel}}"
+            data-trend-label="{{.TrendLabel}}"
+            data-last-check="{{.LastCheckedAtRaw}}"
+            data-last-message="{{.LastMessage}}"
+            aria-label="Trenddetails für {{.Name}} öffnen">
+            <div class="trend-panel-header">
+              <span>Trend {{.TrendLabel}}</span>
+              <span class="muted">{{.UptimeLabel}}</span>
+            </div>
+            <div class="trend-bars" style="--trend-columns: {{len .TrendPoints}};" aria-label="Trend {{.TrendLabel}}">
+              {{range .TrendPoints}}
+              <span class="trend-bar {{.Class}}" data-bucket="{{.BucketRaw}}" data-label="{{.Label}}" data-format="{{.Format}}" data-checks="{{.Checks}}" data-avg-ms="{{.AvgMS}}" data-min-ms="{{.MinMS}}" data-max-ms="{{.MaxMS}}"></span>
+              {{end}}
+            </div>
+          </button>
+        </div>
+
+        <div class="monitor-card-actions">
+          <form method="post" action="/app/monitors/reorder">
+            <input type="hidden" name="id" value="{{.ID}}">
+            <input type="hidden" name="group" value="{{$serviceTitle}}">
+            <input type="hidden" name="trend" value="{{$.TrendValue}}">
+            <input type="hidden" name="direction" value="up">
+            <button class="button button-secondary button-tiny reorder-button" type="submit" {{if not .CanMoveUp}}disabled{{end}} aria-label="Monitor {{.Name}} nach oben verschieben">↑</button>
+          </form>
+          <form method="post" action="/app/monitors/reorder">
+            <input type="hidden" name="id" value="{{.ID}}">
+            <input type="hidden" name="group" value="{{$serviceTitle}}">
+            <input type="hidden" name="trend" value="{{$.TrendValue}}">
+            <input type="hidden" name="direction" value="down">
+            <button class="button button-secondary button-tiny reorder-button" type="submit" {{if not .CanMoveDown}}disabled{{end}} aria-label="Monitor {{.Name}} nach unten verschieben">↓</button>
+          </form>
+          <button
+            class="button button-secondary button-small edit-monitor"
+            type="button"
+            data-id="{{.ID}}"
+            data-name="{{.Name}}"
+            data-group="{{.Group}}"
+            data-kind="{{.KindValue}}"
+            data-tls-mode="{{.TLSModeValue}}"
+            data-target="{{.Target}}"
+            data-interval="{{.IntervalSeconds}}"
+            data-timeout="{{.TimeoutSeconds}}"
+            data-enabled="{{if .Enabled}}1{{else}}0{{end}}"
+            data-notify-on-recovery="{{if .NotifyOnRecovery}}1{{else}}0{{end}}"
+            data-expected-status="{{.ExpectedStatus}}">
+            Bearbeiten
+          </button>
+          <form method="post" action="/app/monitors/delete" onsubmit="return confirm('Monitor wirklich löschen?');">
+            <input type="hidden" name="id" value="{{.ID}}">
+            <button class="button button-danger button-small" type="submit">Löschen</button>
+          </form>
+        </div>
+      </article>
+      {{end}}
+          </div>
+        </details>
+        {{end}}
+    </div>
+    {{else}}
+    <p class="muted">{{.EmptyText}}</p>
+    {{end}}
+  </section>
+  {{end}}
+</section>
+
+<section class="card stack">
+  <h2>Letzte Notification-Events</h2>
+  {{if .Events}}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Zeitpunkt</th>
+          <th>Monitor</th>
+          <th>Event</th>
+          <th>Endpoint</th>
+          <th>Ergebnis</th>
+          <th>Fehler</th>
+          <th>Zugestellt</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Events}}
+        <tr>
+          <td><time class="client-time" datetime="{{.WhenRaw}}" data-format="datetime">{{.When}}</time></td>
+          <td>{{.Monitor}}</td>
+          <td>{{.EventType}}</td>
+          <td>{{.Endpoint}}</td>
+          <td>{{.Result}}</td>
+          <td class="break-all">{{.Error}}</td>
+          <td>{{if .DeliveredAtRaw}}<time class="client-time" datetime="{{.DeliveredAtRaw}}" data-format="datetime">{{.DeliveredAt}}</time>{{else}}—{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <p class="muted">Noch keine Notification-Events vorhanden.</p>
+  {{end}}
+</section>
+
+<script>
+  (() => {
+    const dialog = document.getElementById('monitor-modal');
+    const groupDialog = document.getElementById('group-modal');
+    const openCreateButton = document.getElementById('open-create-monitor');
+    const timezoneLabel = document.getElementById('client-timezone');
+    const cancelButton = document.getElementById('monitor-cancel');
+    const groupCancelButton = document.getElementById('group-cancel');
+    const groupResetButton = document.getElementById('group-reset-icon');
+    const trendDetailModal = document.getElementById('trend-detail-modal');
+    const trendDetailClose = document.getElementById('trend-detail-close');
+    const trendDetailTitle = document.getElementById('trend-detail-title');
+    const trendDetailSubtitle = document.getElementById('trend-detail-subtitle');
+    const trendDetailStatus = document.getElementById('trend-detail-status');
+    const trendDetailUptime = document.getElementById('trend-detail-uptime');
+    const trendDetailLastCheck = document.getElementById('trend-detail-last-check');
+    const trendDetailLatency = document.getElementById('trend-detail-latency');
+    const trendDetailChecks = document.getElementById('trend-detail-checks');
+    const trendDetailTarget = document.getElementById('trend-detail-target');
+    const trendDetailRangeTitle = document.getElementById('trend-detail-range-title');
+    const trendDetailBars = document.getElementById('trend-detail-bars');
+    const trendDetailHistory = document.getElementById('trend-detail-history');
+    const title = document.getElementById('monitor-modal-title');
+    const idField = document.getElementById('monitor-id');
+    const groupModalTitle = document.getElementById('group-modal-title');
+    const groupNameField = document.getElementById('group-name-field');
+    const groupIconSlugField = document.getElementById('group-icon-slug');
+    const groupForm = document.getElementById('group-form');
+    const groupIconSearch = document.getElementById('group-icon-search');
+    const groupIconSearchStatus = document.getElementById('group-icon-search-status');
+    const groupIconResults = document.getElementById('group-icon-results');
+    const groupIconCustom = document.getElementById('group-icon-custom');
+    const groupIconSelection = document.getElementById('group-icon-selection');
+    const groupIconPreview = document.getElementById('group-icon-preview');
+    const groupIconPreviewFrame = document.getElementById('group-icon-preview-frame');
+    const nameField = document.getElementById('monitor-name');
+    const kindField = document.getElementById('monitor-kind');
+    const groupField = document.getElementById('monitor-group');
+    const tlsModeField = document.getElementById('monitor-tls-mode');
+    const targetField = document.getElementById('monitor-target');
+    const intervalField = document.getElementById('monitor-interval');
+    const timeoutField = document.getElementById('monitor-timeout');
+    const expectedStatusField = document.getElementById('monitor-expected-status');
+    const enabledField = document.getElementById('monitor-enabled');
+    const notifyField = document.getElementById('monitor-notify');
+    const tlsModeRow = document.getElementById('tls-mode-row');
+    const expectedStatusRow = document.getElementById('expected-status-row');
+    const currentTrend = '{{.TrendValue}}';
+    const dashboardStateScrollKey = 'goup.dashboard.scrollY';
+    const dashboardStateGroupsKey = 'goup.dashboard.openGroups';
+    let iconSearchTimer = null;
+    let iconSearchRequest = null;
+
+    const normalizeIconSlug = (value) => value.trim().toLowerCase().replace(/\s+/g, '-');
+
+    const saveDashboardState = () => {
+      try {
+        sessionStorage.setItem(dashboardStateScrollKey, String(window.scrollY || window.pageYOffset || 0));
+        const openGroups = Array.from(document.querySelectorAll('.service-cluster[open]'))
+          .map((element) => element.dataset.group || '')
+          .filter(Boolean);
+        sessionStorage.setItem(dashboardStateGroupsKey, JSON.stringify(openGroups));
+      } catch (_) {
+      }
+    };
+
+    const restoreDashboardState = () => {
+      try {
+        const openGroupsRaw = sessionStorage.getItem(dashboardStateGroupsKey);
+        if (openGroupsRaw) {
+          const openGroups = JSON.parse(openGroupsRaw);
+          if (Array.isArray(openGroups)) {
+            document.querySelectorAll('.service-cluster').forEach((cluster) => {
+              const group = cluster.dataset.group || '';
+              cluster.open = openGroups.includes(group);
+            });
+          }
+          sessionStorage.removeItem(dashboardStateGroupsKey);
+        }
+        const scrollRaw = sessionStorage.getItem(dashboardStateScrollKey);
+        if (scrollRaw) {
+          const scrollY = Number(scrollRaw);
+          if (Number.isFinite(scrollY) && scrollY >= 0) {
+            requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, scrollY)));
+          }
+          sessionStorage.removeItem(dashboardStateScrollKey);
+        }
+      } catch (_) {
+      }
+    };
+
+    const submitPost = (action, fields) => {
+      saveDashboardState();
+      const form = document.createElement('form');
+      form.method = 'post';
+      form.action = action;
+      Object.entries(fields).forEach(([key, value]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = key;
+        input.value = value;
+        form.appendChild(input);
+      });
+      document.body.appendChild(form);
+      form.submit();
+    };
+
+    const buildIconUrl = (slug) => {
+      if (!slug) {
+        return '';
+      }
+      return `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/${slug}.svg`;
+    };
+
+    const updateGroupIconPreview = () => {
+      const slug = normalizeIconSlug(groupIconSlugField?.value || groupIconCustom?.value || '');
+      groupIconSlugField.value = slug;
+      if (groupIconSelection) {
+        groupIconSelection.textContent = slug ? `Ausgewählt: ${slug}` : 'Kein Icon ausgewählt.';
+      }
+      const iconUrl = buildIconUrl(slug);
+      if (!iconUrl) {
+        groupIconPreviewFrame.hidden = true;
+        groupIconPreview.removeAttribute('src');
+        return;
+      }
+      groupIconPreviewFrame.hidden = false;
+      groupIconPreview.src = iconUrl;
+    };
+
+    groupIconPreview?.addEventListener('error', () => {
+      groupIconPreviewFrame.hidden = true;
+      groupIconPreview.removeAttribute('src');
+    });
+
+    const renderIconResults = (results, query) => {
+      const normalizedQuery = normalizeIconSlug(query || '');
+      groupIconResults.innerHTML = '';
+
+      if (normalizedQuery) {
+        const useCustomButton = document.createElement('button');
+        useCustomButton.type = 'button';
+        useCustomButton.className = `group-icon-result${groupIconSlugField.value === normalizedQuery ? ' is-selected' : ''}`;
+        useCustomButton.innerHTML = `
+          <div class="group-icon-result-body">
+            <strong>Eigenen Slug verwenden</strong>
+            <span class="muted compact">${normalizedQuery}</span>
+          </div>
+        `;
+        useCustomButton.addEventListener('click', () => {
+          groupIconCustom.value = normalizedQuery;
+          groupIconSlugField.value = normalizedQuery;
+          updateGroupIconPreview();
+          renderIconResults(results, query);
+        });
+        groupIconResults.appendChild(useCustomButton);
+      }
+
+      results.forEach((result) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `group-icon-result${groupIconSlugField.value === result.slug ? ' is-selected' : ''}`;
+        button.innerHTML = `
+          <img src="${result.url}" alt="${result.label}" loading="lazy" referrerpolicy="no-referrer">
+          <div class="group-icon-result-body">
+            <strong>${result.label}</strong>
+            <span class="muted compact">${result.slug}</span>
+          </div>
+        `;
+        const previewImage = button.querySelector('img');
+        previewImage?.addEventListener('error', () => {
+          previewImage.hidden = true;
+        });
+        button.addEventListener('click', () => {
+          groupIconCustom.value = result.slug;
+          groupIconSlugField.value = result.slug;
+          updateGroupIconPreview();
+          renderIconResults(results, query);
+        });
+        groupIconResults.appendChild(button);
+      });
+
+      if (groupIconSearchStatus) {
+        if (!normalizedQuery) {
+          groupIconSearchStatus.textContent = 'Suche nach Namen, Aliasen oder Kategorien.';
+        } else if (results.length > 0) {
+          groupIconSearchStatus.textContent = `${results.length} passende Icons gefunden.`;
+        } else {
+          groupIconSearchStatus.textContent = 'Keine Treffer gefunden. Du kannst den Slug direkt verwenden.';
+        }
+      }
+    };
+
+    const runIconSearch = async (query) => {
+      const normalizedQuery = query.trim();
+      if (iconSearchRequest) {
+        iconSearchRequest.abort();
+      }
+      iconSearchRequest = new AbortController();
+      try {
+        const response = await fetch(`/app/icons/search?q=${encodeURIComponent(normalizedQuery)}`, {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          signal: iconSearchRequest.signal
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const payload = await response.json();
+        renderIconResults(Array.isArray(payload.results) ? payload.results : [], normalizedQuery);
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          return;
+        }
+        renderIconResults([], normalizedQuery);
+        if (groupIconSearchStatus) {
+          groupIconSearchStatus.textContent = 'Icon-Suche gerade nicht erreichbar. Du kannst den Slug trotzdem direkt setzen.';
+        }
+      }
+    };
+
+    const scheduleIconSearch = (query) => {
+      if (iconSearchTimer) {
+        window.clearTimeout(iconSearchTimer);
+      }
+      iconSearchTimer = window.setTimeout(() => runIconSearch(query), 180);
+    };
+
+    const openGroupDialog = (button) => {
+      const groupName = button.dataset.group || 'Gruppe';
+      const iconSlug = normalizeIconSlug(button.dataset.iconSlug || '');
+      groupModalTitle.textContent = `Gruppe konfigurieren · ${groupName}`;
+      groupNameField.value = groupName;
+      groupIconCustom.value = iconSlug;
+      groupIconSearch.value = iconSlug || groupName;
+      groupIconSlugField.value = iconSlug;
+      updateGroupIconPreview();
+      scheduleIconSearch(groupIconSearch.value);
+      groupDialog?.showModal();
+    };
+
+    const applyKindRules = () => {
+      const kind = kindField.value;
+      const isHTTPS = kind === 'https';
+      const isMail = kind === 'smtp' || kind === 'imap' || kind === 'dovecot';
+
+      tlsModeRow.hidden = !isMail;
+      expectedStatusRow.hidden = !isHTTPS;
+
+      if (isHTTPS) {
+        tlsModeField.value = 'tls';
+      } else if (isMail) {
+        if (tlsModeField.value !== 'tls' && tlsModeField.value !== 'starttls') {
+          tlsModeField.value = kind === 'smtp' ? 'starttls' : 'tls';
+        }
+      } else {
+        tlsModeField.value = 'none';
+        expectedStatusField.value = '';
+      }
+    };
+
+    const openCreate = () => {
+      title.textContent = 'Monitor anlegen';
+      idField.value = '';
+      nameField.value = '';
+      groupField.value = '';
+      kindField.value = 'https';
+      tlsModeField.value = 'tls';
+      targetField.value = '';
+      intervalField.value = '60';
+      timeoutField.value = '10';
+      expectedStatusField.value = '';
+      enabledField.checked = true;
+      notifyField.checked = true;
+      applyKindRules();
+      dialog.showModal();
+    };
+
+    const openEdit = (button) => {
+      title.textContent = 'Monitor bearbeiten';
+      idField.value = button.dataset.id || '';
+      nameField.value = button.dataset.name || '';
+      groupField.value = button.dataset.group || '';
+      kindField.value = button.dataset.kind || 'https';
+      tlsModeField.value = button.dataset.tlsMode || 'tls';
+      targetField.value = button.dataset.target || '';
+      intervalField.value = button.dataset.interval || '60';
+      timeoutField.value = button.dataset.timeout || '10';
+      expectedStatusField.value = button.dataset.expectedStatus || '';
+      enabledField.checked = button.dataset.enabled === '1';
+      notifyField.checked = button.dataset.notifyOnRecovery === '1';
+      applyKindRules();
+      dialog.showModal();
+    };
+
+    openCreateButton?.addEventListener('click', openCreate);
+    cancelButton?.addEventListener('click', () => dialog.close());
+    groupCancelButton?.addEventListener('click', () => groupDialog?.close());
+    groupResetButton?.addEventListener('click', () => {
+      groupIconCustom.value = '';
+      groupIconSearch.value = groupNameField.value || '';
+      groupIconSlugField.value = '';
+      updateGroupIconPreview();
+      renderIconResults([], groupIconSearch.value);
+      scheduleIconSearch(groupIconSearch.value);
+    });
+    kindField?.addEventListener('change', applyKindRules);
+    groupIconSearch?.addEventListener('input', () => scheduleIconSearch(groupIconSearch.value));
+    groupIconCustom?.addEventListener('input', () => {
+      groupIconSlugField.value = normalizeIconSlug(groupIconCustom.value || '');
+      updateGroupIconPreview();
+    });
+    groupForm?.addEventListener('submit', saveDashboardState);
+
+    document.querySelectorAll('.edit-monitor').forEach((button) => {
+      button.addEventListener('click', () => openEdit(button));
+    });
+    document.querySelectorAll('.group-settings').forEach((button) => {
+      button.addEventListener('click', () => openGroupDialog(button));
+    });
+    document.querySelectorAll('form[action^="/app/"]').forEach((form) => {
+      form.addEventListener('submit', saveDashboardState);
+    });
+    document.querySelectorAll('.group-icon').forEach((image) => {
+      image.addEventListener('error', () => {
+        image.hidden = true;
+      });
+    });
+
+    restoreDashboardState();
+
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (timezoneLabel && timezone) {
+      timezoneLabel.textContent = timezone;
+    }
+
+    const formatters = {
+      datetime: new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'medium' }),
+      minute: new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }),
+      hour: new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' }),
+      date: new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
+    };
+
+    document.querySelectorAll('.client-time').forEach((element) => {
+      const value = element.getAttribute('datetime');
+      if (!value) {
+        return;
+      }
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return;
+      }
+      const format = element.dataset.format || 'datetime';
+      const formatter = formatters[format] || formatters.datetime;
+      element.textContent = formatter.format(date);
+      element.title = date.toLocaleString();
+    });
+
+    document.querySelectorAll('.trend-bar').forEach((element) => {
+      const bucket = element.dataset.bucket;
+      const label = element.dataset.label || '';
+      const format = element.dataset.format || 'hour';
+      if (!bucket) {
+        return;
+      }
+      const date = new Date(bucket);
+      if (Number.isNaN(date.getTime())) {
+        element.title = label;
+        return;
+      }
+      const formatter = formatters[format] || formatters.hour;
+      element.title = `${formatter.format(date)} · ${label}`;
+    });
+
+    const formatDateValue = (value, format = 'datetime') => {
+      if (!value) {
+        return '—';
+      }
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return value;
+      }
+      const formatter = formatters[format] || formatters.datetime;
+      return formatter.format(date);
+    };
+
+    const formatLatency = (value) => {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric) || numeric <= 0) {
+        return '—';
+      }
+      if (numeric < 1000) {
+        return `${numeric} ms`;
+      }
+      return `${(numeric / 1000).toFixed(numeric % 1000 === 0 ? 0 : 2)} s`;
+    };
+
+    const openTrendDetail = (trigger) => {
+      const bars = Array.from(trigger.querySelectorAll('.trend-bar'));
+      const barsDescending = [...bars].reverse();
+      trendDetailTitle.textContent = trigger.dataset.monitorName || 'Trenddetails';
+      trendDetailSubtitle.textContent = `${trigger.dataset.monitorKind || ''} · ${trigger.dataset.lastMessage || 'Keine Detailmeldung'}`;
+      trendDetailStatus.textContent = trigger.dataset.status || 'UNKNOWN';
+      trendDetailUptime.textContent = trigger.dataset.uptime || '—';
+      trendDetailLastCheck.textContent = formatDateValue(trigger.dataset.lastCheck, 'datetime');
+      trendDetailTarget.textContent = trigger.dataset.target || '—';
+      trendDetailRangeTitle.textContent = `Verlauf ${trigger.dataset.trendLabel || ''}`.trim();
+
+      const barsWithChecks = bars.filter((bar) => Number(bar.dataset.checks || '0') > 0);
+      const totalChecks = barsWithChecks.reduce((sum, bar) => sum + Number(bar.dataset.checks || '0'), 0);
+      const weightedLatency = barsWithChecks.reduce((sum, bar) => sum + (Number(bar.dataset.avgMs || '0') * Number(bar.dataset.checks || '0')), 0);
+      const minLatency = barsWithChecks.reduce((min, bar) => {
+        const value = Number(bar.dataset.minMs || '0');
+        return min === 0 || (value > 0 && value < min) ? value : min;
+      }, 0);
+      const maxLatency = barsWithChecks.reduce((max, bar) => {
+        const value = Number(bar.dataset.maxMs || '0');
+        return value > max ? value : max;
+      }, 0);
+      const avgLatency = totalChecks > 0 ? Math.round(weightedLatency / totalChecks) : 0;
+      trendDetailLatency.textContent = `${formatLatency(avgLatency)} / ${formatLatency(minLatency)} / ${formatLatency(maxLatency)}`;
+      trendDetailChecks.textContent = totalChecks > 0 ? String(totalChecks) : '—';
+
+      trendDetailBars.innerHTML = '';
+      trendDetailBars.style.setProperty('--trend-columns', String(Math.max(bars.length, 1)));
+      trendDetailHistory.innerHTML = '';
+
+      bars.forEach((bar) => {
+        const clone = document.createElement('span');
+        clone.className = bar.className;
+        clone.title = bar.title;
+        trendDetailBars.appendChild(clone);
+      });
+
+      barsDescending.forEach((bar) => {
+        const row = document.createElement('tr');
+        const when = document.createElement('td');
+        when.textContent = formatDateValue(bar.dataset.bucket, bar.dataset.format || 'hour');
+        const result = document.createElement('td');
+        const checks = Number(bar.dataset.checks || '0');
+        if (checks > 0) {
+          result.textContent = `${bar.dataset.label || '—'} · Ø ${formatLatency(bar.dataset.avgMs)} · Min ${formatLatency(bar.dataset.minMs)} · Max ${formatLatency(bar.dataset.maxMs)}`;
+        } else {
+          result.textContent = bar.dataset.label || 'Keine Daten';
+        }
+        row.appendChild(when);
+        row.appendChild(result);
+        trendDetailHistory.appendChild(row);
+      });
+
+      trendDetailModal?.showModal();
+    };
+
+    trendDetailClose?.addEventListener('click', () => trendDetailModal?.close());
+    document.querySelectorAll('.trend-trigger').forEach((button) => {
+      button.addEventListener('click', () => openTrendDetail(button));
+    });
+
+    let draggedGroup = null;
+    document.querySelectorAll('.service-cluster').forEach((cluster) => {
+      cluster.addEventListener('dragstart', (event) => {
+        draggedGroup = cluster.dataset.group || null;
+        cluster.classList.add('is-dragging');
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', draggedGroup || '');
+      });
+      cluster.addEventListener('dragend', () => {
+        draggedGroup = null;
+        cluster.classList.remove('is-dragging');
+        document.querySelectorAll('.service-cluster.drop-target').forEach((item) => item.classList.remove('drop-target'));
+      });
+      cluster.addEventListener('dragover', (event) => {
+        const targetGroup = cluster.dataset.group || '';
+        if (!draggedGroup || draggedGroup === targetGroup) {
+          return;
+        }
+        event.preventDefault();
+        cluster.classList.add('drop-target');
+      });
+      cluster.addEventListener('dragleave', () => {
+        cluster.classList.remove('drop-target');
+      });
+      cluster.addEventListener('drop', (event) => {
+        event.preventDefault();
+        const targetGroup = cluster.dataset.group || '';
+        cluster.classList.remove('drop-target');
+        if (!draggedGroup || !targetGroup || draggedGroup === targetGroup) {
+          return;
+        }
+        submitPost('/app/groups/reorder', {
+          dragged_group: draggedGroup,
+          target_group: targetGroup,
+          trend: currentTrend
+        });
+      });
+    });
+
+    let draggedMonitor = null;
+    document.querySelectorAll('.monitor-card').forEach((card) => {
+      card.addEventListener('dragstart', (event) => {
+        draggedMonitor = {
+          id: card.dataset.monitorId || '',
+          group: card.dataset.group || ''
+        };
+        card.classList.add('is-dragging');
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', draggedMonitor.id);
+      });
+      card.addEventListener('dragend', () => {
+        draggedMonitor = null;
+        card.classList.remove('is-dragging');
+        document.querySelectorAll('.monitor-card.drop-target').forEach((item) => item.classList.remove('drop-target'));
+      });
+      card.addEventListener('dragover', (event) => {
+        const targetId = card.dataset.monitorId || '';
+        const targetGroup = card.dataset.group || '';
+        if (!draggedMonitor || draggedMonitor.id === targetId || draggedMonitor.group !== targetGroup) {
+          return;
+        }
+        event.preventDefault();
+        card.classList.add('drop-target');
+      });
+      card.addEventListener('dragleave', () => {
+        card.classList.remove('drop-target');
+      });
+      card.addEventListener('drop', (event) => {
+        event.preventDefault();
+        const targetId = card.dataset.monitorId || '';
+        const targetGroup = card.dataset.group || '';
+        card.classList.remove('drop-target');
+        if (!draggedMonitor || !targetId || draggedMonitor.id === targetId || draggedMonitor.group !== targetGroup) {
+          return;
+        }
+        submitPost('/app/monitors/reorder', {
+          dragged_id: draggedMonitor.id,
+          target_id: targetId,
+          group: targetGroup,
+          trend: currentTrend
+        });
+      });
+    });
+  })();
+</script>
+{{end}}

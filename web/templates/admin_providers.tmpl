@@ -1,0 +1,70 @@
+{{define "content"}}
+<div class="admin-section">
+  <nav class="admin-nav card">
+    <a href="/app/admin/" class="admin-nav-link">Dashboard</a>
+    <a href="/app/admin/tenants" class="admin-nav-link">Tenants</a>
+    <a href="/app/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link is-active">Provider</a>
+    <a href="/app/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link">Lokale Benutzer</a>
+  </nav>
+
+  {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
+  {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+
+  <div class="admin-header">
+    <div>
+      <p class="eyebrow">Authentifizierung</p>
+      <h1>Provider für {{.AdminTenant.Name}} ({{.AdminTenant.Slug}})</h1>
+    </div>
+    <a href="/app/admin/tenants" class="button button-secondary">Zurück zu Tenants</a>
+  </div>
+
+  <div class="card table-card">
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Provider Key</th>
+        <th>Typ</th>
+        <th>Name</th>
+        <th>Status</th>
+        <th>Aktionen</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{if .AdminProviders}}
+      {{range .AdminProviders}}
+      <tr>
+        <td>{{.ProviderKey}}</td>
+        <td><span class="status-badge">{{.Kind}}</span></td>
+        <td>{{.DisplayName}}</td>
+        <td>
+          {{if .Enabled}}
+          <span class="status-badge status-badge-success">Aktiv</span>
+          {{else}}
+          <span class="status-badge status-badge-muted">Deaktiviert</span>
+          {{end}}
+        </td>
+        <td class="admin-actions-inline">
+          <a href="/app/admin/tenants/{{$.AdminTenant.ID}}/providers/{{.ProviderKey}}/edit" class="button button-secondary button-small">Bearbeiten</a>
+          {{if .Enabled}}
+          <form method="POST" action="/app/admin/tenants/{{$.AdminTenant.ID}}/providers/{{.ProviderKey}}/delete" class="inline-form" onsubmit="return confirm('Provider wirklich deaktivieren?');">
+            <button type="submit" class="button button-danger button-small">Deaktivieren</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+      {{else}}
+      <tr>
+        <td colspan="5" class="muted">Keine Provider vorhanden.</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+
+  <div class="admin-actions">
+    <a href="/app/admin/tenants/{{.AdminTenant.ID}}/providers/new" class="button">+ Neuer Provider</a>
+    <a href="/app/admin/tenants/{{.AdminTenant.ID}}/local-users" class="button button-secondary">Lokale Benutzer</a>
+  </div>
+</div>
+{{end}}

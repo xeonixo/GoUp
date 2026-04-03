@@ -1,0 +1,174 @@
+{{define "content"}}
+<div class="admin-section">
+  <nav class="admin-nav card">
+    <a href="/app/admin/" class="admin-nav-link is-active">Dashboard</a>
+    <a href="/app/admin/tenants" class="admin-nav-link">Tenants</a>
+  </nav>
+
+  <div class="admin-header">
+    <div>
+      <p class="eyebrow">Control Plane</p>
+      <h1>Admin Dashboard</h1>
+    </div>
+    <a href="/app/admin/tenants" class="button">Tenants verwalten</a>
+  </div>
+  {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
+  {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+
+  <div class="stats-grid">
+    <article class="card stat-card stat-card-primary stack">
+      <p class="muted">Tenants gesamt</p>
+      <div class="metric">{{len .AdminTenants}}</div>
+      <p class="muted">Control-Plane Übersicht</p>
+    </article>
+    <article class="card stat-card stat-card-soft stack">
+      <p class="muted">Schnellzugriff</p>
+      <div class="admin-actions-inline">
+        <a class="button" href="/app/admin/tenants">Tenants</a>
+        <a class="button button-secondary" href="/app/">Zur App</a>
+      </div>
+    </article>
+  </div>
+
+  <div class="card stack">
+    <h2>Letzte Tenants</h2>
+    {{if .AdminTenants}}
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Slug</th>
+          <th>Name</th>
+          <th>Status</th>
+          <th>Aktion</th>
+        </tr>
+      </thead>
+      <tbody>
+      {{range .AdminTenants}}
+        <tr>
+          <td>{{.ID}}</td>
+          <td>{{.Slug}}</td>
+          <td>{{.Name}}</td>
+          <td>
+            {{if .Active}}
+            <span class="status-badge status-badge-success">Aktiv</span>
+            {{else}}
+            <span class="status-badge status-badge-muted">Deaktiviert</span>
+            {{end}}
+          </td>
+          <td><a class="button button-secondary button-small" href="/app/admin/tenants/{{.ID}}/edit">Bearbeiten</a></td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="muted">Noch keine Tenants vorhanden.</p>
+    {{end}}
+  </div>
+
+  <form method="POST" action="/app/admin/settings/smtp/save" class="admin-form card stack">
+    <h2>Globaler E-Mail-Server (SMTP)</h2>
+    <div class="form-group">
+      <label for="smtp-host">SMTP Host</label>
+      <input type="text" id="smtp-host" name="host" value="{{.GlobalSMTP.Host}}" placeholder="smtp.example.com">
+    </div>
+    <div class="form-group">
+      <label for="smtp-port">Port</label>
+      <input type="number" id="smtp-port" name="port" min="1" max="65535" value="{{.GlobalSMTP.Port}}">
+    </div>
+    <div class="form-group">
+      <label for="smtp-username">Benutzername</label>
+      <input type="text" id="smtp-username" name="username" value="{{.GlobalSMTP.Username}}" placeholder="monitor@example.com">
+    </div>
+    <div class="form-group">
+      <label for="smtp-password">Passwort {{if .GlobalSMTP.PasswordConfigured}}(leer lassen = unverändert){{end}}</label>
+      <input type="password" id="smtp-password" name="password" value="" placeholder="SMTP Passwort">
+    </div>
+    <div class="form-group">
+      <label for="smtp-from-email">Absender E-Mail</label>
+      <input type="email" id="smtp-from-email" name="from_email" value="{{.GlobalSMTP.FromEmail}}" placeholder="noreply@example.com">
+    </div>
+    <div class="form-group">
+      <label for="smtp-from-name">Absender Name</label>
+      <input type="text" id="smtp-from-name" name="from_name" value="{{.GlobalSMTP.FromName}}" placeholder="GoUp Monitor">
+    </div>
+    <div class="form-group">
+      <label for="smtp-tls-mode">Transport</label>
+      <select id="smtp-tls-mode" name="tls_mode">
+        <option value="starttls" {{if eq .GlobalSMTP.TLSMode "starttls"}}selected{{end}}>STARTTLS</option>
+        <option value="tls" {{if eq .GlobalSMTP.TLSMode "tls"}}selected{{end}}>TLS (SMTPS)</option>
+        <option value="none" {{if eq .GlobalSMTP.TLSMode "none"}}selected{{end}}>Kein TLS (nur intern)</option>
+      </select>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="button">SMTP speichern</button>
+    </div>
+  </form>
+
+  <div class="card stack table-card">
+    <div class="admin-header" style="padding: 1rem 1rem 0;">
+      <h2>Letzte Admin-Aktionen</h2>
+    </div>
+    <form method="GET" action="/app/admin/" class="stack" style="padding: 0 1rem 1rem;">
+      <div class="inline-grid">
+        <label>
+          <span>Action</span>
+          <select name="audit_action">
+            <option value="" {{if eq .AuditAction ""}}selected{{end}}>Alle Actions</option>
+            {{range .AuditActions}}
+            <option value="{{.}}" {{if eq $.AuditAction .}}selected{{end}}>{{.}}</option>
+            {{end}}
+          </select>
+        </label>
+        <label>
+          <span>Actor</span>
+          <input type="text" name="audit_actor" value="{{.AuditActor}}" placeholder="E-Mail oder Name">
+        </label>
+      </div>
+      <div class="inline-grid">
+        <label>
+          <span>Zieltyp</span>
+          <select name="audit_target">
+            <option value="" {{if eq .AuditTargetType ""}}selected{{end}}>Alle Zieltypen</option>
+            {{range .AuditTargetTypes}}
+            <option value="{{.}}" {{if eq $.AuditTargetType .}}selected{{end}}>{{.}}</option>
+            {{end}}
+          </select>
+        </label>
+        <div class="form-actions" style="align-items: end;">
+          <button type="submit" class="button button-secondary">Filter anwenden</button>
+          <a href="/app/admin/" class="button button-secondary">Zurücksetzen</a>
+        </div>
+      </div>
+    </form>
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>Zeit</th>
+          <th>Actor</th>
+          <th>Action</th>
+          <th>Ziel</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{if .AdminAuditEvents}}
+        {{range .AdminAuditEvents}}
+        <tr>
+          <td><span class="js-local-datetime" data-utc="{{.CreatedAt.Format "2006-01-02T15:04:05Z07:00"}}">{{.CreatedAt}}</span></td>
+          <td>{{if .Actor}}{{.Actor}}{{else}}—{{end}}</td>
+          <td><span class="status-badge">{{.Action}}</span></td>
+          <td>{{.TargetType}} #{{.TargetID}}</td>
+          <td class="break-all">{{if .Details}}{{.Details}}{{else}}—{{end}}</td>
+        </tr>
+        {{end}}
+        {{else}}
+        <tr>
+          <td colspan="5" class="muted">Noch keine Audit-Einträge vorhanden.</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

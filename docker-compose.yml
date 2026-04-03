@@ -1,0 +1,15 @@
+services:
+  goup:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: goup:dev
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    cap_add:
+      - NET_RAW
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

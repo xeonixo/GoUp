@@ -1,0 +1,70 @@
+{{define "content"}}
+<div class="admin-section">
+  <nav class="admin-nav card">
+    <a href="/app/admin/" class="admin-nav-link">Dashboard</a>
+    <a href="/app/admin/tenants" class="admin-nav-link">Tenants</a>
+    <a href="/app/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link">Provider</a>
+    <a href="/app/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link is-active">Lokale Benutzer</a>
+  </nav>
+
+  {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
+  {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+
+  <div class="admin-header">
+    <div>
+      <p class="eyebrow">Lokale Konten</p>
+      <h1>Benutzer für {{.AdminTenant.Name}} ({{.AdminTenant.Slug}})</h1>
+    </div>
+    <div class="admin-actions-inline">
+      <a href="/app/admin/tenants/{{.AdminTenant.ID}}/providers" class="button button-secondary">Provider</a>
+      <a href="/app/admin/tenants/{{.AdminTenant.ID}}/local-users/new" class="button">+ Lokaler Benutzer</a>
+    </div>
+  </div>
+
+  <div class="card table-card">
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Login</th>
+        <th>Name</th>
+        <th>E-Mail</th>
+        <th>Rolle</th>
+        <th>Super-Admin</th>
+        <th>Letzter Login</th>
+        <th>Aktionen</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{if .AdminLocalUsers}}
+      {{range .AdminLocalUsers}}
+      <tr>
+        <td>{{.LoginName}}</td>
+        <td>{{.DisplayName}}</td>
+        <td>{{.Email}}</td>
+        <td><span class="status-badge">{{.Role}}</span></td>
+        <td>
+          {{if .SuperAdmin}}
+          <span class="status-badge status-badge-success">Ja</span>
+          {{else}}
+          <span class="status-badge status-badge-muted">Nein</span>
+          {{end}}
+        </td>
+        <td>{{if .LastLoginAt}}<span class="js-local-datetime" data-utc="{{.LastLoginAt.Format "2006-01-02T15:04:05Z07:00"}}">{{.LastLoginAt}}</span>{{else}}—{{end}}</td>
+        <td class="admin-actions-inline">
+          <a href="/app/admin/tenants/{{$.AdminTenant.ID}}/local-users/{{.UserID}}/edit" class="button button-secondary button-small">Bearbeiten</a>
+          <form method="POST" action="/app/admin/tenants/{{$.AdminTenant.ID}}/local-users/{{.UserID}}/delete" class="inline-form" onsubmit="return confirm('Lokalen Benutzer wirklich entfernen?');">
+            <button type="submit" class="button button-danger button-small">Entfernen</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+      {{else}}
+      <tr>
+        <td colspan="7" class="muted">Keine lokalen Benutzer vorhanden.</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+</div>
+{{end}}

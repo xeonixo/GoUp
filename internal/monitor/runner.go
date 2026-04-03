@@ -1,0 +1,162 @@
+package monitor
+
+import (
+	"context"
+	"log/slog"
+	"time"
+)
+
+type Store interface {
+	ListMonitorSnapshots(ctx context.Context) ([]Snapshot, error)
+	SaveMonitorResult(ctx context.Context, result Result) error
+	RecordMonitorState(ctx context.Context, monitorID int64, status Status, message string, checkedAt time.Time) error
+	RecordNotificationEvent(ctx context.Context, monitorID int64, endpointID int64, eventType string, deliveredAt *time.Time, errorMessage string) error
+}
+
+type Checker interface {
+	Check(ctx context.Context, item Monitor) Result
+}
+
+type Runner struct {
+	logger   *slog.Logger
+	store    Store
+	notifier Notifier
+	checkers map[Kind]Checker
+	interval time.Duration
+}
+
+type Transition struct {
+	Monitor      Monitor
+	Previous     Status
+	Current      Status
+	CheckedAt    time.Time
+	ResultDetail string
+}
+
+type Notifier interface {
+	Enabled() bool
+	EndpointID() int64
+	EventType() string
+	Notify(ctx context.Context, transition Transition) error
+}
+
+func NewRunner(logger *slog.Logger, store Store, notifier Notifier) *Runner {
+	return &Runner{
+		logger:   logger,
+		store:    store,
+		notifier: notifier,
+		interval: 5 * time.Second,
+		checkers: map[Kind]Checker{
+			KindHTTPS:   HTTPSChecker{},
+			KindTCP:     TCPChecker{},
+			KindICMP:    ICMPChecker{},
+			KindSMTP:    SMTPChecker{},
+			KindIMAP:    IMAPChecker{},
+			KindDovecot: DovecotChecker{},
+		},
+	}
+}
+
+func (r *Runner) Run(ctx context.Context) {
+	r.runDueChecks(ctx)
+
+	ticker := time.NewTicker(r.interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			r.runDueChecks(ctx)
+		}
+	}
+}
+
+func (r *Runner) runDueChecks(ctx context.Context) {
+	snapshots, err := r.store.ListMonitorSnapshots(ctx)
+	if err != nil {
+		r.logger.Error("load monitor snapshots failed", "error", err)
+		return
+	}
+
+	now := time.Now()
+	for _, snapshot := range snapshots {
+		if !snapshot.IsDue(now) {
+			continue
+		}
+
+		checker, ok := r.checkers[snapshot.Monitor.Kind]
+		if !ok {
+			r.logger.Warn("no checker registered for monitor kind", "monitor_id", snapshot.Monitor.ID, "kind", snapshot.Monitor.Kind)
+			continue
+		}
+
+		runCtx, cancel := context.WithTimeout(ctx, snapshot.Monitor.Timeout+2*time.Second)
+		result := checker.Check(runCtx, snapshot.Monitor)
+		cancel()
+
+		if err := r.store.SaveMonitorResult(ctx, result); err != nil {
+			r.logger.Error("save monitor result failed", "monitor_id", snapshot.Monitor.ID, "error", err)
+			continue
+		}
+
+		if err := r.store.RecordMonitorState(ctx, snapshot.Monitor.ID, result.Status, result.Message, result.CheckedAt); err != nil {
+			r.logger.Error("record monitor state failed", "monitor_id", snapshot.Monitor.ID, "error", err)
+		}
+
+		if transition, ok := buildTransition(snapshot, result); ok {
+			if r.notifier != nil && r.notifier.Enabled() {
+				notifyCtx, notifyCancel := context.WithTimeout(ctx, 5*time.Second)
+				err := r.notifier.Notify(notifyCtx, transition)
+				notifyCancel()
+
+				var deliveredAt *time.Time
+				errorMessage := ""
+				if err == nil {
+					now := time.Now().UTC()
+					deliveredAt = &now
+				} else {
+					errorMessage = err.Error()
+				}
+
+				if recordErr := r.store.RecordNotificationEvent(ctx, snapshot.Monitor.ID, r.notifier.EndpointID(), r.notifier.EventType(), deliveredAt, errorMessage); recordErr != nil {
+					r.logger.Error("record notification event failed", "monitor_id", snapshot.Monitor.ID, "error", recordErr)
+				}
+
+				if err != nil {
+					r.logger.Error("send transition notification failed", "monitor_id", snapshot.Monitor.ID, "error", err)
+				}
+			}
+		}
+
+		r.logger.Info("monitor check completed",
+			"monitor_id", snapshot.Monitor.ID,
+			"name", snapshot.Monitor.Name,
+			"kind", snapshot.Monitor.Kind,
+			"status", result.Status,
+			"latency_ms", result.Latency.Milliseconds(),
+		)
+	}
+}
+
+func buildTransition(snapshot Snapshot, result Result) (Transition, bool) {
+	if snapshot.LastResult == nil {
+		return Transition{}, false
+	}
+	previous := snapshot.LastResult.Status
+	if previous == result.Status {
+		return Transition{}, false
+	}
+	if result.Status == StatusUp && !snapshot.Monitor.NotifyOnRecovery {
+		return Transition{}, false
+	}
+
+	return Transition{
+		Monitor:      snapshot.Monitor,
+		Previous:     previous,
+		Current:      result.Status,
+		CheckedAt:    result.CheckedAt,
+		ResultDetail: result.Message,
+	}, true
+}

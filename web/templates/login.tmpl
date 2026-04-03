@@ -1,0 +1,54 @@
+{{define "content"}}
+<section class="card stack narrow">
+  <h1>Anmeldung</h1>
+  {{if .TenantSlug}}
+  <p>Tenant: <strong>{{.TenantName}}</strong></p>
+  {{else}}
+  <p>Die Admin-Oberfläche authentifiziert Benutzer per OIDC gegen Authentik.</p>
+  {{end}}
+  {{if .Error}}
+  <div class="notice error">{{.Error}}</div>
+  {{end}}
+  {{if .Notice}}
+  <div class="notice success">{{.Notice}}</div>
+  {{end}}
+
+  {{if .TenantSlug}}
+    {{if .HasLocalLogin}}
+    <form method="POST" action="/t/{{.TenantSlug}}/auth/local" class="stack">
+      <label for="login_name">Benutzername</label>
+      <input id="login_name" name="login_name" type="text" required autocomplete="username">
+      <label for="password">Passwort</label>
+      <input id="password" name="password" type="password" required autocomplete="current-password">
+      <button type="submit" class="button">Lokal anmelden</button>
+      {{if .ResetEnabled}}
+      <a class="button button-secondary" href="/t/{{.TenantSlug}}/password-reset">Passwort vergessen?</a>
+      {{end}}
+    </form>
+    {{end}}
+
+    {{if and .HasLocalLogin .HasOIDCLogin}}
+    <div class="muted">oder</div>
+    {{end}}
+
+    {{if .HasOIDCLogin}}
+      {{range .LoginProviders}}
+        {{if eq .Kind "oidc"}}
+        <a class="button" href="/t/{{$.TenantSlug}}/auth/login?provider={{.ProviderKey}}">Mit {{.DisplayName}} anmelden</a>
+        {{end}}
+      {{end}}
+    {{end}}
+
+    {{if and (not .HasLocalLogin) (not .HasOIDCLogin)}}
+    <div class="notice warning">Für diesen Tenant ist keine Anmeldung konfiguriert.</div>
+    {{end}}
+  {{else if .AuthEnabled}}
+  <a class="button" href="/auth/login">Mit Authentik anmelden</a>
+  {{else if .AuthDisabled}}
+  <div class="notice warning">Authentifizierung ist deaktiviert. Dashboard ist im Dev-Modus ohne Login erreichbar.</div>
+  <a class="button" href="/app/">Zum Dashboard</a>
+  {{else}}
+  <div class="notice warning">Lokale Anmeldung ist aktiv. Bitte nutze die tenant-spezifische Login-URL unter /t/{tenant}/login.</div>
+  {{end}}
+</section>
+{{end}}
