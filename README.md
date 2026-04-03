@@ -1,138 +1,253 @@
 # GoUp
 
-GoUp ist ein ultraleichtes, self-hosted Uptime-Monitoring-System für kleine VPS-Instanzen. Das Ziel ist ein einzelner, ressourcenschonender Go-Dienst mit serverseitiger WebUI, SQLite als Standard-Storage und Docker-first Deployment.
+GoUp ist ein leichtgewichtiges, self-hosted Uptime-Monitoring für kleine bis mittlere Umgebungen.
 
-## Architekturentscheidung
+Ziele:
 
-**Entscheidung: Go statt Rust**
+- **ein einzelner Go-Prozess** statt verteilter Mikroservices
+- **SQLite-first** mit minimalem Betriebsaufwand
+- **Server-Side UI** ohne schweres SPA
+- **Docker-first Deployment**
 
-Go ist für dieses Projekt die pragmatischere Wahl:
+---
 
-- sehr geringe Laufzeitkosten bei lang laufenden Netzwerkdiensten
-- exzellente Standardbibliothek für HTTP, TLS, SMTP, IMAP-nahe TCP/TLS-Prüfungen und Scheduler-Logik
-- einfache Cross-Compilation und schlanke Docker-Builds
-- geringere Implementierungs- und Wartungskomplexität als Rust für ein kleines Admin-System
-- ausreichend performant für hunderte Checks auf einem Mini-VPS
+## Features (aktueller Stand)
 
-Rust wäre nur dann klar überlegen, wenn maximale Speichereffizienz bis ins letzte Detail oder sehr stark parallelisierte High-Scale-Workloads im Vordergrund stünden. Für dieses Zielprofil gewinnt Go bei Time-to-Maintain, Einfachheit und Betriebsstabilität.
+- Multi-Tenant-fähige Web-UI
+- Monitor-Typen:
+	- `https`
+	- `tcp`
+	- `icmp`
+	- `smtp` (`tls` / `starttls`)
+	- `imap` (`tls` / `starttls`)
+	- `dovecot`
+- Zertifikatsauswertung inkl. Restlaufzeit
+- Incident-/Status-Tracking und Notification-Events
+- Matrix-Benachrichtigungen bei Statuswechseln
+- Admin-Bereich für:
+	- Tenants
+	- Auth-Provider (OIDC / Local)
+	- lokale Benutzer
+	- globale SMTP-Einstellungen
+- Persistentes Audit-Log für Admin-Aktionen
+- Password-Reset für lokale Benutzer (über SMTP)
 
-## MVP-Zielbild
+---
 
-Ein einzelner Dienst übernimmt:
+## Architektur auf einen Blick
 
-- HTTP-Server für Admin-WebUI
-- OIDC-Login gegen Authentik
-- Scheduler und Check-Ausführung im selben Prozess
-- SQLite-Zugriff
-- Matrix-Benachrichtigungen
-- einfache Status- und Admin-Seiten per Server-Side Rendering
+GoUp läuft als ein Dienst und bündelt:
 
-## Technische Leitplanken
+- HTTP-Server + SSR Templates
+- Auth-Handling (OIDC / Local / Disabled)
+- Scheduler + Monitor-Runner
+- SQLite-Storage
+- Notification-Dispatch
 
-- **Hauptsprache:** Go
-- **Datenbank:** SQLite via Pure-Go-Treiber
-- **Frontend:** serverseitige Templates, kein schweres SPA
-- **Deployment:** ein Docker-Container, ein persistentes Datenverzeichnis
-- **Konfiguration:** Basiskonfiguration per Env, betriebliche Einstellungen später primär per WebUI
-- **Auth:** OIDC mit Authentik
-- **Benachrichtigungen:** Matrix per Client-Server API
+### Datenhaltung
 
-## Vorgeschlagene Libraries
+Es gibt zwei SQLite-Bereiche:
 
-- `net/http`, `html/template`, `crypto/tls`, `database/sql` aus der Standardbibliothek
-- `modernc.org/sqlite` für SQLite ohne CGO
-- `github.com/coreos/go-oidc/v3/oidc` für OIDC Discovery und ID-Token-Verifikation
-- `golang.org/x/oauth2` für Authorization Code Flow
+1. **Control Plane DB** (z. B. `controlplane.db`)
+	 - Tenants, Auth-Provider, lokale Credentials, Admin-Audit, globale SMTP-Settings
+2. **Tenant DB** (z. B. `goup.db` bzw. tenant-spezifische DB-Dateien)
+	 - Monitore, Resultate, Incidents, Notification-Events
 
-Matrix wird bewusst zunächst über die HTTP-API angebunden statt über ein schweres SDK.
+Details: [docs/architecture.md](docs/architecture.md)
+
+---
+
+## Schnellstart (Docker)
+
+### 1) Konfiguration anlegen
+
+```bash
+cp .env.example .env
+```
+
+Für lokalen Start reicht standardmäßig `GOUP_AUTH_MODE=disabled`.
+
+### 2) Starten
+
+```bash
+docker compose up -d --build
+```
+
+### 3) Prüfen
+
+- App: http://localhost:8080
+- Healthcheck: http://localhost:8080/healthz
+
+Stoppen:
+
+```bash
+docker compose down
+```
+
+---
+
+## Lokale Entwicklung (ohne Docker)
+
+Voraussetzungen:
+
+- Go 1.22+
+
+Start:
+
+```bash
+go run ./cmd/goup
+```
+
+Tests:
+
+```bash
+go test ./...
+```
+
+---
+
+## Konfiguration (Environment)
+
+Wichtige Variablen:
+
+- `GOUP_ADDR` – Bind-Adresse, z. B. `:8080`
+- `GOUP_BASE_URL` – öffentliche Basis-URL, z. B. `https://monitor.example.com`
+- `GOUP_DATA_DIR` – Datenverzeichnis
+- `GOUP_DB_PATH` – Default Tenant DB
+- `GOUP_CONTROL_DB_PATH` – Control Plane DB (optional, Standard: `$GOUP_DATA_DIR/controlplane.db`)
+- `GOUP_LOG_LEVEL` – `debug|info|warn|error`
+- `GOUP_SESSION_KEY` – **Pflicht für produktiv**, min. 16 Zeichen
+- `GOUP_SSO_SECRET_KEY` – Schlüssel für verschlüsselte Provider-Secrets (stark empfohlen)
+
+Auth:
+
+- `GOUP_AUTH_MODE` – `disabled`, `local`, `oidc`
+- `GOUP_OIDC_ISSUER_URL`
+- `GOUP_OIDC_CLIENT_ID`
+- `GOUP_OIDC_CLIENT_SECRET`
+- `GOUP_OIDC_REDIRECT_URL`
+
+Matrix:
+
+- `GOUP_MATRIX_HOMESERVER_URL`
+- `GOUP_MATRIX_ACCESS_TOKEN`
+- `GOUP_MATRIX_ROOM_ID`
+
+> Hinweis: In `oidc`-Mode müssen Issuer, Client-ID und Client-Secret gesetzt sein.
+
+---
+
+## Auth-Modi
+
+### `disabled`
+
+- Kein Login erforderlich
+- Gut für lokale Entwicklung
+- **Nicht** für produktive öffentliche Deployments
+
+### `oidc`
+
+- Login via OIDC
+- Tenant-spezifische Provider möglich
+- Der erste OIDC-Benutzer kann als Super-Admin initialisiert werden
+
+### `local`
+
+- Lokale Benutzeranmeldung je Tenant
+- Login über `/t/{tenantSlug}/login`
+- Optionaler Password-Reset via SMTP
+
+---
+
+## Wichtige UI-Routen
+
+- Dashboard: `/app/`
+- Admin-Dashboard: `/app/admin/`
+- Tenants: `/app/admin/tenants`
+- Tenant Login: `/t/{tenantSlug}/login`
+- Health: `/healthz`
+
+---
+
+## Monitor-Ziel-Formate
+
+- `https`: vollständige URL, z. B. `https://example.com/health`
+- `tcp`: `host:port`
+- `icmp`: Hostname oder IP
+- `smtp`, `imap`, `dovecot`: `host:port`
+
+TLS-Verhalten:
+
+- `https` nutzt TLS
+- Mail-Protokolle unterstützen `tls` und `starttls`
+
+---
+
+## Betriebshinweise
+
+### ICMP in Containern
+
+Für ICMP braucht der Container i. d. R. `NET_RAW`.
+Das ist in der Compose-Datei bereits berücksichtigt.
+
+### Reverse Proxy / CSRF / Origin-Checks
+
+GoUp prüft bei schreibenden Requests `Origin`/`Referer` gegen `GOUP_BASE_URL`.
+Wenn hinter Proxy betrieben:
+
+- `GOUP_BASE_URL` auf die externe URL setzen
+- konsistente Hostnamen nutzen
+
+### Backups
+
+Mindestens sichern:
+
+- Control Plane DB
+- alle Tenant-DB-Dateien im Datenverzeichnis
+
+Empfehlung:
+
+- regelmäßige Dateibackups (inkl. `-wal` / `-shm`, falls vorhanden)
+- Restore in Staging testen
+
+---
 
 ## Projektstruktur
 
-- `cmd/goup` – Startpunkt
-- `internal/app` – Verdrahtung des Gesamtsystems
-- `internal/config` – Konfiguration aus Env/Defaults
-- `internal/auth` – OIDC- und Session-Logik
-- `internal/httpserver` – Router, Handler, Middleware
-- `internal/store/sqlite` – SQLite-Initialisierung und Abfragen
-- `internal/monitor` – Check-Modelle und Scheduler-nahe Domänenlogik
-- `web` – Templates und statische Assets
-- `docs` – Architektur und Datenmodell
+- `cmd/goup` – Einstiegspunkt
+- `internal/app` – Bootstrapping / Verdrahtung
+- `internal/config` – Env-Konfiguration
+- `internal/auth` – Sessions, OIDC, Dynamic OIDC
+- `internal/httpserver` – Handler, Routen, Middleware, Admin-UI
+- `internal/monitor` – Checker + Runner
+- `internal/notify/matrix` – Matrix-Client / Notifier
+- `internal/store/sqlite` – Control- und Tenant-Store
+- `web/templates` – SSR Templates
+- `web/static` – CSS / statische Assets
+- `docs` – Architektur-Dokumentation
 
-## Phasen
+---
 
-### Phase 1: MVP
+## Security-Basics
 
-Enthalten:
+Für produktive Deployments:
 
-- Docker-first Einzelcontainer
-- Admin-WebUI mit OIDC-Login
-- SQLite-Storage
-- CRUD-Grundlage für Monitore und Notification-Ziele
-- HTTP/HTTPS-Monitoring mit Zertifikatsauswertung
-- TCP-Port-Monitoring
-- ICMP-Monitoring
-- SMTP- und IMAP-Checks inkl. TLS/STARTTLS-Zertifikatsprüfung
-- Matrix-Benachrichtigungen bei Statuswechseln
-- Scheduler, Healthcheck, Logging, Basis-Backup-Story für SQLite-Datei
+- `GOUP_AUTH_MODE=oidc` oder gezielt abgesichertes `local`
+- starke zufällige Werte für `GOUP_SESSION_KEY` und `GOUP_SSO_SECRET_KEY`
+- Betrieb hinter HTTPS-Reverse-Proxy
+- regelmäßige Updates und Backups
 
-Risiken/Komplexität:
+---
 
-- ICMP braucht je nach Container-/Host-Setup zusätzliche Capabilities
-- SMTP/IMAP-STARTTLS muss robust gegen Server-Besonderheiten implementiert werden
-- OIDC-Session-Handling muss minimalistisch, aber sauber signiert sein
+## Roadmap (kurz)
 
-### Phase 2: Produktionsreife Kernfunktionen
-
-Enthalten:
-
-- Retry-/Debounce-Logik gegen Alarmflattern
-- Wartungsfenster und Pause-Funktion
+- Public Status Page (read-only)
 - feinere Rollen-/Rechteprüfung
-- historische Uptime-Aggregation
-- Export/Import von Konfiguration
-- Backup-/Restore-Hilfen
-- Public Status Page als read-only Modul
+- Export/Import und erweiterte Betriebsfunktionen
+- zusätzliche Notification-Kanäle
 
-Risiken/Komplexität:
+---
 
-- Datenmodell für Events, Aggregationen und Incidents bleibt bewusst einfach, darf aber Reporting nicht blockieren
-- Public Status Page braucht saubere Trennung von internem Admin-Kontext und öffentlicher Sicht
+## Lizenz / Beitrag
 
-### Phase 3: Komfortfunktionen
-
-Enthalten:
-
-- Mehrere Notification-Kanäle
-- Tagging, Filter, Gruppen
-- kleine API für Automatisierung
-- Status-Badges, RSS/Webhooks
-- UI-Verbesserungen, Bulk-Operationen
-
-Risiken/Komplexität:
-
-- Feature-Bloat vermeiden
-- Komplexität nur einführen, wenn Betrieb und RAM-Fußabdruck im Rahmen bleiben
-
-## API-/UI-Grundkonzept
-
-- Admin-Oberfläche serverseitig gerendert
-- klassische HTML-Formulare statt schwerem SPA-Frontend
-- später optional kleine JSON-Endpunkte für progressive Verbesserungen
-- Public Status Page von Anfang an architektonisch berücksichtigt, aber nicht Teil des initialen Funktionsumfangs
-
-## Datenmodell
-
-Das detaillierte Datenmodell steht in [docs/architecture.md](docs/architecture.md).
-
-## Schnellstart
-
-```bash
-docker compose up --build
-```
-
-Dann:
-
-- App unter `http://localhost:8080`
-- Healthcheck unter `http://localhost:8080/healthz`
-
-OIDC ist im Scaffold optional abschaltbar, damit die lokale Entwicklung ohne Identity Provider möglich bleibt.
+Der Quellcode ist für self-hosted Betrieb ausgelegt. Beiträge via Pull Request sind willkommen.
