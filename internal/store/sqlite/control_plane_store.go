@@ -134,6 +134,14 @@ func OpenControlPlane(ctx context.Context, path string) (*ControlPlaneStore, err
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(0)
 	if err := db.PingContext(ctx); err != nil {
+		if isMalformedSQLiteError(err) {
+			store := &ControlPlaneStore{db: db}
+			if initErr := store.initSchema(ctx); initErr != nil {
+				db.Close()
+				return nil, fmt.Errorf("repair malformed control-plane sqlite database after ping failure: %w", initErr)
+			}
+			return store, nil
+		}
 		db.Close()
 		return nil, fmt.Errorf("ping control-plane sqlite database: %w", err)
 	}
@@ -1113,6 +1121,11 @@ func (s *ControlPlaneStore) ensureTenantMembershipNotificationColumn(ctx context
 }
 
 func (s *ControlPlaneStore) tableHasColumn(ctx context.Context, tableName, columnName string) (bool, error) {
+	switch tableName {
+	case "users", "tenant_memberships":
+	default:
+		return false, fmt.Errorf("unsupported table inspection: %s", tableName)
+	}
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`PRAGMA table_info(%s)`, tableName))
 	if err != nil {
 		return false, err

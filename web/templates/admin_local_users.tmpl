@@ -52,7 +52,7 @@
           {{if .HasLocalCredentials}}
           <a href="/admin/tenants/{{$.AdminTenant.ID}}/local-users/{{.UserID}}/edit" class="button button-secondary button-small">Bearbeiten</a>
           {{end}}
-          <form method="POST" action="/admin/tenants/{{$.AdminTenant.ID}}/users/{{.UserID}}/remove" class="inline-form" onsubmit="return confirm('Benutzer wirklich aus diesem Tenant entfernen?');">
+          <form method="POST" action="/admin/tenants/{{$.AdminTenant.ID}}/users/{{.UserID}}/remove" class="inline-form" data-confirm="Benutzer wirklich aus diesem Tenant entfernen?">
             <button type="submit" class="button button-danger button-small">Aus Tenant entfernen</button>
           </form>
         </td>

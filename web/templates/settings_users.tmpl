@@ -58,12 +58,12 @@
           <td class="admin-actions-inline">
             {{if .HasLocalCredentials}}
             <a href="{{$.AppBase}}settings/local-users/{{.UserID}}/edit" class="button button-secondary button-small">Lokal bearbeiten</a>
-            <form method="POST" action="{{$.AppBase}}settings/local-users/{{.UserID}}/delete" class="inline-form" onsubmit="return confirm('Lokales Konto wirklich löschen?');">
+            <form method="POST" action="{{$.AppBase}}settings/local-users/{{.UserID}}/delete" class="inline-form" data-confirm="Lokales Konto wirklich löschen?">
               <button type="submit" class="button button-danger button-small">Lokales Konto löschen</button>
             </form>
             {{end}}
             {{if ne $.User.UserID .UserID}}
-            <form method="POST" action="{{$.AppBase}}settings/users/{{.UserID}}/remove" class="inline-form" onsubmit="return confirm('Benutzer wirklich aus diesem Tenant entfernen?');">
+            <form method="POST" action="{{$.AppBase}}settings/users/{{.UserID}}/remove" class="inline-form" data-confirm="Benutzer wirklich aus diesem Tenant entfernen?">
               <button type="submit" class="button button-danger button-small">Entfernen</button>
             </form>
             {{else}}

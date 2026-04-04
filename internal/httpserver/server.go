@@ -45,23 +45,25 @@ type Dependencies struct {
 }
 
 type Server struct {
-	cfg                config.Config
-	logger             *slog.Logger
-	store              *store.Store
-	controlStore       *store.ControlPlaneStore
-	tenantStores       *store.TenantStoreManager
-	defaultTenant      store.Tenant
-	sessions           *auth.SessionManager
-	oidc               *auth.OIDCManager
-	dynamicOIDC        *auth.DynamicOIDCManager
-	templates          map[string]*template.Template
-	appMux             http.Handler
-	handler            http.Handler
-	iconIndexMu        sync.RWMutex
-	iconIndex          []dashboardIconEntry
-	iconIndexFetchedAt time.Time
-	localLoginMu       sync.Mutex
-	localLoginAttempts map[string]localLoginAttempt
+	cfg                 config.Config
+	logger              *slog.Logger
+	store               *store.Store
+	controlStore        *store.ControlPlaneStore
+	tenantStores        *store.TenantStoreManager
+	defaultTenant       store.Tenant
+	sessions            *auth.SessionManager
+	oidc                *auth.OIDCManager
+	dynamicOIDC         *auth.DynamicOIDCManager
+	templates           map[string]*template.Template
+	appMux              http.Handler
+	handler             http.Handler
+	iconIndexMu         sync.RWMutex
+	iconIndex           []dashboardIconEntry
+	iconIndexFetchedAt  time.Time
+	localLoginMu        sync.Mutex
+	localLoginAttempts  map[string]localLoginAttempt
+	adminAccessMu       sync.Mutex
+	adminAccessAttempts map[string]localLoginAttempt
 }
 
 type localLoginAttempt struct {
@@ -120,12 +122,15 @@ type pageData struct {
 }
 
 const (
-	localLoginMaxFailures = 5
-	localLoginWindow      = 10 * time.Minute
-	localLoginLockout     = 15 * time.Minute
-	passwordResetTTL      = 30 * time.Minute
-	controlPlaneAdminTTL  = 12 * time.Hour
-	controlPlaneCookie    = "goup_cp_admin"
+	localLoginMaxFailures  = 5
+	localLoginWindow       = 10 * time.Minute
+	localLoginLockout      = 15 * time.Minute
+	adminAccessMaxFailures = 10
+	adminAccessWindow      = 5 * time.Minute
+	adminAccessLockout     = 30 * time.Minute
+	passwordResetTTL       = 30 * time.Minute
+	controlPlaneAdminTTL   = 12 * time.Hour
+	controlPlaneCookie     = "goup_cp_admin"
 )
 
 type monitorGroupView struct {
@@ -270,17 +275,18 @@ func New(deps Dependencies) (*Server, error) {
 	}
 
 	s := &Server{
-		cfg:                deps.Config,
-		logger:             deps.Logger,
-		store:              deps.Store,
-		controlStore:       deps.ControlStore,
-		tenantStores:       deps.TenantStores,
-		defaultTenant:      deps.DefaultTenant,
-		sessions:           deps.Sessions,
-		oidc:               deps.OIDC,
-		dynamicOIDC:        auth.NewDynamicOIDCManager(),
-		templates:          templates,
-		localLoginAttempts: make(map[string]localLoginAttempt),
+		cfg:                 deps.Config,
+		logger:              deps.Logger,
+		store:               deps.Store,
+		controlStore:        deps.ControlStore,
+		tenantStores:        deps.TenantStores,
+		defaultTenant:       deps.DefaultTenant,
+		sessions:            deps.Sessions,
+		oidc:                deps.OIDC,
+		dynamicOIDC:         auth.NewDynamicOIDCManager(),
+		templates:           templates,
+		localLoginAttempts:  make(map[string]localLoginAttempt),
+		adminAccessAttempts: make(map[string]localLoginAttempt),
 	}
 	s.appMux = s.buildAppMux()
 	s.handler = s.routes()
@@ -293,6 +299,9 @@ func (s *Server) Run(ctx context.Context) error {
 		Addr:              s.cfg.Addr,
 		Handler:           s.handler,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	errCh := make(chan error, 1)
@@ -356,7 +365,7 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("/admin/tenants/{id}/users/{userID}/remove", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantUserRemove)))
 	mux.Handle("/admin/settings/smtp/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSMTPSettingsSave)))
 
-	return s.logging(s.requireSameOrigin(mux))
+	return s.logging(s.securityHeaders(s.requireSameOrigin(mux)))
 }
 
 func (s *Server) handleGlobalAuthDisabled(w http.ResponseWriter, r *http.Request) {
@@ -409,9 +418,14 @@ func (s *Server) requireSameOrigin(next http.Handler) http.Handler {
 				http.Error(w, "invalid referer", http.StatusForbidden)
 				return
 			}
+			next.ServeHTTP(w, r)
+			return
 		}
 
-		next.ServeHTTP(w, r)
+		// Neither Origin nor Referer present on a mutating request: reject.
+		// Legitimate browser-initiated form submissions always include at least one.
+		// Non-browser API clients should supply Origin.
+		http.Error(w, "origin or referer required", http.StatusForbidden)
 	})
 }
 
@@ -1491,21 +1505,22 @@ func (s *Server) clearControlPlaneAdminCookie(w http.ResponseWriter) {
 	})
 }
 
-func (s *Server) localLoginKey(r *http.Request, tenantID int64, loginName string) string {
+func (s *Server) clientIP(r *http.Request) string {
+	// Only use RemoteAddr. X-Forwarded-For is trivially spoofable by clients
+	// and must not be trusted for security decisions unless the server is behind
+	// a trusted reverse proxy that strips/overwrites the header.
 	clientIP := strings.TrimSpace(r.RemoteAddr)
-	if forwardedFor := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwardedFor != "" {
-		parts := strings.Split(forwardedFor, ",")
-		if len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
-			clientIP = strings.TrimSpace(parts[0])
-		}
-	}
 	if host, _, err := net.SplitHostPort(clientIP); err == nil && host != "" {
 		clientIP = host
 	}
 	if clientIP == "" {
 		clientIP = "unknown"
 	}
-	return fmt.Sprintf("%d|%s|%s", tenantID, strings.ToLower(strings.TrimSpace(loginName)), clientIP)
+	return clientIP
+}
+
+func (s *Server) localLoginKey(r *http.Request, tenantID int64, loginName string) string {
+	return fmt.Sprintf("%d|%s|%s", tenantID, strings.ToLower(strings.TrimSpace(loginName)), s.clientIP(r))
 }
 
 func (s *Server) localLoginAllowed(key string, now time.Time) (bool, time.Duration) {
@@ -1549,6 +1564,50 @@ func (s *Server) clearLocalLoginAttempts(key string) {
 	s.localLoginMu.Lock()
 	defer s.localLoginMu.Unlock()
 	delete(s.localLoginAttempts, key)
+}
+
+func (s *Server) adminAccessKey(r *http.Request) string {
+	return "admin|" + s.clientIP(r)
+}
+
+func (s *Server) adminAccessAllowed(key string, now time.Time) (bool, time.Duration) {
+	s.adminAccessMu.Lock()
+	defer s.adminAccessMu.Unlock()
+	attempt, ok := s.adminAccessAttempts[key]
+	if !ok {
+		return true, 0
+	}
+	if !attempt.LockedUntil.IsZero() && attempt.LockedUntil.After(now) {
+		return false, time.Until(attempt.LockedUntil)
+	}
+	if !attempt.WindowStart.IsZero() && now.Sub(attempt.WindowStart) > adminAccessWindow {
+		delete(s.adminAccessAttempts, key)
+	}
+	return true, 0
+}
+
+func (s *Server) registerAdminAccessFailure(key string, now time.Time) {
+	s.adminAccessMu.Lock()
+	defer s.adminAccessMu.Unlock()
+	attempt := s.adminAccessAttempts[key]
+	if attempt.WindowStart.IsZero() || now.Sub(attempt.WindowStart) > adminAccessWindow {
+		attempt = localLoginAttempt{Failures: 1, WindowStart: now}
+		s.adminAccessAttempts[key] = attempt
+		return
+	}
+	attempt.Failures++
+	if attempt.Failures >= adminAccessMaxFailures {
+		attempt.Failures = 0
+		attempt.WindowStart = now
+		attempt.LockedUntil = now.Add(adminAccessLockout)
+	}
+	s.adminAccessAttempts[key] = attempt
+}
+
+func (s *Server) clearAdminAccessAttempts(key string) {
+	s.adminAccessMu.Lock()
+	defer s.adminAccessMu.Unlock()
+	delete(s.adminAccessAttempts, key)
 }
 
 func (s *Server) currentUser(r *http.Request) *auth.UserSession {
@@ -1600,6 +1659,36 @@ func (s *Server) logging(next http.Handler) http.Handler {
 		start := time.Now()
 		next.ServeHTTP(w, r)
 		s.logger.Info("http request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(start).String())
+	})
+}
+
+func (s *Server) securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		// Clickjacking protection
+		h.Set("X-Frame-Options", "DENY")
+		// MIME-type sniffing protection
+		h.Set("X-Content-Type-Options", "nosniff")
+		// Referrer leakage: only send origin on cross-origin requests
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		// Disable browser features not needed
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+		// Content Security Policy: allow own origin + CDN for dashboard icons
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; "+
+				"script-src 'self'; "+
+				"style-src 'self'; "+
+				"img-src 'self' https://cdn.jsdelivr.net data:; "+
+				"font-src 'self'; "+
+				"connect-src 'self'; "+
+				"frame-ancestors 'none'; "+
+				"base-uri 'self'; "+
+				"form-action 'self'")
+		// HSTS: only set when using HTTPS
+		if s.cfg.SecureCookies() {
+			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 

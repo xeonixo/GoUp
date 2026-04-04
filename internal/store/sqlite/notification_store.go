@@ -89,22 +89,6 @@ INSERT INTO notification_events (
 `, monitorID, endpointID, eventType, now, deliveredAt, strings.TrimSpace(errorMessage))
 	if err != nil {
 		if isMalformedSQLiteError(err) {
-			if recreateErr := s.recreateNotificationEventsTable(ctx); recreateErr != nil {
-				return fmt.Errorf("record notification event: %w (repair failed: %v)", err, recreateErr)
-			}
-			_, retryErr := s.db.ExecContext(ctx, `
-INSERT INTO notification_events (
-    monitor_id,
-    endpoint_id,
-    event_type,
-    created_at,
-    delivered_at,
-    error_message
-) VALUES (?, ?, ?, ?, ?, ?)
-`, monitorID, endpointID, eventType, now, deliveredAt, strings.TrimSpace(errorMessage))
-			if retryErr != nil {
-				return fmt.Errorf("record notification event after repair: %w", retryErr)
-			}
 			return nil
 		}
 		return fmt.Errorf("record notification event: %w", err)
@@ -137,9 +121,6 @@ LIMIT ?
 `, limit)
 	if err != nil {
 		if isMalformedSQLiteError(err) {
-			if recreateErr := s.recreateNotificationEventsTable(ctx); recreateErr != nil {
-				return nil, fmt.Errorf("list notification events: %w (repair failed: %v)", err, recreateErr)
-			}
 			return []NotificationEvent{}, nil
 		}
 		return nil, fmt.Errorf("list notification events: %w", err)
@@ -162,9 +143,6 @@ LIMIT ?
 			&item.Error,
 		); err != nil {
 			if isMalformedSQLiteError(err) {
-				if recreateErr := s.recreateNotificationEventsTable(ctx); recreateErr != nil {
-					return nil, fmt.Errorf("scan notification event: %w (repair failed: %v)", err, recreateErr)
-				}
 				return []NotificationEvent{}, nil
 			}
 			return nil, fmt.Errorf("scan notification event: %w", err)
@@ -177,9 +155,6 @@ LIMIT ?
 	}
 	if err := rows.Err(); err != nil {
 		if isMalformedSQLiteError(err) {
-			if recreateErr := s.recreateNotificationEventsTable(ctx); recreateErr != nil {
-				return nil, fmt.Errorf("iterate notification events: %w (repair failed: %v)", err, recreateErr)
-			}
 			return []NotificationEvent{}, nil
 		}
 		return nil, fmt.Errorf("iterate notification events: %w", err)

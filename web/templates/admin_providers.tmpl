@@ -46,7 +46,7 @@
         <td class="admin-actions-inline">
           <a href="/admin/tenants/{{$.AdminTenant.ID}}/providers/{{.ProviderKey}}/edit" class="button button-secondary button-small">Bearbeiten</a>
           {{if .Enabled}}
-          <form method="POST" action="/admin/tenants/{{$.AdminTenant.ID}}/providers/{{.ProviderKey}}/delete" class="inline-form" onsubmit="return confirm('Provider wirklich deaktivieren?');">
+          <form method="POST" action="/admin/tenants/{{$.AdminTenant.ID}}/providers/{{.ProviderKey}}/delete" class="inline-form" data-confirm="Provider wirklich deaktivieren?">
             <button type="submit" class="button button-danger button-small">Deaktivieren</button>
           </form>
           {{end}}

@@ -744,7 +744,8 @@ button {
 
 .trend-bars {
   display: grid;
-  grid-template-columns: repeat(var(--trend-columns, 24), minmax(4px, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(4px, 1fr);
   gap: 0.18rem;
   margin-bottom: 0.4rem;
   min-width: 132px;
@@ -1218,6 +1219,14 @@ li + li {
   overflow: hidden;
 }
 
+.table-card-header-pad {
+  padding: 1rem 1rem 0;
+}
+
+.table-card-filter-pad {
+  padding: 0 1rem 1rem;
+}
+
 .admin-table {
   width: 100%;
   border-collapse: collapse;
@@ -1272,6 +1281,10 @@ li + li {
   display: flex;
   gap: 0.6rem;
   flex-wrap: wrap;
+}
+
+.form-actions-align-end {
+  align-items: flex-end;
 }
 
 .status-badge {

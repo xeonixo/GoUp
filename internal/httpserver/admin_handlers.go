@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	store "goup/internal/store/sqlite"
 )
@@ -53,11 +54,21 @@ func (s *Server) handleAdminAccess(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/admin/access?error="+url.QueryEscape("Ungültiges Formular"), http.StatusSeeOther)
 			return
 		}
+
+		adminKey := s.adminAccessKey(r)
+		now := time.Now()
+		if allowed, waitFor := s.adminAccessAllowed(adminKey, now); !allowed {
+			http.Redirect(w, r, "/admin/access?error="+url.QueryEscape(fmt.Sprintf("Zu viele Versuche. Bitte %d Minuten warten.", int(waitFor.Minutes())+1)), http.StatusSeeOther)
+			return
+		}
+
 		provided := strings.TrimSpace(r.FormValue("access_key"))
 		if provided == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(key)) != 1 {
+			s.registerAdminAccessFailure(adminKey, now)
 			http.Redirect(w, r, "/admin/access?error="+url.QueryEscape("Ungültiger Zugriffsschlüssel"), http.StatusSeeOther)
 			return
 		}
+		s.clearAdminAccessAttempts(adminKey)
 		s.setControlPlaneAdminCookie(w, key)
 		http.Redirect(w, r, "/admin/", http.StatusSeeOther)
 		return

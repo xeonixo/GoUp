@@ -41,65 +41,8 @@
   <main class="container">
     {{template "content" .}}
   </main>
-  <script>
-    (function () {
-      var scrollKey = "goup:scroll:" + window.location.pathname;
-
-      window.addEventListener("beforeunload", function () {
-        try {
-          sessionStorage.setItem(scrollKey, String(window.scrollY || 0));
-        } catch (_) {}
-      });
-
-      window.addEventListener("DOMContentLoaded", function () {
-        try {
-          var currentURL = new URL(window.location.href);
-          var changed = false;
-          if (currentURL.searchParams.has("error")) {
-            currentURL.searchParams.delete("error");
-            changed = true;
-          }
-          if (currentURL.searchParams.has("notice")) {
-            currentURL.searchParams.delete("notice");
-            changed = true;
-          }
-          if (changed) {
-            var next = currentURL.pathname;
-            var qs = currentURL.searchParams.toString();
-            if (qs) {
-              next += "?" + qs;
-            }
-            if (currentURL.hash) {
-              next += currentURL.hash;
-            }
-            history.replaceState({}, "", next);
-          }
-        } catch (_) {}
-
-        try {
-          if (!window.location.hash) {
-            var y = parseInt(sessionStorage.getItem(scrollKey) || "0", 10);
-            if (!isNaN(y) && y > 0) {
-              window.scrollTo({ top: y, behavior: "auto" });
-            }
-          }
-        } catch (_) {}
-
-        var nodes = document.querySelectorAll(".js-local-datetime[data-utc]");
-        for (var i = 0; i < nodes.length; i++) {
-          var el = nodes[i];
-          var raw = el.getAttribute("data-utc");
-          if (!raw) continue;
-          var d = new Date(raw);
-          if (isNaN(d.getTime())) continue;
-          el.textContent = d.toLocaleString();
-          el.title = raw;
-        }
-
-
-      });
-    })();
-  </script>
+  <script src="/static/app.js" defer></script>
+  {{block "page_scripts" .}}{{end}}
 </body>
 </html>
 {{end}}

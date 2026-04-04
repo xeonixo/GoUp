@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -32,12 +33,33 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(0)
 	if err := db.PingContext(ctx); err != nil {
+		if isMalformedSQLiteError(err) {
+			store := &Store{db: db}
+			if initErr := store.initSchema(ctx); initErr != nil {
+				db.Close()
+				if _, recreateErr := recreateStoreAfterCorruption(ctx, path); recreateErr == nil {
+					return Open(ctx, path)
+				} else {
+					return nil, fmt.Errorf("repair malformed sqlite database after ping failure: %w (recreate failed: %v)", initErr, recreateErr)
+				}
+			}
+			return store, nil
+		}
 		db.Close()
 		return nil, fmt.Errorf("ping sqlite database: %w", err)
 	}
 
 	store := &Store{db: db}
 	if err := store.initSchema(ctx); err != nil {
+		if isMalformedSQLiteError(err) {
+			db.Close()
+			backupPath, recreateErr := recreateStoreAfterCorruption(ctx, path)
+			if recreateErr != nil {
+				return nil, fmt.Errorf("initialize schema: %w (recreate failed: %v)", err, recreateErr)
+			}
+			_ = backupPath
+			return Open(ctx, path)
+		}
 		db.Close()
 		return nil, err
 	}
@@ -47,6 +69,55 @@ func Open(ctx context.Context, path string) (*Store, error) {
 
 func (s *Store) Close() error {
 	return s.db.Close()
+}
+
+func recreateStoreAfterCorruption(ctx context.Context, path string) (string, error) {
+	backupPath, err := quarantineSQLiteFile(path)
+	if err != nil {
+		return "", err
+	}
+	recreated, err := OpenFresh(ctx, path)
+	if err != nil {
+		return backupPath, err
+	}
+	if closeErr := recreated.Close(); closeErr != nil {
+		return backupPath, closeErr
+	}
+	return backupPath, nil
+}
+
+func OpenFresh(ctx context.Context, path string) (*Store, error) {
+	dsn := sqliteDSN(path)
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open fresh sqlite database: %w", err)
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0)
+	store := &Store{db: db}
+	if err := store.initSchema(ctx); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return store, nil
+}
+
+func quarantineSQLiteFile(path string) (string, error) {
+	timestamp := time.Now().UTC().Format("20060102-150405")
+	backupPath := fmt.Sprintf("%s.corrupt-%s", path, timestamp)
+	if err := os.Rename(path, backupPath); err != nil {
+		return "", fmt.Errorf("quarantine corrupted sqlite db: %w", err)
+	}
+	for _, suffix := range []string{"-wal", "-shm"} {
+		source := path + suffix
+		if _, err := os.Stat(source); err == nil {
+			if renameErr := os.Rename(source, backupPath+suffix); renameErr != nil {
+				return backupPath, fmt.Errorf("quarantine corrupted sqlite sidecar %s: %w", suffix, renameErr)
+			}
+		}
+	}
+	return backupPath, nil
 }
 
 func (s *Store) Healthcheck(ctx context.Context) error {
@@ -139,6 +210,11 @@ func (s *Store) repairCorruptedHistoryTables(ctx context.Context) error {
 }
 
 func (s *Store) ensureTableReadable(ctx context.Context, table string) error {
+	switch table {
+	case "notification_events", "monitor_hourly_rollups":
+	default:
+		return fmt.Errorf("unsupported table readability check: %s", table)
+	}
 	query := fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", table)
 	_, err := s.db.ExecContext(ctx, query)
 	return err
@@ -377,6 +453,8 @@ func sqliteDSN(path string) string {
 	values.Add("_pragma", "foreign_keys(1)")
 	values.Add("_pragma", "busy_timeout(5000)")
 	values.Add("_pragma", "journal_mode(WAL)")
+	values.Add("_pragma", "synchronous(FULL)")
+	values.Add("_pragma", "wal_autocheckpoint(1000)")
 
 	u := &url.URL{
 		Scheme:   "file",

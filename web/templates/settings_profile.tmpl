@@ -75,7 +75,7 @@
             </div>
             <div class="settings-inline-actions">
               <span class="status-badge {{if .ProfileNotify.MatrixEnabled}}status-badge-success{{else}}status-badge-muted{{end}}">{{if .ProfileNotify.MatrixEnabled}}AKTIV{{else}}ENTWURF{{end}}</span>
-              <form method="POST" action="{{$.AppBase}}settings/profile/notifiers/delete" class="inline-form" onsubmit="return confirm('Matrix-Kanal wirklich entfernen?');">
+              <form method="POST" action="{{$.AppBase}}settings/profile/notifiers/delete" class="inline-form" data-confirm="Matrix-Kanal wirklich entfernen?">
                 <input type="hidden" name="kind" value="matrix">
                 <button type="submit" class="button button-secondary button-small">Entfernen</button>
               </form>
@@ -138,37 +138,8 @@
   {{end}}
 </div>
 
-<script>
-  (() => {
-    const matrixCard = document.getElementById('matrix-channel-card');
-    const emptyState = document.getElementById('notifier-empty-state');
-    const addButtons = Array.from(document.querySelectorAll('[data-add-notifier]'));
+{{end}}
 
-    const syncNotifierState = () => {
-      const hasMatrix = matrixCard && !matrixCard.hidden;
-      if (emptyState) emptyState.hidden = hasMatrix;
-      addButtons.forEach((button) => {
-        if (!(button instanceof HTMLButtonElement)) return;
-        if (button.dataset.addNotifier === 'matrix') {
-          button.disabled = hasMatrix;
-        }
-      });
-    };
-
-    addButtons.forEach((button) => {
-      button.addEventListener('click', () => {
-        if (button.dataset.addNotifier === 'matrix' && matrixCard) {
-          matrixCard.hidden = false;
-          const firstField = matrixCard.querySelector('input');
-          if (firstField instanceof HTMLInputElement) firstField.focus();
-          syncNotifierState();
-        }
-        const menu = button.closest('.action-menu');
-        if (menu) menu.removeAttribute('open');
-      });
-    });
-
-    syncNotifierState();
-  })();
-</script>
+{{define "page_scripts"}}
+<script src="/static/settings-profile.js" defer></script>
 {{end}}

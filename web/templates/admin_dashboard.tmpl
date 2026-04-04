@@ -106,10 +106,10 @@
   </form>
 
   <div class="card stack table-card">
-    <div class="admin-header" style="padding: 1rem 1rem 0;">
+    <div class="admin-header table-card-header-pad">
       <h2>Letzte Admin-Aktionen</h2>
     </div>
-    <form method="GET" action="/admin/" class="stack" style="padding: 0 1rem 1rem;">
+    <form method="GET" action="/admin/" class="stack table-card-filter-pad">
       <div class="inline-grid">
         <label>
           <span>Action</span>
@@ -135,7 +135,7 @@
             {{end}}
           </select>
         </label>
-        <div class="form-actions" style="align-items: end;">
+        <div class="form-actions form-actions-align-end">
           <button type="submit" class="button button-secondary">Filter anwenden</button>
           <a href="/admin/" class="button button-secondary">Zurücksetzen</a>
         </div>

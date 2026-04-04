@@ -441,9 +441,6 @@ ORDER BY hour_bucket ASC, monitor_id ASC
 `, since.UTC())
 	if err != nil {
 		if isMalformedSQLiteError(err) {
-			if recreateErr := s.recreateMonitorHourlyRollupsTable(ctx); recreateErr != nil {
-				return nil, fmt.Errorf("list monitor hourly rollups: %w (repair failed: %v)", err, recreateErr)
-			}
 			return []MonitorHourlyRollup{}, nil
 		}
 		return nil, fmt.Errorf("list monitor hourly rollups: %w", err)
@@ -467,9 +464,6 @@ ORDER BY hour_bucket ASC, monitor_id ASC
 			&item.LastCheckedAt,
 		); err != nil {
 			if isMalformedSQLiteError(err) {
-				if recreateErr := s.recreateMonitorHourlyRollupsTable(ctx); recreateErr != nil {
-					return nil, fmt.Errorf("scan monitor hourly rollup: %w (repair failed: %v)", err, recreateErr)
-				}
 				return []MonitorHourlyRollup{}, nil
 			}
 			return nil, fmt.Errorf("scan monitor hourly rollup: %w", err)
@@ -478,9 +472,6 @@ ORDER BY hour_bucket ASC, monitor_id ASC
 	}
 	if err := rows.Err(); err != nil {
 		if isMalformedSQLiteError(err) {
-			if recreateErr := s.recreateMonitorHourlyRollupsTable(ctx); recreateErr != nil {
-				return nil, fmt.Errorf("iterate monitor hourly rollups: %w (repair failed: %v)", err, recreateErr)
-			}
 			return []MonitorHourlyRollup{}, nil
 		}
 		return nil, fmt.Errorf("iterate monitor hourly rollups: %w", err)

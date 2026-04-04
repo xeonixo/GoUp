@@ -48,11 +48,11 @@
           <a href="/admin/tenants/{{.ID}}/providers" class="button button-secondary button-small">Provider</a>
           <a href="/admin/tenants/{{.ID}}/local-users" class="button button-secondary button-small">Lokale Benutzer</a>
           {{if .Active}}
-          <form method="POST" action="/admin/tenants/{{.ID}}/delete" class="inline-form" onsubmit="return confirm('Tenant wirklich deaktivieren?');">
+          <form method="POST" action="/admin/tenants/{{.ID}}/delete" class="inline-form" data-confirm="Tenant wirklich deaktivieren?">
             <button type="submit" class="button button-danger button-small">Deaktivieren</button>
           </form>
           {{end}}
-          <form method="POST" action="/admin/tenants/{{.ID}}/purge" class="inline-form" onsubmit="return confirm('Tenant WIRKLICH restlos löschen?\n\nEs werden Control-Plane-Daten, Mitgliedschaften, Provider und die Tenant-DB-Datei entfernt.');">
+          <form method="POST" action="/admin/tenants/{{.ID}}/purge" class="inline-form" data-confirm="Tenant WIRKLICH restlos löschen?&#10;&#10;Es werden Control-Plane-Daten, Mitgliedschaften, Provider und die Tenant-DB-Datei entfernt.">
             <button type="submit" class="button button-danger button-small">Restlos löschen</button>
           </form>
         </td>
