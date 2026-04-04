@@ -134,6 +134,48 @@ body {
   max-width: 460px;
 }
 
+.login-shell {
+  display: flex;
+  justify-content: center;
+}
+
+.login-card {
+  width: min(560px, 100%);
+  background: linear-gradient(170deg, rgba(22, 32, 58, 0.96), rgba(17, 23, 42, 0.96));
+}
+
+.login-actions {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.login-form {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.login-divider {
+  position: relative;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.login-divider::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-top: 1px solid rgba(154, 167, 196, 0.25);
+}
+
+.login-divider span {
+  position: relative;
+  padding: 0 0.65rem;
+  background: rgba(18, 25, 46, 0.96);
+}
+
 .metric {
   font-size: 2.2rem;
   font-weight: 700;

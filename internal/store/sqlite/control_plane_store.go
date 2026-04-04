@@ -71,6 +71,19 @@ type LocalUser struct {
 	LastLoginAt *time.Time
 }
 
+type TenantUser struct {
+	UserID              int64
+	TenantID            int64
+	LoginName           string
+	Email               string
+	DisplayName         string
+	Role                string
+	SuperAdmin          bool
+	LastLoginAt         *time.Time
+	HasLocalCredentials bool
+	HasOIDCIdentity     bool
+}
+
 type GlobalSMTPSettings struct {
 	Host               string
 	Port               int
@@ -417,6 +430,45 @@ LIMIT 1
 	return item, nil
 }
 
+func (s *ControlPlaneStore) ListTenantUsers(ctx context.Context, tenantID int64) ([]TenantUser, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT
+	u.id,
+	tm.tenant_id,
+	COALESCE(lc.login_name, ''),
+	u.email,
+	u.display_name,
+	tm.role,
+	u.is_super_admin,
+	u.last_login_at,
+	CASE WHEN lc.user_id IS NULL THEN 0 ELSE 1 END AS has_local_credentials,
+	CASE WHEN EXISTS (SELECT 1 FROM user_identities ui WHERE ui.user_id = u.id) THEN 1 ELSE 0 END AS has_oidc_identity
+FROM tenant_memberships tm
+JOIN users u ON u.id = tm.user_id
+LEFT JOIN local_credentials lc ON lc.user_id = u.id
+WHERE tm.tenant_id = ?
+ORDER BY lower(COALESCE(NULLIF(lc.login_name, ''), NULLIF(u.display_name, ''), u.email, '')), u.id ASC
+`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("query tenant users: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]TenantUser, 0)
+	for rows.Next() {
+		item, err := scanTenantUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate tenant users: %w", err)
+	}
+
+	return items, nil
+}
+
 func (s *ControlPlaneStore) CreateLocalUserForTenant(ctx context.Context, tenantID int64, loginName, password, email, displayName, role string) (LocalUser, error) {
 	loginName = strings.TrimSpace(loginName)
 	email = strings.TrimSpace(email)
@@ -551,10 +603,52 @@ WHERE user_id = ?
 	return s.GetLocalUserByID(ctx, tenantID, userID)
 }
 
+func (s *ControlPlaneStore) UpdateTenantUserRole(ctx context.Context, tenantID, userID int64, role string) error {
+	role = strings.ToLower(strings.TrimSpace(role))
+	if role != "viewer" && role != "admin" {
+		return fmt.Errorf("invalid role %q", role)
+	}
+
+	result, err := s.db.ExecContext(ctx, `
+UPDATE tenant_memberships
+SET role = ?, updated_at = ?
+WHERE tenant_id = ? AND user_id = ?
+`, role, time.Now().UTC(), tenantID, userID)
+	if err != nil {
+		return fmt.Errorf("update tenant user role: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update tenant user role rows affected: %w", err)
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (s *ControlPlaneStore) DeleteLocalUserFromTenant(ctx context.Context, tenantID, userID int64) error {
+	var hasLocalCredentials int
+	err := s.db.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM local_credentials lc
+JOIN tenant_memberships tm ON tm.user_id = lc.user_id
+WHERE tm.tenant_id = ? AND lc.user_id = ?
+`, tenantID, userID).Scan(&hasLocalCredentials)
+	if err != nil {
+		return fmt.Errorf("check local user before delete: %w", err)
+	}
+	if hasLocalCredentials == 0 {
+		return sql.ErrNoRows
+	}
+
+	return s.RemoveUserFromTenant(ctx, tenantID, userID)
+}
+
+func (s *ControlPlaneStore) RemoveUserFromTenant(ctx context.Context, tenantID, userID int64) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin local user delete transaction: %w", err)
+		return fmt.Errorf("begin tenant user remove transaction: %w", err)
 	}
 	defer tx.Rollback()
 
@@ -563,11 +657,11 @@ DELETE FROM tenant_memberships
 WHERE tenant_id = ? AND user_id = ?
 `, tenantID, userID)
 	if err != nil {
-		return fmt.Errorf("delete local user tenant membership: %w", err)
+		return fmt.Errorf("delete tenant user membership: %w", err)
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("delete local user tenant membership rows affected: %w", err)
+		return fmt.Errorf("delete tenant user membership rows affected: %w", err)
 	}
 	if affected == 0 {
 		return sql.ErrNoRows
@@ -575,26 +669,32 @@ WHERE tenant_id = ? AND user_id = ?
 
 	var membershipCount int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM tenant_memberships WHERE user_id = ?`, userID).Scan(&membershipCount); err != nil {
-		return fmt.Errorf("count remaining local user memberships: %w", err)
+		return fmt.Errorf("count remaining tenant user memberships: %w", err)
 	}
 	var identityCount int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM user_identities WHERE user_id = ?`, userID).Scan(&identityCount); err != nil {
-		return fmt.Errorf("count remaining local user identities: %w", err)
+		return fmt.Errorf("count remaining tenant user identities: %w", err)
+	}
+	var localCredentialsCount int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM local_credentials WHERE user_id = ?`, userID).Scan(&localCredentialsCount); err != nil {
+		return fmt.Errorf("count remaining tenant user local credentials: %w", err)
 	}
 
 	if membershipCount == 0 {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM local_credentials WHERE user_id = ?`, userID); err != nil {
-			return fmt.Errorf("delete local user credentials: %w", err)
+		if localCredentialsCount > 0 {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM local_credentials WHERE user_id = ?`, userID); err != nil {
+				return fmt.Errorf("delete tenant user local credentials: %w", err)
+			}
 		}
 		if identityCount == 0 {
 			if _, err := tx.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, userID); err != nil {
-				return fmt.Errorf("delete local user record: %w", err)
+				return fmt.Errorf("delete tenant user record: %w", err)
 			}
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit local user delete transaction: %w", err)
+		return fmt.Errorf("commit tenant user remove transaction: %w", err)
 	}
 
 	return nil
@@ -669,6 +769,25 @@ func scanLocalUser(scanner interface{ Scan(dest ...any) error }) (LocalUser, err
 		return LocalUser{}, fmt.Errorf("scan local user: %w", err)
 	}
 	item.SuperAdmin = superAdmin == 1
+	if lastLogin.Valid {
+		value := lastLogin.Time
+		item.LastLoginAt = &value
+	}
+	return item, nil
+}
+
+func scanTenantUser(scanner interface{ Scan(dest ...any) error }) (TenantUser, error) {
+	var item TenantUser
+	var superAdmin int
+	var hasLocalCredentials int
+	var hasOIDCIdentity int
+	var lastLogin sql.NullTime
+	if err := scanner.Scan(&item.UserID, &item.TenantID, &item.LoginName, &item.Email, &item.DisplayName, &item.Role, &superAdmin, &lastLogin, &hasLocalCredentials, &hasOIDCIdentity); err != nil {
+		return TenantUser{}, fmt.Errorf("scan tenant user: %w", err)
+	}
+	item.SuperAdmin = superAdmin == 1
+	item.HasLocalCredentials = hasLocalCredentials == 1
+	item.HasOIDCIdentity = hasOIDCIdentity == 1
 	if lastLogin.Valid {
 		value := lastLogin.Time
 		item.LastLoginAt = &value

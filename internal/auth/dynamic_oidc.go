@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -14,6 +15,7 @@ import (
 
 // TenantOIDCConfig holds OIDC configuration for a specific tenant
 type TenantOIDCConfig struct {
+	TenantSlug   string
 	ProviderKey  string
 	IssuerURL    string
 	ClientID     string
@@ -106,9 +108,11 @@ func (m *DynamicOIDCManager) BeginAuthForTenant(w http.ResponseWriter, r *http.R
 		return "", fmt.Errorf("generate nonce: %w", err)
 	}
 
-	// Store state and nonce in cookies
+	stateCookieName, nonceCookieName, providerCookieName := tenantOIDCCookieNames(cfg.TenantSlug)
+
+	// Store state, nonce and provider in tenant-scoped cookies.
 	http.SetCookie(w, &http.Cookie{
-		Name:     oidcStateCookieName,
+		Name:     stateCookieName,
 		Value:    state,
 		Path:     "/",
 		MaxAge:   600,
@@ -118,8 +122,18 @@ func (m *DynamicOIDCManager) BeginAuthForTenant(w http.ResponseWriter, r *http.R
 	})
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     oidcNonceCookieName,
+		Name:     nonceCookieName,
 		Value:    nonce,
+		Path:     "/",
+		MaxAge:   600,
+		HttpOnly: true,
+		Secure:   secureCookies,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     providerCookieName,
+		Value:    strings.TrimSpace(cfg.ProviderKey),
 		Path:     "/",
 		MaxAge:   600,
 		HttpOnly: true,
@@ -133,11 +147,21 @@ func (m *DynamicOIDCManager) BeginAuthForTenant(w http.ResponseWriter, r *http.R
 
 // CompleteAuthForTenant completes the OIDC callback for a tenant
 func (m *DynamicOIDCManager) CompleteAuthForTenant(ctx context.Context, r *http.Request, cfg TenantOIDCConfig) (Identity, error) {
-	stateCookie, err := r.Cookie(oidcStateCookieName)
+	stateCookieName, nonceCookieName, _ := tenantOIDCCookieNames(cfg.TenantSlug)
+
+	stateCookie, err := r.Cookie(stateCookieName)
+	if err != nil {
+		// Backward compatibility for cookies written before tenant scoping.
+		stateCookie, err = r.Cookie(oidcStateCookieName)
+	}
 	if err != nil {
 		return Identity{}, fmt.Errorf("state cookie missing: %w", err)
 	}
-	nonceCookie, err := r.Cookie(oidcNonceCookieName)
+	nonceCookie, err := r.Cookie(nonceCookieName)
+	if err != nil {
+		// Backward compatibility for cookies written before tenant scoping.
+		nonceCookie, err = r.Cookie(oidcNonceCookieName)
+	}
 	if err != nil {
 		return Identity{}, fmt.Errorf("nonce cookie missing: %w", err)
 	}
@@ -196,9 +220,9 @@ func (m *DynamicOIDCManager) CompleteAuthForTenant(ctx context.Context, r *http.
 	// Extract identity info
 	var identity Identity
 	var claims2 struct {
-		Email    string `json:"email"`
-		Name     string `json:"name"`
-		GivenName string `json:"given_name"`
+		Email      string `json:"email"`
+		Name       string `json:"name"`
+		GivenName  string `json:"given_name"`
 		FamilyName string `json:"family_name"`
 	}
 	if err := idToken.Claims(&claims2); err != nil {
@@ -231,6 +255,55 @@ func (m *DynamicOIDCManager) ClearEphemeralCookies(w http.ResponseWriter) {
 		MaxAge:   -1,
 		HttpOnly: true,
 	})
+}
+
+func (m *DynamicOIDCManager) ClearEphemeralCookiesForTenant(w http.ResponseWriter, tenantSlug string, secureCookies bool) {
+	stateCookieName, nonceCookieName, providerCookieName := tenantOIDCCookieNames(tenantSlug)
+	for _, name := range []string{stateCookieName, nonceCookieName, providerCookieName, oidcStateCookieName, oidcNonceCookieName} {
+		http.SetCookie(w, &http.Cookie{
+			Name:     name,
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   secureCookies,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
+}
+
+func (m *DynamicOIDCManager) ProviderKeyFromRequest(r *http.Request, tenantSlug string) string {
+	_, _, providerCookieName := tenantOIDCCookieNames(tenantSlug)
+	cookie, err := r.Cookie(providerCookieName)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(cookie.Value)
+}
+
+func tenantOIDCCookieNames(tenantSlug string) (stateCookieName string, nonceCookieName string, providerCookieName string) {
+	slug := normalizeTenantCookieKey(tenantSlug)
+	if slug == "" {
+		return oidcStateCookieName, oidcNonceCookieName, "goup_oidc_provider"
+	}
+	return oidcStateCookieName + "_" + slug, oidcNonceCookieName + "_" + slug, "goup_oidc_provider_" + slug
+}
+
+func normalizeTenantCookieKey(value string) string {
+	trimmed := strings.TrimSpace(strings.ToLower(value))
+	if trimmed == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(trimmed))
+	for _, r := range trimmed {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('_')
+	}
+	return b.String()
 }
 
 func generateRandomString(length int) (string, error) {

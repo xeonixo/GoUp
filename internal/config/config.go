@@ -17,17 +17,18 @@ const (
 )
 
 type Config struct {
-	Addr               string
-	BaseURL            string
-	DataDir            string
-	DBPath             string
-	ControlPlaneDBPath string
-	LogLevel           string
-	SessionKey         string
-	SSOSecretKey       string
-	Auth               AuthConfig
-	Matrix             MatrixConfig
-	Notify             NotifyConfig
+	Addr                 string
+	BaseURL              string
+	DataDir              string
+	DBPath               string
+	ControlPlaneDBPath   string
+	LogLevel             string
+	SessionKey           string
+	SSOSecretKey         string
+	ControlPlaneAdminKey string
+	Auth                 AuthConfig
+	Matrix               MatrixConfig
+	Notify               NotifyConfig
 }
 
 type AuthConfig struct {
@@ -55,14 +56,15 @@ type NotifyConfig struct {
 
 func Load() (Config, error) {
 	cfg := Config{
-		Addr:               envOrDefault("GOUP_ADDR", ":8080"),
-		BaseURL:            strings.TrimRight(envOrDefault("GOUP_BASE_URL", "http://localhost:8080"), "/"),
-		DataDir:            envOrDefault("GOUP_DATA_DIR", "./data"),
-		DBPath:             os.Getenv("GOUP_DB_PATH"),
-		ControlPlaneDBPath: os.Getenv("GOUP_CONTROL_DB_PATH"),
-		LogLevel:           envOrDefault("GOUP_LOG_LEVEL", "info"),
-		SessionKey:         os.Getenv("GOUP_SESSION_KEY"),
-		SSOSecretKey:       os.Getenv("GOUP_SSO_SECRET_KEY"),
+		Addr:                 envOrDefault("GOUP_ADDR", ":8080"),
+		BaseURL:              strings.TrimRight(envOrDefault("GOUP_BASE_URL", "http://localhost:8080"), "/"),
+		DataDir:              envOrDefault("GOUP_DATA_DIR", "./data"),
+		DBPath:               os.Getenv("GOUP_DB_PATH"),
+		ControlPlaneDBPath:   os.Getenv("GOUP_CONTROL_DB_PATH"),
+		LogLevel:             envOrDefault("GOUP_LOG_LEVEL", "info"),
+		SessionKey:           os.Getenv("GOUP_SESSION_KEY"),
+		SSOSecretKey:         os.Getenv("GOUP_SSO_SECRET_KEY"),
+		ControlPlaneAdminKey: strings.TrimSpace(os.Getenv("GOUP_CONTROL_PLANE_ADMIN_KEY")),
 		Auth: AuthConfig{
 			Mode: AuthMode(envOrDefault("GOUP_AUTH_MODE", string(AuthModeDisabled))),
 			OIDC: OIDCConfig{

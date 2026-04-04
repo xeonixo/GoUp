@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
 	"database/sql"
 	"encoding/base64"
@@ -74,7 +75,9 @@ type pageData struct {
 	Error            string
 	Notice           string
 	FormAction       string
+	BackURL          string
 	IsEdit           bool
+	SettingsMode     bool
 	AuthEnabled      bool
 	AuthDisabled     bool
 	OIDCTenantOnly   bool
@@ -90,6 +93,7 @@ type pageData struct {
 	AdminProviders   []store.AuthProvider
 	AdminProvider    store.AuthProvider
 	AdminLocalUsers  []store.LocalUser
+	AdminTenantUsers []store.TenantUser
 	AdminLocalUser   store.LocalUser
 	AdminAuditEvents []store.AuditEvent
 	AuditAction      string
@@ -112,6 +116,8 @@ const (
 	localLoginWindow      = 10 * time.Minute
 	localLoginLockout     = 15 * time.Minute
 	passwordResetTTL      = 30 * time.Minute
+	controlPlaneAdminTTL  = 12 * time.Hour
+	controlPlaneCookie    = "goup_cp_admin"
 )
 
 type monitorGroupView struct {
@@ -329,25 +335,36 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/app/t/{tenantSlug}/password-reset/request", s.handleTenantPasswordResetRequest)
 	mux.HandleFunc("/app/t/{tenantSlug}/password-reset/confirm", s.handleTenantPasswordResetConfirm)
 
-	// Admin routes (super-admin only)
-	mux.Handle("/app/admin/", s.requireSuperAdmin(http.HandlerFunc(s.handleAdminDashboard)))
-	mux.Handle("/app/admin/tenants", s.requireSuperAdmin(http.HandlerFunc(s.handleAdminTenantsList)))
-	mux.Handle("/app/admin/tenants/new", s.requireSuperAdmin(http.HandlerFunc(s.handleAdminTenantForm)))
-	mux.Handle("/app/admin/tenants/{id}/edit", s.requireSuperAdmin(http.HandlerFunc(s.handleAdminTenantForm)))
-	mux.Handle("/app/admin/tenants/save", s.requireSuperAdmin(http.HandlerFunc(s.handleAdminTenantSave)))
-	mux.Handle("/app/admin/tenants/{id}/delete", s.requireSuperAdmin(http.HandlerFunc(s.handleAdminTenantDelete)))
-	mux.Handle("/app/admin/tenants/{id}/purge", s.requireSuperAdmin(http.HandlerFunc(s.handleAdminTenantPurge)))
-	mux.Handle("/app/admin/tenants/{id}/providers", s.requireSuperAdmin(http.HandlerFunc(s.handleAdminProvidersList)))
-	mux.Handle("/app/admin/tenants/{id}/providers/new", s.requireSuperAdmin(http.HandlerFunc(s.handleAdminProviderForm)))
-	mux.Handle("/app/admin/tenants/{id}/providers/{providerKey}/edit", s.requireSuperAdmin(http.HandlerFunc(s.handleAdminProviderForm)))
-	mux.Handle("/app/admin/tenants/{id}/providers/save", s.requireSuperAdmin(http.HandlerFunc(s.handleAdminProviderSave)))
-	mux.Handle("/app/admin/tenants/{id}/providers/{providerKey}/delete", s.requireSuperAdmin(http.HandlerFunc(s.handleAdminProviderDelete)))
-	mux.Handle("/app/admin/tenants/{id}/local-users", s.requireSuperAdmin(http.HandlerFunc(s.handleAdminLocalUsersList)))
-	mux.Handle("/app/admin/tenants/{id}/local-users/new", s.requireSuperAdmin(http.HandlerFunc(s.handleAdminLocalUserForm)))
-	mux.Handle("/app/admin/tenants/{id}/local-users/{userID}/edit", s.requireSuperAdmin(http.HandlerFunc(s.handleAdminLocalUserForm)))
-	mux.Handle("/app/admin/tenants/{id}/local-users/save", s.requireSuperAdmin(http.HandlerFunc(s.handleAdminLocalUserSave)))
-	mux.Handle("/app/admin/tenants/{id}/local-users/{userID}/delete", s.requireSuperAdmin(http.HandlerFunc(s.handleAdminLocalUserDelete)))
-	mux.Handle("/app/admin/settings/smtp/save", s.requireSuperAdmin(http.HandlerFunc(s.handleAdminSMTPSettingsSave)))
+	// Control-plane admin routes (separate access mechanism)
+	mux.HandleFunc("/app/admin/access", s.handleAdminAccess)
+	mux.Handle("/app/admin/", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminDashboard)))
+	mux.Handle("/app/admin/tenants", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantsList)))
+	mux.Handle("/app/admin/tenants/new", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantForm)))
+	mux.Handle("/app/admin/tenants/{id}/edit", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantForm)))
+	mux.Handle("/app/admin/tenants/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantSave)))
+	mux.Handle("/app/admin/tenants/{id}/delete", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantDelete)))
+	mux.Handle("/app/admin/tenants/{id}/purge", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantPurge)))
+	mux.Handle("/app/admin/tenants/{id}/providers", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminProvidersList)))
+	mux.Handle("/app/admin/tenants/{id}/providers/new", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminProviderForm)))
+	mux.Handle("/app/admin/tenants/{id}/providers/{providerKey}/edit", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminProviderForm)))
+	mux.Handle("/app/admin/tenants/{id}/providers/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminProviderSave)))
+	mux.Handle("/app/admin/tenants/{id}/providers/{providerKey}/delete", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminProviderDelete)))
+	mux.Handle("/app/admin/tenants/{id}/local-users", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUsersList)))
+	mux.Handle("/app/admin/tenants/{id}/local-users/new", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUserForm)))
+	mux.Handle("/app/admin/tenants/{id}/local-users/{userID}/edit", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUserForm)))
+	mux.Handle("/app/admin/tenants/{id}/local-users/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUserSave)))
+	mux.Handle("/app/admin/tenants/{id}/local-users/{userID}/delete", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUserDelete)))
+	mux.Handle("/app/admin/tenants/{id}/users/{userID}/remove", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantUserRemove)))
+	mux.Handle("/app/admin/settings/smtp/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSMTPSettingsSave)))
+
+	// Tenant settings routes (tenant admin + super-admin)
+	mux.Handle("/app/settings/users", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUsers)))
+	mux.Handle("/app/settings/local-users/new", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserForm)))
+	mux.Handle("/app/settings/local-users/{userID}/edit", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserForm)))
+	mux.Handle("/app/settings/local-users/save", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserSave)))
+	mux.Handle("/app/settings/local-users/{userID}/delete", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserDelete)))
+	mux.Handle("/app/settings/users/{userID}/role", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUserRoleSave)))
+	mux.Handle("/app/settings/users/{userID}/remove", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUserRemove)))
 
 	mux.Handle("/app/", s.requireAuth(http.HandlerFunc(s.handleDashboard)))
 	mux.Handle("/app/monitors", s.requireAuth(http.HandlerFunc(s.handleSaveMonitor)))
@@ -523,13 +540,13 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "login", pageData{
-		Title:        "Login · GoUp",
-		Error:        strings.TrimSpace(r.URL.Query().Get("error")),
-		Notice:       strings.TrimSpace(r.URL.Query().Get("notice")),
-		AuthEnabled:  s.cfg.Auth.Mode == config.AuthModeOIDC && s.oidc != nil,
-		AuthDisabled: s.cfg.Auth.Mode == config.AuthModeDisabled,
+		Title:          "Login · GoUp",
+		Error:          strings.TrimSpace(r.URL.Query().Get("error")),
+		Notice:         strings.TrimSpace(r.URL.Query().Get("notice")),
+		AuthEnabled:    s.cfg.Auth.Mode == config.AuthModeOIDC && s.oidc != nil,
+		AuthDisabled:   s.cfg.Auth.Mode == config.AuthModeDisabled,
 		OIDCTenantOnly: s.cfg.Auth.Mode == config.AuthModeOIDC && s.oidc == nil,
-		User:         s.currentUser(r),
+		User:           s.currentUser(r),
 	})
 }
 
@@ -1099,6 +1116,96 @@ func (s *Server) requireSuperAdmin(next http.Handler) http.Handler {
 	})
 }
 
+func (s *Server) requireUserManagement(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		session, err := s.sessions.Get(r)
+		if err != nil {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		if !(session.SuperAdmin || strings.EqualFold(strings.TrimSpace(session.Role), "admin")) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) requireControlPlaneAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := strings.TrimSpace(s.cfg.ControlPlaneAdminKey)
+		if key == "" {
+			http.Error(w, "control-plane admin access is not configured", http.StatusForbidden)
+			return
+		}
+		if !s.hasControlPlaneAdminCookie(r, key) {
+			http.Redirect(w, r, "/app/admin/access", http.StatusSeeOther)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) hasControlPlaneAdminCookie(r *http.Request, key string) bool {
+	cookie, err := r.Cookie(controlPlaneCookie)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return false
+	}
+	parts := strings.Split(cookie.Value, ".")
+	if len(parts) != 2 {
+		return false
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return false
+	}
+	providedSig, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return false
+	}
+	h := hmac.New(sha256.New, []byte(key))
+	_, _ = h.Write(payload)
+	if subtle.ConstantTimeCompare(providedSig, h.Sum(nil)) != 1 {
+		return false
+	}
+	expiresUnix, err := strconv.ParseInt(string(payload), 10, 64)
+	if err != nil {
+		return false
+	}
+	return time.Now().UTC().Before(time.Unix(expiresUnix, 0))
+}
+
+func (s *Server) setControlPlaneAdminCookie(w http.ResponseWriter, key string) {
+	expiresAt := time.Now().UTC().Add(controlPlaneAdminTTL)
+	payload := []byte(strconv.FormatInt(expiresAt.Unix(), 10))
+	h := hmac.New(sha256.New, []byte(key))
+	_, _ = h.Write(payload)
+	token := base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(h.Sum(nil))
+	http.SetCookie(w, &http.Cookie{
+		Name:     controlPlaneCookie,
+		Value:    token,
+		Path:     "/app/admin",
+		HttpOnly: true,
+		Secure:   s.cfg.SecureCookies(),
+		SameSite: http.SameSiteLaxMode,
+		Expires:  expiresAt,
+		MaxAge:   int(controlPlaneAdminTTL.Seconds()),
+	})
+}
+
+func (s *Server) clearControlPlaneAdminCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     controlPlaneCookie,
+		Value:    "",
+		Path:     "/app/admin",
+		HttpOnly: true,
+		Secure:   s.cfg.SecureCookies(),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+	})
+}
+
 func (s *Server) localLoginKey(r *http.Request, tenantID int64, loginName string) string {
 	clientIP := strings.TrimSpace(r.RemoteAddr)
 	if forwardedFor := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwardedFor != "" {
@@ -1200,7 +1307,7 @@ func (s *Server) logging(next http.Handler) http.Handler {
 }
 
 func parseTemplates() (map[string]*template.Template, error) {
-	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_provider_form", "admin_local_users", "admin_local_user_form"}
+	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_provider_form", "admin_local_users", "admin_local_user_form", "settings_users", "admin_access"}
 	parsed := make(map[string]*template.Template, len(pages))
 	for _, page := range pages {
 		tmpl, err := template.ParseFS(web.FS, "templates/layout.tmpl", "templates/"+page+".tmpl")
@@ -2215,9 +2322,7 @@ func (s *Server) handleTenantLoginPage(w http.ResponseWriter, r *http.Request) {
 		case "local":
 			hasLocal = true
 		case "oidc":
-			if s.cfg.Auth.Mode == config.AuthModeOIDC {
-				hasOIDC = true
-			}
+			hasOIDC = true
 		}
 	}
 	resetEnabled := hasLocal && s.passwordResetEnabled(r.Context())
@@ -2419,7 +2524,7 @@ func (s *Server) handleTenantPasswordResetConfirm(w http.ResponseWriter, r *http
 }
 
 func (s *Server) handleTenantAuthLogin(w http.ResponseWriter, r *http.Request) {
-	if s.cfg.Auth.Mode != config.AuthModeOIDC || s.dynamicOIDC == nil {
+	if s.dynamicOIDC == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -2451,6 +2556,7 @@ func (s *Server) handleTenantAuthLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg := auth.TenantOIDCConfig{
+		TenantSlug:  tenantSlug,
 		ProviderKey: provider.ProviderKey,
 		IssuerURL:   provider.IssuerURL,
 		ClientID:    provider.ClientID,
@@ -2468,17 +2574,17 @@ func (s *Server) handleTenantAuthLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTenantAuthCallback(w http.ResponseWriter, r *http.Request) {
-	if s.cfg.Auth.Mode != config.AuthModeOIDC || s.dynamicOIDC == nil {
+	if s.dynamicOIDC == nil {
 		http.NotFound(w, r)
 		return
 	}
-	defer s.dynamicOIDC.ClearEphemeralCookies(w)
 
 	tenantSlug := r.PathValue("tenantSlug")
 	if tenantSlug == "" {
 		http.NotFound(w, r)
 		return
 	}
+	defer s.dynamicOIDC.ClearEphemeralCookiesForTenant(w, tenantSlug, s.cfg.SecureCookies())
 
 	tenant, err := s.controlStore.GetTenantBySlug(r.Context(), tenantSlug)
 	if err != nil {
@@ -2491,6 +2597,9 @@ func (s *Server) handleTenantAuthCallback(w http.ResponseWriter, r *http.Request
 	// For now, we'll need to determine the provider from available providers
 	// In a real implementation, you might store provider_key in a cookie during BeginAuthForTenant
 	providerKey := strings.TrimSpace(r.URL.Query().Get("provider"))
+	if providerKey == "" {
+		providerKey = s.dynamicOIDC.ProviderKeyFromRequest(r, tenantSlug)
+	}
 	if providerKey == "" {
 		providerKey = "oidc-primary" // default, but should be from state
 	}
@@ -2513,6 +2622,7 @@ func (s *Server) handleTenantAuthCallback(w http.ResponseWriter, r *http.Request
 	}
 
 	tenantOIDCCfg := auth.TenantOIDCConfig{
+		TenantSlug:   tenantSlug,
 		ProviderKey:  provider.ProviderKey,
 		IssuerURL:    provider.IssuerURL,
 		ClientID:     provider.ClientID,

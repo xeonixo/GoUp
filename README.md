@@ -119,14 +119,13 @@ Wichtige Variablen:
 - `GOUP_LOG_LEVEL` – `debug|info|warn|error`
 - `GOUP_SESSION_KEY` – **Pflicht für produktiv**, min. 16 Zeichen
 - `GOUP_SSO_SECRET_KEY` – Schlüssel für verschlüsselte Provider-Secrets (stark empfohlen)
+- `GOUP_CONTROL_PLANE_ADMIN_KEY` – separater Zugriffsschlüssel für `/app/admin/*` (unabhängig von Tenant-Rollen)
 
 Auth:
 
 - `GOUP_AUTH_MODE` – `disabled`, `local`, `oidc`
-- `GOUP_OIDC_ISSUER_URL`
-- `GOUP_OIDC_CLIENT_ID`
-- `GOUP_OIDC_CLIENT_SECRET`
-- `GOUP_OIDC_REDIRECT_URL`
+
+OIDC wird tenant-basiert über den Admin-Bereich konfiguriert (`Provider` je Tenant). Eine globale OIDC-Konfiguration über `.env` ist nicht erforderlich.
 
 Matrix:
 
@@ -140,7 +139,7 @@ E-Mail-Notifications:
 - `GOUP_NOTIFY_EMAIL_TO` – optional zusätzliche Komma-separierte Empfänger, z. B. `ops@example.com,oncall@example.com`
 - `GOUP_NOTIFY_EMAIL_SUBJECT_PREFIX` – optionales Subject-Präfix
 
-> Hinweis: In `oidc`-Mode müssen Issuer, Client-ID und Client-Secret gesetzt sein.
+> Hinweis: Für gemischte Login-Methoden (Local + OIDC) pro Tenant kann `GOUP_AUTH_MODE=local` genutzt werden.
 
 ---
 
@@ -156,13 +155,20 @@ E-Mail-Notifications:
 
 - Login via OIDC
 - Tenant-spezifische Provider möglich
-- Der erste OIDC-Benutzer kann als Super-Admin initialisiert werden
+- Bootstrap-Mechanismus: Der **erste erfolgreiche OIDC-Login** wird automatisch als `Super-Admin` angelegt (wenn noch kein Super-Admin existiert)
+- Weitere OIDC-Benutzer werden nicht automatisch zu Super-Admins
 
 ### `local`
 
 - Lokale Benutzeranmeldung je Tenant
 - Login über `/t/{tenantSlug}/login`
 - Optionaler Password-Reset via SMTP
+
+### Control-Plane Zugriff (strikt getrennt)
+
+- Der Bereich `/app/admin/*` nutzt einen **eigenen Access-Mechanismus** über `GOUP_CONTROL_PLANE_ADMIN_KEY`.
+- Tenant-User (auch `admin` oder global markierte Nutzer) erhalten dadurch **keinen** direkten Verwaltungszugriff auf Tenants/Provider.
+- Einstieg: `/app/admin/access` (Key eingeben), danach wird eine separate Control-Plane-Session gesetzt.
 
 ---
 

@@ -1,0 +1,87 @@
+{{define "content"}}
+<div class="admin-section">
+  <nav class="admin-nav card">
+    <a href="/app/" class="admin-nav-link">Dashboard</a>
+    <a href="/app/settings/users" class="admin-nav-link is-active">Settings · Benutzer</a>
+  </nav>
+
+  {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
+  {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+
+  <div class="admin-header">
+    <div>
+      <p class="eyebrow">Settings</p>
+      <h1>Benutzerverwaltung · {{.AdminTenant.Name}}</h1>
+      <p class="muted compact">Tenant: {{.AdminTenant.Slug}}</p>
+    </div>
+    <div class="admin-actions-inline">
+      <a href="/app/settings/local-users/new" class="button">+ Lokales Konto</a>
+    </div>
+  </div>
+
+  <div class="card table-card">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>Login</th>
+          <th>Typ</th>
+          <th>Name</th>
+          <th>E-Mail</th>
+          <th>Rolle</th>
+          <th>Globaler Admin</th>
+          <th>Letzter Login</th>
+          <th>Aktionen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{if .AdminTenantUsers}}
+        {{range .AdminTenantUsers}}
+        <tr>
+          <td>{{if .LoginName}}{{.LoginName}}{{else}}—{{end}}{{if eq $.User.UserID .UserID}} <span class="muted">(Du)</span>{{end}}</td>
+          <td>
+            {{if .HasLocalCredentials}}<span class="status-badge">LOCAL</span>{{end}}
+            {{if .HasOIDCIdentity}}<span class="status-badge">OIDC</span>{{end}}
+            {{if and (not .HasLocalCredentials) (not .HasOIDCIdentity)}}<span class="status-badge status-badge-muted">UNK</span>{{end}}
+          </td>
+          <td>{{.DisplayName}}</td>
+          <td>{{.Email}}</td>
+          <td>
+            <form method="POST" action="/app/settings/users/{{.UserID}}/role" class="admin-actions-inline">
+              <select name="role">
+                <option value="viewer" {{if eq .Role "viewer"}}selected{{end}}>viewer</option>
+                <option value="admin" {{if eq .Role "admin"}}selected{{end}}>admin</option>
+              </select>
+              <button type="submit" class="button button-secondary button-small">Speichern</button>
+            </form>
+          </td>
+          <td>
+            {{if .SuperAdmin}}<span class="status-badge status-badge-success">Ja</span>{{else}}<span class="status-badge status-badge-muted">Nein</span>{{end}}
+          </td>
+          <td>{{if .LastLoginAt}}<span class="js-local-datetime" data-utc="{{.LastLoginAt.Format "2006-01-02T15:04:05Z07:00"}}">{{.LastLoginAt}}</span>{{else}}—{{end}}</td>
+          <td class="admin-actions-inline">
+            {{if .HasLocalCredentials}}
+            <a href="/app/settings/local-users/{{.UserID}}/edit" class="button button-secondary button-small">Lokal bearbeiten</a>
+            <form method="POST" action="/app/settings/local-users/{{.UserID}}/delete" class="inline-form" onsubmit="return confirm('Lokales Konto wirklich löschen?');">
+              <button type="submit" class="button button-danger button-small">Lokales Konto löschen</button>
+            </form>
+            {{end}}
+            {{if ne $.User.UserID .UserID}}
+            <form method="POST" action="/app/settings/users/{{.UserID}}/remove" class="inline-form" onsubmit="return confirm('Benutzer wirklich aus diesem Tenant entfernen?');">
+              <button type="submit" class="button button-danger button-small">Entfernen</button>
+            </form>
+            {{else}}
+            <span class="muted">Nicht möglich</span>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+        {{else}}
+        <tr>
+          <td colspan="8" class="muted">Keine Benutzer vorhanden.</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

@@ -16,6 +16,9 @@
     <nav>
       {{if .User}}
       <span class="user-pill">{{if .User.Name}}{{.User.Name}}{{else}}{{.User.Email}}{{end}}</span>
+      {{if or .User.SuperAdmin (eq .User.Role "admin")}}
+      <a class="button button-secondary" href="/app/settings/users">Settings</a>
+      {{end}}
       <a class="button button-secondary" href="/auth/logout">Logout</a>
       {{else if .AuthEnabled}}
       <a class="button" href="/auth/login">Login</a>
