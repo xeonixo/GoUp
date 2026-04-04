@@ -44,13 +44,28 @@ func New(ctx context.Context) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	sessionKey := strings.TrimSpace(cfg.SessionKey)
+	if sessionKey == "" {
+		dbSessionKey, keyErr := controlStore.GetOrCreateSessionKey(ctx)
+		if keyErr != nil {
+			controlStore.Close()
+			return nil, fmt.Errorf("load generated session key: %w", keyErr)
+		}
+		sessionKey = dbSessionKey
+	}
+	cfg.SessionKey = sessionKey
+
 	secretKey := strings.TrimSpace(cfg.SSOSecretKey)
 	if secretKey == "" {
-		secretKey = cfg.SessionKey
+		secretKey = sessionKey
 	}
 	if err := controlStore.ConfigureSecretKey(secretKey); err != nil {
 		controlStore.Close()
 		return nil, fmt.Errorf("configure control-plane secret key: %w", err)
+	}
+	adminCookieKey := strings.TrimSpace(cfg.ControlPlaneAdminKey)
+	if adminCookieKey == "" {
+		adminCookieKey = secretKey
 	}
 	var defaultTenant store.Tenant
 	if existingTenant, getErr := controlStore.GetTenantBySlug(ctx, "default"); getErr == nil {
@@ -75,7 +90,7 @@ func New(ctx context.Context) (*App, error) {
 		}
 	}
 
-	sessions := auth.NewSessionManager([]byte(cfg.SessionKey), cfg.SecureCookies())
+	sessions := auth.NewSessionManager([]byte(sessionKey), cfg.SecureCookies())
 
 	var oidcManager *auth.OIDCManager
 	if cfg.Auth.Mode == config.AuthModeOIDC && hasGlobalOIDC {
@@ -115,14 +130,15 @@ func New(ctx context.Context) (*App, error) {
 	}
 
 	server, err := httpserver.New(httpserver.Dependencies{
-		Config:        cfg,
-		Logger:        logger,
-		Store:         sqliteStore,
-		ControlStore:  controlStore,
-		TenantStores:  tenantStores,
-		DefaultTenant: defaultTenant,
-		Sessions:      sessions,
-		OIDC:          oidcManager,
+		Config:         cfg,
+		Logger:         logger,
+		Store:          sqliteStore,
+		ControlStore:   controlStore,
+		AdminCookieKey: adminCookieKey,
+		TenantStores:   tenantStores,
+		DefaultTenant:  defaultTenant,
+		Sessions:       sessions,
+		OIDC:           oidcManager,
 	})
 	if err != nil {
 		if sqliteStore != nil {

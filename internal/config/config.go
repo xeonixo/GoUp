@@ -77,9 +77,7 @@ func Load() (Config, error) {
 	if cfg.Auth.OIDC.RedirectURL == "" {
 		cfg.Auth.OIDC.RedirectURL = cfg.BaseURL + "/auth/callback"
 	}
-	if cfg.SessionKey == "" {
-		cfg.SessionKey = "dev-session-key-change-me"
-	}
+	// SessionKey is optional here; app.go falls back to the DB-persisted key.
 
 	if err := validate(cfg); err != nil {
 		return Config{}, err
@@ -99,8 +97,9 @@ func validate(cfg Config) error {
 	if cfg.BaseURL == "" {
 		return errors.New("GOUP_BASE_URL must not be empty")
 	}
-	if len(cfg.SessionKey) < 16 {
-		return errors.New("GOUP_SESSION_KEY must be at least 16 characters")
+	// SessionKey length is only enforced when explicitly provided via env.
+	if cfg.SessionKey != "" && len(cfg.SessionKey) < 16 {
+		return errors.New("GOUP_SESSION_KEY must be at least 16 characters when set")
 	}
 
 	switch cfg.Auth.Mode {

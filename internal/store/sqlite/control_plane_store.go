@@ -8,17 +8,17 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"golang.org/x/crypto/bcrypt"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
 var tenantSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)
@@ -1072,6 +1072,21 @@ CREATE TABLE IF NOT EXISTS audit_events (
 	details TEXT NOT NULL DEFAULT '',
 	created_at DATETIME NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS control_plane_admins (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	username TEXT NOT NULL,
+	password_hash TEXT NOT NULL,
+	totp_secret_ciphertext TEXT NOT NULL DEFAULT '',
+	totp_enabled INTEGER NOT NULL DEFAULT 0,
+	created_at DATETIME NOT NULL,
+	updated_at DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS system_settings (
+	key TEXT PRIMARY KEY,
+	value TEXT NOT NULL DEFAULT ''
+);
 `
 
 func (s *ControlPlaneStore) initSchema(ctx context.Context) error {
@@ -1450,7 +1465,16 @@ WHERE tenant_id = ? AND provider_key = ?
 
 	plaintext, err := decryptProviderSecret(s.secretKey, ciphertext)
 	if err != nil {
-		return "", fmt.Errorf("decrypt auth provider secret: %w", err)
+		// Backward compatibility: older installs without an explicit
+		// GOUP_SESSION_KEY used the historical dev default value.
+		legacy := sha256.Sum256([]byte("dev-session-key-change-me"))
+		legacyPlaintext, legacyErr := decryptProviderSecret(legacy[:], ciphertext)
+		if legacyErr != nil {
+			return "", fmt.Errorf("decrypt auth provider secret: %w", err)
+		}
+		// Opportunistic migration to the currently configured key.
+		_ = s.UpdateAuthProviderSecret(ctx, tenantID, providerKey, legacyPlaintext)
+		return legacyPlaintext, nil
 	}
 
 	return plaintext, nil
@@ -2158,4 +2182,135 @@ WHERE user_id = ?
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+// ControlPlaneAdmin holds the single control-plane administrator account.
+type ControlPlaneAdmin struct {
+	Username     string
+	PasswordHash string
+	TOTPEnabled  bool
+	// TOTPSecret is the decrypted TOTP secret; only populated when needed.
+	TOTPSecret string
+}
+
+// IsSetupRequired returns true when no control-plane admin account exists yet.
+func (s *ControlPlaneStore) IsSetupRequired(ctx context.Context) (bool, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM control_plane_admins`).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("check control plane admin count: %w", err)
+	}
+	return count == 0, nil
+}
+
+// CreateControlPlaneAdmin creates the single admin account (id=1).
+func (s *ControlPlaneStore) CreateControlPlaneAdmin(ctx context.Context, username, passwordHash string) error {
+	now := time.Now().UTC()
+	_, err := s.db.ExecContext(ctx, `
+	INSERT INTO control_plane_admins (id, username, password_hash, totp_secret_ciphertext, totp_enabled, created_at, updated_at)
+	VALUES (1, ?, ?, '', 0, ?, ?)
+	`, username, passwordHash, now, now)
+	if err != nil {
+		return fmt.Errorf("create control plane admin: %w", err)
+	}
+	return nil
+}
+
+// GetControlPlaneAdmin returns the admin account, decrypting the TOTP secret if present.
+func (s *ControlPlaneStore) GetControlPlaneAdmin(ctx context.Context) (ControlPlaneAdmin, error) {
+	var a ControlPlaneAdmin
+	var totpCiphertext string
+	var totpEnabled int
+	err := s.db.QueryRowContext(ctx, `
+	SELECT username, password_hash, totp_secret_ciphertext, totp_enabled
+	FROM control_plane_admins WHERE id = 1
+	`).Scan(&a.Username, &a.PasswordHash, &totpCiphertext, &totpEnabled)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ControlPlaneAdmin{}, fmt.Errorf("no control plane admin configured")
+	}
+	if err != nil {
+		return ControlPlaneAdmin{}, fmt.Errorf("get control plane admin: %w", err)
+	}
+	a.TOTPEnabled = totpEnabled == 1
+	if totpCiphertext != "" {
+		decrypted, err := decryptProviderSecret(s.secretKey, totpCiphertext)
+		if err != nil {
+			// Graceful recovery path for legacy/migrated installations where
+			// the encryption key changed and existing TOTP material can no
+			// longer be decrypted. We keep username/password login possible
+			// and force a TOTP re-setup from the security page.
+			a.TOTPEnabled = false
+			a.TOTPSecret = ""
+			return a, nil
+		}
+		a.TOTPSecret = decrypted
+	}
+	return a, nil
+}
+
+// UpdateControlPlaneAdminPassword updates the bcrypt password hash.
+func (s *ControlPlaneStore) UpdateControlPlaneAdminPassword(ctx context.Context, passwordHash string) error {
+	now := time.Now().UTC()
+	_, err := s.db.ExecContext(ctx, `
+	UPDATE control_plane_admins SET password_hash = ?, updated_at = ? WHERE id = 1
+	`, passwordHash, now)
+	if err != nil {
+		return fmt.Errorf("update control plane admin password: %w", err)
+	}
+	return nil
+}
+
+// SetControlPlaneAdminTOTP stores (encrypts) the TOTP secret and sets the enabled flag.
+// Pass secret="" to clear the secret. Pass enabled=false to disable without clearing.
+func (s *ControlPlaneStore) SetControlPlaneAdminTOTP(ctx context.Context, secret string, enabled bool) error {
+	now := time.Now().UTC()
+	ciphertext := ""
+	if secret != "" {
+		encrypted, err := encryptProviderSecret(s.secretKey, secret)
+		if err != nil {
+			return fmt.Errorf("encrypt totp secret: %w", err)
+		}
+		ciphertext = encrypted
+	}
+	enabledInt := 0
+	if enabled {
+		enabledInt = 1
+	}
+	_, err := s.db.ExecContext(ctx, `
+	UPDATE control_plane_admins
+	SET totp_secret_ciphertext = ?, totp_enabled = ?, updated_at = ?
+	WHERE id = 1
+	`, ciphertext, enabledInt, now)
+	if err != nil {
+		return fmt.Errorf("set control plane admin totp: %w", err)
+	}
+	return nil
+}
+
+// GetOrCreateSessionKey returns the persistent session key from system_settings,
+// generating and storing a new random 32-byte key on first call.
+func (s *ControlPlaneStore) GetOrCreateSessionKey(ctx context.Context) (string, error) {
+	var value string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT value FROM system_settings WHERE key = 'session_key'`).Scan(&value)
+	if err == nil && strings.TrimSpace(value) != "" {
+		return strings.TrimSpace(value), nil
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("get session key: %w", err)
+	}
+	// Generate a new random key.
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("generate session key: %w", err)
+	}
+	keyHex := hex.EncodeToString(raw)
+	_, err = s.db.ExecContext(ctx, `
+	INSERT INTO system_settings (key, value) VALUES ('session_key', ?)
+	ON CONFLICT(key) DO UPDATE SET value = excluded.value
+	`, keyHex)
+	if err != nil {
+		return "", fmt.Errorf("store session key: %w", err)
+	}
+	return keyHex, nil
 }

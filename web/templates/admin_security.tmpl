@@ -1,0 +1,50 @@
+{{define "content"}}
+<section class="stack">
+  <article class="card stack">
+    <div>
+      <span class="eyebrow">Control Plane</span>
+      <h1>Sicherheit</h1>
+      <p class="muted">Benutzername: <strong>{{.AdminUsername}}</strong></p>
+      <p class="muted">TOTP: {{if .TOTPEnabled}}aktiv{{else}}inaktiv{{end}}</p>
+    </div>
+
+    {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+    {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
+
+    <form method="POST" action="/admin/security" class="stack login-form">
+      <label for="current_password">Aktuelles Passwort (Pflicht für Änderungen)</label>
+      <input id="current_password" name="current_password" type="password" required autocomplete="current-password">
+
+      <label for="new_password">Neues Passwort (optional)</label>
+      <input id="new_password" name="new_password" type="password" minlength="12" autocomplete="new-password">
+
+      <label for="new_password_confirm">Neues Passwort bestätigen</label>
+      <input id="new_password_confirm" name="new_password_confirm" type="password" minlength="12" autocomplete="new-password">
+
+      <label class="checkbox-row">
+        <input type="checkbox" name="enable_totp">
+        <span>Neue TOTP-Konfiguration aktivieren</span>
+      </label>
+
+      <label for="totp_secret">Neues TOTP Secret</label>
+      <input id="totp_secret" name="totp_secret" type="text" value="{{.TOTPSecret}}">
+
+      <label for="totp_uri">Neue TOTP URI</label>
+      <input id="totp_uri" type="text" value="{{.TOTPProvisioningURI}}" readonly>
+
+      <label for="totp_code">TOTP-Code zur Aktivierung</label>
+      <input id="totp_code" name="totp_code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code">
+
+      <button type="submit" class="button">Sicherheitseinstellungen speichern</button>
+    </form>
+
+    {{if .TOTPEnabled}}
+    <form method="POST" action="/admin/security/totp/disable" class="stack login-form">
+      <label for="disable_current_password">Aktuelles Passwort (zum Deaktivieren von TOTP)</label>
+      <input id="disable_current_password" name="current_password" type="password" required autocomplete="current-password">
+      <button type="submit" class="button button-secondary">TOTP deaktivieren</button>
+    </form>
+    {{end}}
+  </article>
+</section>
+{{end}}

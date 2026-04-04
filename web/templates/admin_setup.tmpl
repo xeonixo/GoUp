@@ -1,0 +1,36 @@
+{{define "content"}}
+<section class="login-shell">
+  <article class="card login-card stack">
+    <div>
+      <span class="eyebrow">Control Plane</span>
+      <h1>Erstkonfiguration</h1>
+      <p class="muted">Lege jetzt den Admin-Benutzer an. Der Session-Key wird automatisch erzeugt und sicher gespeichert.</p>
+    </div>
+
+    {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+    {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
+
+    <form method="POST" action="/admin/setup" class="stack login-form">
+      <label for="username">Benutzername</label>
+      <input id="username" name="username" type="text" required autocomplete="username">
+
+      <label for="password">Passwort</label>
+      <input id="password" name="password" type="password" required minlength="12" autocomplete="new-password">
+
+      <label for="password_confirm">Passwort bestätigen</label>
+      <input id="password_confirm" name="password_confirm" type="password" required minlength="12" autocomplete="new-password">
+
+      <label for="totp_secret">TOTP Secret</label>
+      <input id="totp_secret" name="totp_secret" type="text" value="{{.TOTPSecret}}" readonly>
+
+      <label for="totp_uri">TOTP URI (für QR-Generator)</label>
+      <input id="totp_uri" type="text" value="{{.TOTPProvisioningURI}}" readonly>
+
+      <label for="totp_code">TOTP-Code zur Bestätigung</label>
+      <input id="totp_code" name="totp_code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code">
+
+      <button type="submit" class="button">Onboarding abschließen</button>
+    </form>
+  </article>
+</section>
+{{end}}

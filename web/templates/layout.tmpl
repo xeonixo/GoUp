@@ -21,6 +21,10 @@
     <nav class="topbar-nav">
       {{if .ControlPlaneAdmin}}
       <span class="user-pill">Admin Access</span>
+      <a class="button button-secondary topbar-icon-link" href="/admin/security" aria-label="Control-Plane Sicherheit" title="Control-Plane Sicherheit">
+        <span aria-hidden="true">⚙️</span>
+        <span class="sr-only">Control-Plane Sicherheit</span>
+      </a>
       <a class="button button-secondary topbar-icon-link" href="/admin/access?logout=1" aria-label="Control-Plane Logout" title="Control-Plane Logout">
         <span aria-hidden="true">⎋</span>
         <span class="sr-only">Control-Plane Logout</span>

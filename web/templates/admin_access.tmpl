@@ -4,19 +4,22 @@
     <div>
       <span class="eyebrow">Control Plane</span>
       <h1>Admin-Zugriff</h1>
-      <p class="muted">Dieser Bereich hat einen separaten Zugriffsschlüssel und ist strikt von Tenant-Rechten getrennt.</p>
     </div>
 
     {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
     {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
 
-    <form method="POST" action="/admin/access" class="stack login-form">
-      <label for="access_key">Control-Plane Key</label>
-      <input id="access_key" name="access_key" type="password" required autocomplete="off">
+    <form method="POST" action="/admin/access" class="stack login-form" autocomplete="on">
+      <label for="username">Benutzername</label>
+      <input id="username" name="username" type="text" required autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false">
+      <label for="password">Passwort</label>
+      <input id="password" name="password" type="password" required autocomplete="current-password">
+      {{if .TOTPRequired}}
+      <label for="otp">TOTP-Code</label>
+      <input id="otp" name="otp" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code" autocapitalize="none" autocorrect="off" spellcheck="false">
+      {{end}}
       <button type="submit" class="button">Admin-Bereich öffnen</button>
     </form>
-
-    <p class="muted compact">Logout aus diesem Bereich: <a href="/admin/access?logout=1">Control-Plane-Session beenden</a></p>
   </article>
 </section>
 {{end}}

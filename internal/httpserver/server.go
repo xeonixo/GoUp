@@ -34,14 +34,15 @@ import (
 )
 
 type Dependencies struct {
-	Config        config.Config
-	Logger        *slog.Logger
-	Store         *store.Store
-	ControlStore  *store.ControlPlaneStore
-	TenantStores  *store.TenantStoreManager
-	DefaultTenant store.Tenant
-	Sessions      *auth.SessionManager
-	OIDC          *auth.OIDCManager
+	Config         config.Config
+	Logger         *slog.Logger
+	Store          *store.Store
+	ControlStore   *store.ControlPlaneStore
+	AdminCookieKey string
+	TenantStores   *store.TenantStoreManager
+	DefaultTenant  store.Tenant
+	Sessions       *auth.SessionManager
+	OIDC           *auth.OIDCManager
 }
 
 type Server struct {
@@ -49,6 +50,7 @@ type Server struct {
 	logger              *slog.Logger
 	store               *store.Store
 	controlStore        *store.ControlPlaneStore
+	adminCookieKey      string
 	tenantStores        *store.TenantStoreManager
 	defaultTenant       store.Tenant
 	sessions            *auth.SessionManager
@@ -73,53 +75,59 @@ type localLoginAttempt struct {
 }
 
 type pageData struct {
-	Title             string
-	User              *auth.UserSession
-	IsAdmin           bool
-	Stats             store.DashboardStats
-	Error             string
-	Notice            string
-	FormAction        string
-	BackURL           string
-	IsEdit            bool
-	SettingsMode      bool
-	AuthEnabled       bool
-	AuthDisabled      bool
-	OIDCTenantOnly    bool
-	TrendValue        string
-	TrendLabel        string
-	TrendRanges       []trendRangeOptionView
-	Monitors          []monitorView
-	MonitorGroups     []monitorGroupView
-	AvailableGroups   []string
-	Events            []notificationEventView
-	StateEvents       []monitorStateEventView
-	AdminTenants      []store.Tenant
-	AdminTenant       store.Tenant
-	AdminProviders    []store.AuthProvider
-	AdminProvider     store.AuthProvider
-	AdminLocalUsers   []store.LocalUser
-	AdminTenantUsers  []store.TenantUser
-	AdminLocalUser    store.LocalUser
-	ProfileUser       store.TenantUser
-	ProfileNotify     store.UserNotificationSettings
-	AdminAuditEvents  []store.AuditEvent
-	AuditAction       string
-	AuditActor        string
-	AuditTargetType   string
-	AuditActions      []string
-	AuditTargetTypes  []string
-	GlobalSMTP        store.GlobalSMTPSettings
-	ControlPlaneAdmin bool
-	AutoDBPath        string
-	TenantSlug        string
-	TenantName        string
-	AppBase           string
-	LoginProviders    []store.AuthProvider
-	HasLocalLogin     bool
-	HasOIDCLogin      bool
-	ResetEnabled      bool
-	ResetToken        string
+	Title               string
+	User                *auth.UserSession
+	IsAdmin             bool
+	Stats               store.DashboardStats
+	Error               string
+	Notice              string
+	FormAction          string
+	BackURL             string
+	IsEdit              bool
+	SettingsMode        bool
+	AuthEnabled         bool
+	AuthDisabled        bool
+	OIDCTenantOnly      bool
+	TrendValue          string
+	TrendLabel          string
+	TrendRanges         []trendRangeOptionView
+	Monitors            []monitorView
+	MonitorGroups       []monitorGroupView
+	AvailableGroups     []string
+	Events              []notificationEventView
+	StateEvents         []monitorStateEventView
+	AdminTenants        []store.Tenant
+	AdminTenant         store.Tenant
+	AdminProviders      []store.AuthProvider
+	AdminProvider       store.AuthProvider
+	AdminLocalUsers     []store.LocalUser
+	AdminTenantUsers    []store.TenantUser
+	AdminLocalUser      store.LocalUser
+	ProfileUser         store.TenantUser
+	ProfileNotify       store.UserNotificationSettings
+	AdminAuditEvents    []store.AuditEvent
+	AuditAction         string
+	AuditActor          string
+	AuditTargetType     string
+	AuditActions        []string
+	AuditTargetTypes    []string
+	GlobalSMTP          store.GlobalSMTPSettings
+	ControlPlaneAdmin   bool
+	AutoDBPath          string
+	TenantSlug          string
+	TenantName          string
+	AppBase             string
+	LoginProviders      []store.AuthProvider
+	HasLocalLogin       bool
+	HasOIDCLogin        bool
+	ResetEnabled        bool
+	ResetToken          string
+	AdminSetup          bool
+	AdminUsername       string
+	TOTPRequired        bool
+	TOTPEnabled         bool
+	TOTPSecret          string
+	TOTPProvisioningURI string
 }
 
 const (
@@ -293,6 +301,7 @@ func New(deps Dependencies) (*Server, error) {
 		logger:              deps.Logger,
 		store:               deps.Store,
 		controlStore:        deps.ControlStore,
+		adminCookieKey:      strings.TrimSpace(deps.AdminCookieKey),
 		tenantStores:        deps.TenantStores,
 		defaultTenant:       deps.DefaultTenant,
 		sessions:            deps.Sessions,
@@ -358,7 +367,10 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/auth/logout", s.handleLogout)
 
 	// Control-plane admin routes (separate access mechanism, no tenant session required)
+	mux.HandleFunc("/admin/setup", s.handleAdminSetup)
 	mux.HandleFunc("/admin/access", s.handleAdminAccess)
+	mux.Handle("/admin/security", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSecuritySettings)))
+	mux.Handle("/admin/security/totp/disable", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTOTPDisable)))
 	mux.Handle("/admin/", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminDashboard)))
 	mux.Handle("/admin/tenants", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantsList)))
 	mux.Handle("/admin/tenants/new", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantForm)))
@@ -1452,12 +1464,11 @@ func (s *Server) requireAdminWhenAuth(next http.Handler) http.Handler {
 
 func (s *Server) requireControlPlaneAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		key := strings.TrimSpace(s.cfg.ControlPlaneAdminKey)
-		if key == "" {
+		if strings.TrimSpace(s.adminCookieKey) == "" {
 			http.Error(w, "control-plane admin access is not configured", http.StatusForbidden)
 			return
 		}
-		if !s.hasControlPlaneAdminCookie(r, key) {
+		if !s.hasControlPlaneAdminCookie(r) {
 			http.Redirect(w, r, "/admin/access", http.StatusSeeOther)
 			return
 		}
@@ -1469,14 +1480,13 @@ func (s *Server) isControlPlaneAdminRequest(r *http.Request) bool {
 	if r == nil || !strings.HasPrefix(r.URL.Path, "/admin") {
 		return false
 	}
-	key := strings.TrimSpace(s.cfg.ControlPlaneAdminKey)
-	if key == "" {
+	if strings.TrimSpace(s.adminCookieKey) == "" {
 		return false
 	}
-	return s.hasControlPlaneAdminCookie(r, key)
+	return s.hasControlPlaneAdminCookie(r)
 }
 
-func (s *Server) hasControlPlaneAdminCookie(r *http.Request, key string) bool {
+func (s *Server) hasControlPlaneAdminCookie(r *http.Request) bool {
 	cookie, err := r.Cookie(controlPlaneCookie)
 	if err != nil || strings.TrimSpace(cookie.Value) == "" {
 		return false
@@ -1493,7 +1503,7 @@ func (s *Server) hasControlPlaneAdminCookie(r *http.Request, key string) bool {
 	if err != nil {
 		return false
 	}
-	h := hmac.New(sha256.New, []byte(key))
+	h := hmac.New(sha256.New, []byte(s.adminCookieKey))
 	_, _ = h.Write(payload)
 	if subtle.ConstantTimeCompare(providedSig, h.Sum(nil)) != 1 {
 		return false
@@ -1505,10 +1515,10 @@ func (s *Server) hasControlPlaneAdminCookie(r *http.Request, key string) bool {
 	return time.Now().UTC().Before(time.Unix(expiresUnix, 0))
 }
 
-func (s *Server) setControlPlaneAdminCookie(w http.ResponseWriter, key string) {
+func (s *Server) setControlPlaneAdminCookie(w http.ResponseWriter) {
 	expiresAt := time.Now().UTC().Add(controlPlaneAdminTTL)
 	payload := []byte(strconv.FormatInt(expiresAt.Unix(), 10))
-	h := hmac.New(sha256.New, []byte(key))
+	h := hmac.New(sha256.New, []byte(s.adminCookieKey))
 	_, _ = h.Write(payload)
 	token := base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 	http.SetCookie(w, &http.Cookie{
@@ -1724,7 +1734,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 }
 
 func parseTemplates() (map[string]*template.Template, error) {
-	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_provider_form", "admin_local_users", "admin_local_user_form", "settings_users", "settings_profile", "admin_access", "no_tenant"}
+	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_provider_form", "admin_local_users", "admin_local_user_form", "settings_users", "settings_profile", "admin_access", "admin_setup", "admin_security", "no_tenant"}
 	parsed := make(map[string]*template.Template, len(pages))
 	for _, page := range pages {
 		tmpl, err := template.ParseFS(web.FS, "templates/layout.tmpl", "templates/"+page+".tmpl")
@@ -3314,13 +3324,16 @@ func (s *Server) handleTenantAuthCallback(w http.ResponseWriter, r *http.Request
 	secret, err := s.controlStore.GetAuthProviderSecret(r.Context(), tenant.ID, provider.ProviderKey)
 	if err == nil {
 		tenantOIDCCfg.ClientSecret = secret
-	} else if provider.ProviderKey == "oidc-primary" && s.oidc != nil {
-		// legacy fallback for environments that still use GOUP_OIDC_CLIENT_SECRET only
-		tenantOIDCCfg.ClientSecret = s.cfg.Auth.OIDC.ClientSecret
 	} else {
-		s.logger.Error("client secret not available for provider", "tenant_id", tenant.ID, "provider_key", provider.ProviderKey, "error", err)
-		http.Error(w, "authentication not configured", http.StatusInternalServerError)
-		return
+		fallbackSecret := strings.TrimSpace(s.cfg.Auth.OIDC.ClientSecret)
+		if fallbackSecret != "" {
+			// Fallback for setups that still keep the OIDC client secret in env.
+			tenantOIDCCfg.ClientSecret = fallbackSecret
+		} else {
+			s.logger.Error("client secret not available for provider", "tenant_id", tenant.ID, "provider_key", provider.ProviderKey, "error", err)
+			http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("SSO ist nicht vollständig konfiguriert. Bitte Client-Secret im Admin-Provider neu speichern."), http.StatusSeeOther)
+			return
+		}
 	}
 
 	identity, err := s.dynamicOIDC.CompleteAuthForTenant(r.Context(), r, tenantOIDCCfg)
