@@ -13,39 +13,20 @@ import (
 )
 
 type Notifier struct {
-	controlStore  *store.ControlPlaneStore
-	endpointID    int64
-	tenantID      int64
-	recipients    []string
-	subjectPrefix string
-	baseURL       string
-	tenantSlug    string
+	controlStore *store.ControlPlaneStore
+	endpointID   int64
+	tenantID     int64
+	baseURL      string
+	tenantSlug   string
 }
 
-func NewNotifier(controlStore *store.ControlPlaneStore, endpointID int64, tenantID int64, recipients []string, subjectPrefix string, baseURL string, tenantSlug string) *Notifier {
-	cleaned := make([]string, 0, len(recipients))
-	seen := make(map[string]struct{}, len(recipients))
-	for _, recipient := range recipients {
-		value := strings.TrimSpace(recipient)
-		if value == "" {
-			continue
-		}
-		normalized := strings.ToLower(value)
-		if _, ok := seen[normalized]; ok {
-			continue
-		}
-		seen[normalized] = struct{}{}
-		cleaned = append(cleaned, value)
-	}
-
+func NewNotifier(controlStore *store.ControlPlaneStore, endpointID int64, tenantID int64, baseURL string, tenantSlug string) *Notifier {
 	return &Notifier{
-		controlStore:  controlStore,
-		endpointID:    endpointID,
-		tenantID:      tenantID,
-		recipients:    cleaned,
-		subjectPrefix: strings.TrimSpace(subjectPrefix),
-		baseURL:       strings.TrimRight(strings.TrimSpace(baseURL), "/"),
-		tenantSlug:    strings.TrimSpace(tenantSlug),
+		controlStore: controlStore,
+		endpointID:   endpointID,
+		tenantID:     tenantID,
+		baseURL:      strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		tenantSlug:   strings.TrimSpace(tenantSlug),
 	}
 }
 
@@ -89,9 +70,6 @@ func (n *Notifier) Notify(ctx context.Context, transition monitor.Transition) er
 	}
 
 	subject := fmt.Sprintf("[%s] %s: %s → %s", strings.ToUpper(string(transition.Current)), transition.Monitor.Name, strings.ToUpper(string(transition.Previous)), strings.ToUpper(string(transition.Current)))
-	if n.subjectPrefix != "" {
-		subject = strings.TrimSpace(n.subjectPrefix) + " " + subject
-	}
 
 	dashURL := n.baseURL + "/"
 	if n.tenantSlug != "" {
@@ -204,7 +182,6 @@ func (n *Notifier) resolveRecipients(ctx context.Context) ([]string, error) {
 	}
 
 	combined := append([]string{}, tenantRecipients...)
-	combined = append(combined, n.recipients...)
 
 	seen := make(map[string]struct{}, len(combined))
 	items := make([]string, 0, len(combined))

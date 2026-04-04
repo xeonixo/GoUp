@@ -6,11 +6,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}}</title>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="manifest" href="/site.webmanifest">
 </head>
 <body>
+  {{if not .HideTopbar}}
   <header class="topbar">
     <div class="topbar-main">
-      <a class="brand" href="{{if .AppBase}}{{.AppBase}}{{else}}/{{end}}">GoUp</a>
+      <a class="brand" href="{{if .AppBase}}{{.AppBase}}{{else}}/{{end}}">
+        <img class="brand-logo" src="/assets/logo_goup.svg" alt="GoUp Logo">
+      </a>
       {{if .ControlPlaneAdmin}}
       <span class="subtitle">Control Plane</span>
       {{else if and .User .User.TenantSlug}}
@@ -42,6 +50,7 @@
       {{end}}
     </nav>
   </header>
+  {{end}}
   <main class="container">
     {{template "content" .}}
   </main>

@@ -26,7 +26,6 @@ type Config struct {
 	SSOSecretKey         string
 	ControlPlaneAdminKey string
 	Auth                 AuthConfig
-	Notify               NotifyConfig
 }
 
 type AuthConfig struct {
@@ -39,11 +38,6 @@ type OIDCConfig struct {
 	ClientID     string
 	ClientSecret string
 	RedirectURL  string
-}
-
-type NotifyConfig struct {
-	EmailRecipients    []string
-	EmailSubjectPrefix string
 }
 
 func Load() (Config, error) {
@@ -64,10 +58,6 @@ func Load() (Config, error) {
 				ClientSecret: os.Getenv("GOUP_OIDC_CLIENT_SECRET"),
 				RedirectURL:  strings.TrimRight(os.Getenv("GOUP_OIDC_REDIRECT_URL"), "/"),
 			},
-		},
-		Notify: NotifyConfig{
-			EmailRecipients:    parseCSVEnv("GOUP_NOTIFY_EMAIL_TO"),
-			EmailSubjectPrefix: strings.TrimSpace(os.Getenv("GOUP_NOTIFY_EMAIL_SUBJECT_PREFIX")),
 		},
 	}
 
@@ -133,28 +123,4 @@ func envOrDefault(key, fallback string) string {
 	return fallback
 }
 
-func parseCSVEnv(key string) []string {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return nil
-	}
-	parts := strings.Split(raw, ",")
-	items := make([]string, 0, len(parts))
-	seen := make(map[string]struct{}, len(parts))
-	for _, part := range parts {
-		value := strings.TrimSpace(part)
-		if value == "" {
-			continue
-		}
-		normalized := strings.ToLower(value)
-		if _, ok := seen[normalized]; ok {
-			continue
-		}
-		seen[normalized] = struct{}{}
-		items = append(items, value)
-	}
-	if len(items) == 0 {
-		return nil
-	}
-	return items
-}
+

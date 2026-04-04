@@ -72,7 +72,7 @@ h3 {
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
-  padding: 1rem 1.5rem;
+  padding: 0.45rem 0.9rem;
   border-bottom: 1px solid var(--border);
   background: rgba(11, 16, 32, 0.98);
   backdrop-filter: none;
@@ -83,8 +83,8 @@ h3 {
 
 .topbar-main {
   display: flex;
-  align-items: baseline;
-  gap: 0.3rem;
+  align-items: center;
+  gap: 0.2rem;
 }
 
 .topbar-dashboard-actions {
@@ -127,10 +127,19 @@ h3 {
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text);
   text-decoration: none;
   font-weight: 700;
   font-size: 1.1rem;
+}
+
+.brand-logo {
+  width: 92px;
+  height: auto;
+  display: block;
 }
 
 .subtitle {
@@ -233,12 +242,57 @@ h3 {
 
 .login-shell {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 1rem;
+  padding-top: 1.35rem;
 }
 
 .login-card {
   width: min(560px, 100%);
   background: linear-gradient(170deg, rgba(22, 32, 58, 0.96), rgba(17, 23, 42, 0.96));
+  margin-top: 0;
+  padding: 1.35rem 1.2rem 1.1rem;
+}
+
+.login-card.stack {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: var(--text);
+  margin: 0;
+}
+
+.login-brand-logo {
+  width: clamp(170px, 27vw, 240px);
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.login-card h1 {
+  margin: 0;
+  font-size: 1.55rem;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+}
+
+.login-card .eyebrow {
+  margin-bottom: 0.45rem;
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+}
+
+.login-card .muted {
+  font-size: 0.95rem;
+  line-height: 1.45;
 }
 
 .login-actions {
@@ -246,9 +300,51 @@ h3 {
   gap: 0.7rem;
 }
 
+.login-actions .button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
 .login-form {
   display: grid;
-  gap: 0.65rem;
+  gap: 0.62rem;
+}
+
+.login-form label {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.login-form .button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.login-form .button-secondary {
+  width: auto;
+  justify-self: center;
+  padding: 0.25rem 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.login-form .button-secondary:hover {
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  filter: none;
 }
 
 .login-divider {
@@ -289,9 +385,11 @@ h3 {
 
 .notice {
   border-radius: 12px;
-  padding: 0.85rem 1rem;
+  padding: 0.75rem 0.9rem;
   border: 1px solid var(--border);
   background: var(--surface-muted);
+  font-size: 0.94rem;
+  line-height: 1.4;
 }
 
 .notice.warning {
@@ -311,13 +409,17 @@ h3 {
 }
 
 .button {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 10px;
   padding: 0.62rem 0.85rem;
   background: #72cdf8;
   color: #07111f;
   text-decoration: none;
   font-weight: 700;
+  font-size: 0.95rem;
+  line-height: 1.2;
   border: 1px solid rgba(125, 211, 252, 0.35);
 }
 

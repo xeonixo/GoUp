@@ -167,7 +167,7 @@ func New(ctx context.Context) (*App, error) {
 			logger,
 			ts,
 			matrixnotify.NewTenantNotifier(controlStore, matrixEndpointID, tenant.ID),
-			emailnotify.NewNotifier(controlStore, emailEndpointID, tenant.ID, nil, cfg.Notify.EmailSubjectPrefix, cfg.BaseURL, tenant.Slug),
+			emailnotify.NewNotifier(controlStore, emailEndpointID, tenant.ID, cfg.BaseURL, tenant.Slug),
 		))
 		logger.Info("runner initialized for tenant", "tenant", tenant.Slug)
 	}

@@ -15,17 +15,20 @@ import (
 	"html/template"
 	"io/fs"
 	"log/slog"
+	"mime"
 	"net"
 	"net/http"
 	"net/smtp"
 	"net/url"
 	"os"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	webassets "goup/assets"
 	"goup/internal/auth"
 	"goup/internal/config"
 	"goup/internal/monitor"
@@ -76,6 +79,7 @@ type localLoginAttempt struct {
 
 type pageData struct {
 	Title               string
+	HideTopbar          bool
 	User                *auth.UserSession
 	IsAdmin             bool
 	Stats               store.DashboardStats
@@ -359,7 +363,24 @@ func (s *Server) routes() http.Handler {
 	if err != nil {
 		panic(err)
 	}
+	assetsFS, err := fs.Sub(webassets.FS, ".")
+	if err != nil {
+		panic(err)
+	}
+	faviconFS, err := fs.Sub(webassets.FS, "favicon")
+	if err != nil {
+		panic(err)
+	}
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
+	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assetsFS))))
+	mux.Handle("/favicon/", http.StripPrefix("/favicon/", http.FileServer(http.FS(faviconFS))))
+	mux.HandleFunc("/favicon.ico", serveEmbeddedFile(faviconFS, "favicon.ico"))
+	mux.HandleFunc("/favicon-16x16.png", serveEmbeddedFile(faviconFS, "favicon-16x16.png"))
+	mux.HandleFunc("/favicon-32x32.png", serveEmbeddedFile(faviconFS, "favicon-32x32.png"))
+	mux.HandleFunc("/apple-touch-icon.png", serveEmbeddedFile(faviconFS, "apple-touch-icon.png"))
+	mux.HandleFunc("/android-chrome-192x192.png", serveEmbeddedFile(faviconFS, "android-chrome-192x192.png"))
+	mux.HandleFunc("/android-chrome-512x512.png", serveEmbeddedFile(faviconFS, "android-chrome-512x512.png"))
+	mux.HandleFunc("/site.webmanifest", serveEmbeddedFile(faviconFS, "site.webmanifest"))
 	mux.HandleFunc("/", s.handleRoot)
 	mux.HandleFunc("/healthz", s.handleHealthz)
 	mux.HandleFunc("/auth/login", s.handleGlobalAuthDisabled)
@@ -392,6 +413,35 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("/admin/settings/smtp/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSMTPSettingsSave)))
 
 	return s.logging(s.securityHeaders(s.requireSameOrigin(mux)))
+}
+
+func serveEmbeddedFile(fsys fs.FS, fileName string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		payload, err := fs.ReadFile(fsys, fileName)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		contentType := mime.TypeByExtension(path.Ext(fileName))
+		if contentType == "" {
+			contentType = http.DetectContentType(payload)
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		_, _ = w.Write(payload)
+	}
 }
 
 func (s *Server) handleGlobalAuthDisabled(w http.ResponseWriter, r *http.Request) {
@@ -1683,6 +1733,11 @@ func tenantHasAppDatabase(path string) bool {
 }
 
 func (s *Server) render(w http.ResponseWriter, name string, data pageData) {
+	switch name {
+	case "login", "admin_access", "admin_setup":
+		data.HideTopbar = true
+	}
+
 	tmpl, ok := s.templates[name]
 	if !ok {
 		http.Error(w, "template not found", http.StatusInternalServerError)
