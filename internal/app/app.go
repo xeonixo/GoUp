@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -86,35 +85,14 @@ func New(ctx context.Context) (*App, error) {
 		}
 	}
 
-	matrixClient := matrixnotify.New(cfg.Matrix)
-	matrixConfigJSON, marshalErr := json.Marshal(map[string]string{
-		"homeserver_url": cfg.Matrix.HomeserverURL,
-		"room_id":        cfg.Matrix.RoomID,
-	})
-	if marshalErr != nil {
-		sqliteStore.Close()
-		controlStore.Close()
-		return nil, fmt.Errorf("marshal matrix endpoint config: %w", marshalErr)
-	}
-
-	matrixEndpointID, err := sqliteStore.EnsureSystemNotificationEndpoint(ctx, "matrix", "system-matrix", string(matrixConfigJSON), matrixClient.Enabled())
+	matrixEndpointID, err := sqliteStore.EnsureSystemNotificationEndpoint(ctx, "matrix", "user-matrix", `{}`, true)
 	if err != nil {
 		sqliteStore.Close()
 		controlStore.Close()
 		return nil, fmt.Errorf("ensure matrix endpoint: %w", err)
 	}
 
-	emailEnabled := len(cfg.Notify.EmailRecipients) > 0
-	emailConfigJSON, marshalErr := json.Marshal(map[string]any{
-		"recipients": cfg.Notify.EmailRecipients,
-	})
-	if marshalErr != nil {
-		sqliteStore.Close()
-		controlStore.Close()
-		return nil, fmt.Errorf("marshal email endpoint config: %w", marshalErr)
-	}
-
-	emailEndpointID, err := sqliteStore.EnsureSystemNotificationEndpoint(ctx, "email", "system-email", string(emailConfigJSON), emailEnabled)
+	emailEndpointID, err := sqliteStore.EnsureSystemNotificationEndpoint(ctx, "email", "user-email", `{}`, true)
 	if err != nil {
 		sqliteStore.Close()
 		controlStore.Close()
@@ -125,8 +103,8 @@ func New(ctx context.Context) (*App, error) {
 	runner := monitorrunner.NewRunner(
 		logger,
 		sqliteStore,
-		matrixnotify.NewNotifier(matrixClient, matrixEndpointID),
-		emailnotify.NewNotifier(controlStore, emailEndpointID, defaultTenant.ID, cfg.Notify.EmailRecipients, cfg.Notify.EmailSubjectPrefix),
+		matrixnotify.NewTenantNotifier(controlStore, matrixEndpointID, defaultTenant.ID),
+		emailnotify.NewNotifier(controlStore, emailEndpointID, defaultTenant.ID, nil, cfg.Notify.EmailSubjectPrefix),
 	)
 
 	server, err := httpserver.New(httpserver.Dependencies{
@@ -192,7 +170,7 @@ func (a *App) runMaintenanceOnce(ctx context.Context) {
 		return
 	}
 
-	if !result.BackfilledHourlyRollups && !result.Optimized && result.DeletedRawResults == 0 {
+	if !result.BackfilledHourlyRollups && !result.Optimized && result.DeletedRawResults == 0 && result.DeletedHourlyRollups == 0 {
 		return
 	}
 
@@ -200,6 +178,7 @@ func (a *App) runMaintenanceOnce(ctx context.Context) {
 		"database maintenance completed",
 		"hourly_rollups_backfilled", result.BackfilledHourlyRollups,
 		"raw_results_deleted", result.DeletedRawResults,
+		"hourly_rollups_deleted", result.DeletedHourlyRollups,
 		"optimized", result.Optimized,
 	)
 }

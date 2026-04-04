@@ -10,17 +10,20 @@ import (
 )
 
 const (
-	rawResultRetentionDays         = 90
+	rawResultRetentionDays         = 30
+	hourlyRollupRetentionDays      = 365
 	maintenanceInterval            = 6 * time.Hour
 	retentionRunInterval           = 24 * time.Hour
 	hourlyRollupBackfillSettingKey = "hourly_rollup_backfill_v1_completed_at"
 	lastRetentionRunSettingKey     = "last_raw_retention_run_at"
+	lastRollupRetentionRunSetting  = "last_hourly_rollup_retention_run_at"
 	lastOptimizeMonthSettingKey    = "last_sqlite_optimize_month"
 )
 
 type MaintenanceResult struct {
 	BackfilledHourlyRollups bool
 	DeletedRawResults       int64
+	DeletedHourlyRollups    int64
 	Optimized               bool
 }
 
@@ -52,6 +55,12 @@ func (s *Store) RunMaintenance(ctx context.Context, now time.Time) (MaintenanceR
 		return result, err
 	}
 	result.DeletedRawResults = deleted
+
+	deletedRollups, err := s.pruneHourlyRollupsIfDue(ctx, now)
+	if err != nil {
+		return result, err
+	}
+	result.DeletedHourlyRollups = deletedRollups
 
 	optimized, err := s.optimizeIfDue(ctx, now)
 	if err != nil {
@@ -190,6 +199,36 @@ WHERE checked_at < ?
 
 	if err := s.setSetting(ctx, lastRetentionRunSettingKey, now.Format(time.RFC3339Nano)); err != nil {
 		return 0, fmt.Errorf("store retention run timestamp: %w", err)
+	}
+
+	return deleted, nil
+}
+
+func (s *Store) pruneHourlyRollupsIfDue(ctx context.Context, now time.Time) (int64, error) {
+	due, err := s.shouldRunAfter(ctx, lastRollupRetentionRunSetting, retentionRunInterval, now)
+	if err != nil {
+		return 0, fmt.Errorf("check rollup retention schedule: %w", err)
+	}
+	if !due {
+		return 0, nil
+	}
+
+	cutoff := now.AddDate(0, 0, -hourlyRollupRetentionDays)
+	result, err := s.db.ExecContext(ctx, `
+DELETE FROM monitor_hourly_rollups
+WHERE hour_bucket < ?
+`, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("delete expired monitor rollups: %w", err)
+	}
+
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("read deleted monitor rollup rows: %w", err)
+	}
+
+	if err := s.setSetting(ctx, lastRollupRetentionRunSetting, now.Format(time.RFC3339Nano)); err != nil {
+		return 0, fmt.Errorf("store rollup retention run timestamp: %w", err)
 	}
 
 	return deleted, nil

@@ -62,7 +62,13 @@ func (s *Store) DashboardStats(ctx context.Context) (DashboardStats, error) {
 	}{
 		{&stats.MonitorCount, `SELECT COUNT(*) FROM monitors`},
 		{&stats.EnabledMonitorCount, `SELECT COUNT(*) FROM monitors WHERE enabled = 1`},
-		{&stats.OpenIncidentCount, `SELECT COUNT(*) FROM incidents WHERE resolved_at IS NULL`},
+		{&stats.OpenIncidentCount, `
+SELECT COUNT(*)
+FROM incidents i
+JOIN monitors m ON m.id = i.monitor_id
+WHERE i.resolved_at IS NULL
+  AND m.enabled = 1
+`},
 	}
 
 	for _, item := range queries {

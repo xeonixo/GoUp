@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -82,6 +83,22 @@ type TenantUser struct {
 	LastLoginAt         *time.Time
 	HasLocalCredentials bool
 	HasOIDCIdentity     bool
+}
+
+type UserNotificationSettings struct {
+	EmailEnabled       bool
+	MatrixEnabled      bool
+	MatrixHomeserver   string
+	MatrixRoomID       string
+	MatrixAccessToken  string
+	HasLocalCredentials bool
+}
+
+type MatrixNotificationTarget struct {
+	UserID        int64
+	HomeserverURL string
+	RoomID        string
+	AccessToken   string
 }
 
 type GlobalSMTPSettings struct {
@@ -1074,6 +1091,70 @@ func (s *ControlPlaneStore) initSchema(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, controlPlaneSchema); err != nil {
 		return fmt.Errorf("initialize control-plane schema: %w", err)
 	}
+	if err := s.ensureTenantMembershipNotificationColumn(ctx); err != nil {
+		return err
+	}
+	if err := s.ensureUserNotificationChannelsTable(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *ControlPlaneStore) ensureTenantMembershipNotificationColumn(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(tenant_memberships)`)
+	if err != nil {
+		return fmt.Errorf("inspect tenant_memberships columns: %w", err)
+	}
+	defer rows.Close()
+
+	hasColumn := false
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			return fmt.Errorf("scan tenant_memberships column: %w", err)
+		}
+		if name == "notifications_email_enabled" {
+			hasColumn = true
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate tenant_memberships columns: %w", err)
+	}
+
+	if hasColumn {
+		return nil
+	}
+
+	if _, err := s.db.ExecContext(ctx, `ALTER TABLE tenant_memberships ADD COLUMN notifications_email_enabled INTEGER NOT NULL DEFAULT 1`); err != nil {
+		return fmt.Errorf("add tenant_memberships notifications_email_enabled column: %w", err)
+	}
+	return nil
+}
+
+func (s *ControlPlaneStore) ensureUserNotificationChannelsTable(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS user_notification_channels (
+	tenant_id INTEGER NOT NULL,
+	user_id INTEGER NOT NULL,
+	kind TEXT NOT NULL,
+	enabled INTEGER NOT NULL DEFAULT 0,
+	config_json TEXT NOT NULL DEFAULT '{}',
+	secret_ciphertext TEXT NOT NULL DEFAULT '',
+	created_at DATETIME NOT NULL,
+	updated_at DATETIME NOT NULL,
+	PRIMARY KEY (tenant_id, user_id, kind),
+	FOREIGN KEY(tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+	FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+)
+`); err != nil {
+		return fmt.Errorf("create user notification channels table: %w", err)
+	}
 	return nil
 }
 
@@ -1700,6 +1781,7 @@ JOIN users u ON u.id = tm.user_id
 JOIN tenants t ON t.id = tm.tenant_id
 WHERE tm.tenant_id = ?
 	AND t.active = 1
+	AND tm.notifications_email_enabled = 1
 	AND trim(u.email) <> ''
 ORDER BY lower(trim(u.email)) ASC
 `, tenantID)
@@ -1724,4 +1806,311 @@ ORDER BY lower(trim(u.email)) ASC
 	}
 
 	return items, nil
+}
+
+func (s *ControlPlaneStore) GetTenantUser(ctx context.Context, tenantID, userID int64) (TenantUser, error) {
+	row := s.db.QueryRowContext(ctx, `
+SELECT
+	u.id,
+	tm.tenant_id,
+	COALESCE(lc.login_name, ''),
+	u.email,
+	u.display_name,
+	tm.role,
+	u.is_super_admin,
+	u.last_login_at,
+	CASE WHEN lc.user_id IS NULL THEN 0 ELSE 1 END AS has_local_credentials,
+	CASE WHEN EXISTS (SELECT 1 FROM user_identities ui WHERE ui.user_id = u.id) THEN 1 ELSE 0 END AS has_oidc_identity
+FROM tenant_memberships tm
+JOIN users u ON u.id = tm.user_id
+LEFT JOIN local_credentials lc ON lc.user_id = u.id
+WHERE tm.tenant_id = ? AND u.id = ?
+LIMIT 1
+`, tenantID, userID)
+	item, err := scanTenantUser(row)
+	if err != nil {
+		return TenantUser{}, err
+	}
+	return item, nil
+}
+
+func (s *ControlPlaneStore) GetUserNotificationSettings(ctx context.Context, tenantID, userID int64) (UserNotificationSettings, error) {
+	if tenantID <= 0 || userID <= 0 {
+		return UserNotificationSettings{}, fmt.Errorf("tenant id and user id are required")
+	}
+
+	var settings UserNotificationSettings
+	var emailEnabled int
+	var hasLocal int
+	err := s.db.QueryRowContext(ctx, `
+SELECT tm.notifications_email_enabled,
+	CASE WHEN lc.user_id IS NULL THEN 0 ELSE 1 END AS has_local_credentials
+FROM tenant_memberships tm
+LEFT JOIN local_credentials lc ON lc.user_id = tm.user_id
+WHERE tm.tenant_id = ? AND tm.user_id = ?
+LIMIT 1
+`, tenantID, userID).Scan(&emailEnabled, &hasLocal)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return UserNotificationSettings{}, sql.ErrNoRows
+		}
+		return UserNotificationSettings{}, fmt.Errorf("load email notification setting: %w", err)
+	}
+	settings.EmailEnabled = emailEnabled == 1
+	settings.HasLocalCredentials = hasLocal == 1
+
+	var (
+		enabled          int
+		configJSON       string
+		secretCiphertext string
+	)
+	err = s.db.QueryRowContext(ctx, `
+SELECT enabled, config_json, secret_ciphertext
+FROM user_notification_channels
+WHERE tenant_id = ? AND user_id = ? AND kind = 'matrix'
+LIMIT 1
+`, tenantID, userID).Scan(&enabled, &configJSON, &secretCiphertext)
+	if err != nil {
+		if err != sql.ErrNoRows {
+			return UserNotificationSettings{}, fmt.Errorf("load matrix notification setting: %w", err)
+		}
+		return settings, nil
+	}
+
+	var parsed struct {
+		HomeserverURL string `json:"homeserver_url"`
+		RoomID        string `json:"room_id"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(configJSON)), &parsed); err == nil {
+		settings.MatrixHomeserver = strings.TrimSpace(parsed.HomeserverURL)
+		settings.MatrixRoomID = strings.TrimSpace(parsed.RoomID)
+	}
+	if strings.TrimSpace(secretCiphertext) != "" && len(s.secretKey) > 0 {
+		if token, err := decryptProviderSecret(s.secretKey, secretCiphertext); err == nil {
+			settings.MatrixAccessToken = token
+		}
+	}
+	settings.MatrixEnabled = enabled == 1
+
+	return settings, nil
+}
+
+func (s *ControlPlaneStore) SaveUserNotificationSettings(ctx context.Context, tenantID, userID int64, emailEnabled bool, matrixEnabled bool, homeserverURL, roomID, accessToken string) error {
+	if tenantID <= 0 || userID <= 0 {
+		return fmt.Errorf("tenant id and user id are required")
+	}
+
+	homeserverURL = strings.TrimSpace(strings.TrimRight(homeserverURL, "/"))
+	roomID = strings.TrimSpace(roomID)
+	accessToken = strings.TrimSpace(accessToken)
+	now := time.Now().UTC()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin save user notification settings transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(ctx, `
+UPDATE tenant_memberships
+SET notifications_email_enabled = ?, updated_at = ?
+WHERE tenant_id = ? AND user_id = ?
+`, boolToInt(emailEnabled), now, tenantID, userID)
+	if err != nil {
+		return fmt.Errorf("update email notification opt-in: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update email notification rows affected: %w", err)
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+
+	configJSONBytes, err := json.Marshal(map[string]string{
+		"homeserver_url": homeserverURL,
+		"room_id":        roomID,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal matrix config: %w", err)
+	}
+
+	var secretCiphertext string
+	if accessToken != "" {
+		if len(s.secretKey) == 0 {
+			return fmt.Errorf("secret key is not configured")
+		}
+		sealed, err := encryptProviderSecret(s.secretKey, accessToken)
+		if err != nil {
+			return fmt.Errorf("encrypt matrix access token: %w", err)
+		}
+		secretCiphertext = sealed
+	} else {
+		err = tx.QueryRowContext(ctx, `
+SELECT secret_ciphertext
+FROM user_notification_channels
+WHERE tenant_id = ? AND user_id = ? AND kind = 'matrix'
+LIMIT 1
+`, tenantID, userID).Scan(&secretCiphertext)
+		if err != nil && err != sql.ErrNoRows {
+			return fmt.Errorf("load existing matrix access token: %w", err)
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO user_notification_channels (tenant_id, user_id, kind, enabled, config_json, secret_ciphertext, created_at, updated_at)
+VALUES (?, ?, 'matrix', ?, ?, ?, ?, ?)
+ON CONFLICT(tenant_id, user_id, kind) DO UPDATE SET
+	enabled = excluded.enabled,
+	config_json = excluded.config_json,
+	secret_ciphertext = excluded.secret_ciphertext,
+	updated_at = excluded.updated_at
+`, tenantID, userID, boolToInt(matrixEnabled), string(configJSONBytes), secretCiphertext, now, now); err != nil {
+		return fmt.Errorf("upsert matrix notification channel: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit save user notification settings: %w", err)
+	}
+	return nil
+}
+
+func (s *ControlPlaneStore) ListTenantMatrixNotificationTargets(ctx context.Context, tenantID int64) ([]MatrixNotificationTarget, error) {
+	if tenantID <= 0 {
+		return nil, fmt.Errorf("tenant id is required")
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT unc.user_id, unc.config_json, unc.secret_ciphertext
+FROM user_notification_channels unc
+JOIN tenant_memberships tm ON tm.tenant_id = unc.tenant_id AND tm.user_id = unc.user_id
+JOIN tenants t ON t.id = tm.tenant_id
+WHERE unc.tenant_id = ?
+	AND unc.kind = 'matrix'
+	AND unc.enabled = 1
+	AND t.active = 1
+ORDER BY unc.user_id ASC
+`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("query tenant matrix notification targets: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]MatrixNotificationTarget, 0)
+	for rows.Next() {
+		var (
+			userID           int64
+			configJSON       string
+			secretCiphertext string
+		)
+		if err := rows.Scan(&userID, &configJSON, &secretCiphertext); err != nil {
+			return nil, fmt.Errorf("scan matrix notification target: %w", err)
+		}
+		if strings.TrimSpace(secretCiphertext) == "" || len(s.secretKey) == 0 {
+			continue
+		}
+		token, err := decryptProviderSecret(s.secretKey, secretCiphertext)
+		if err != nil {
+			continue
+		}
+		var cfg struct {
+			HomeserverURL string `json:"homeserver_url"`
+			RoomID        string `json:"room_id"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimSpace(configJSON)), &cfg); err != nil {
+			continue
+		}
+		homeserverURL := strings.TrimSpace(cfg.HomeserverURL)
+		roomID := strings.TrimSpace(cfg.RoomID)
+		if homeserverURL == "" || roomID == "" || strings.TrimSpace(token) == "" {
+			continue
+		}
+		items = append(items, MatrixNotificationTarget{
+			UserID:        userID,
+			HomeserverURL: homeserverURL,
+			RoomID:        roomID,
+			AccessToken:   token,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate matrix notification targets: %w", err)
+	}
+
+	return items, nil
+}
+
+func (s *ControlPlaneStore) UpdateUserProfileForTenant(ctx context.Context, tenantID, userID int64, email, displayName string) error {
+	email = strings.TrimSpace(email)
+	displayName = strings.TrimSpace(displayName)
+
+	result, err := s.db.ExecContext(ctx, `
+UPDATE users
+SET email = ?, display_name = ?, updated_at = ?
+WHERE id = ?
+	AND EXISTS (
+		SELECT 1
+		FROM tenant_memberships tm
+		WHERE tm.user_id = users.id AND tm.tenant_id = ?
+	)
+`, email, displayName, time.Now().UTC(), userID, tenantID)
+	if err != nil {
+		return fmt.Errorf("update user profile: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update user profile rows affected: %w", err)
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *ControlPlaneStore) ChangeOwnLocalPassword(ctx context.Context, tenantID, userID int64, currentPassword, newPassword string) error {
+	currentPassword = strings.TrimSpace(currentPassword)
+	newPassword = strings.TrimSpace(newPassword)
+	if currentPassword == "" || newPassword == "" {
+		return fmt.Errorf("current password and new password are required")
+	}
+
+	var passwordHash string
+	err := s.db.QueryRowContext(ctx, `
+SELECT lc.password_hash
+FROM local_credentials lc
+JOIN tenant_memberships tm ON tm.user_id = lc.user_id
+WHERE lc.user_id = ? AND tm.tenant_id = ?
+LIMIT 1
+`, userID, tenantID).Scan(&passwordHash)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return sql.ErrNoRows
+		}
+		return fmt.Errorf("load current local password hash: %w", err)
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(currentPassword)); err != nil {
+		return fmt.Errorf("current password is invalid")
+	}
+
+	newPasswordHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash new password: %w", err)
+	}
+
+	result, err := s.db.ExecContext(ctx, `
+UPDATE local_credentials
+SET password_hash = ?, updated_at = ?
+WHERE user_id = ?
+`, string(newPasswordHash), time.Now().UTC(), userID)
+	if err != nil {
+		return fmt.Errorf("update local password: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update local password rows affected: %w", err)
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }

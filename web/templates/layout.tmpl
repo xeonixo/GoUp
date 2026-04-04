@@ -9,17 +9,25 @@
 </head>
 <body>
   <header class="topbar">
-    <div>
+    <div class="topbar-main">
       <a class="brand" href="{{if .AppBase}}{{.AppBase}}{{else}}/{{end}}">GoUp</a>
-      <span class="subtitle">leichtes Uptime-Monitoring{{if and .User .User.TenantSlug}} · Tenant: {{if .User.TenantName}}{{.User.TenantName}}{{else}}{{.User.TenantSlug}}{{end}}{{end}}</span>
+      {{if and .User .User.TenantSlug}}
+      <span class="subtitle">Tenant: {{if .User.TenantName}}{{.User.TenantName}}{{else}}{{.User.TenantSlug}}{{end}}</span>
+      {{end}}
+      <span class="subtitle" id="client-timezone-info" hidden></span>
     </div>
-    <nav>
+    {{block "topbar_actions" .}}{{end}}
+    <nav class="topbar-nav">
       {{if .User}}
       <span class="user-pill">{{if .User.Name}}{{.User.Name}}{{else}}{{.User.Email}}{{end}}</span>
-      {{if or .User.SuperAdmin (eq .User.Role "admin")}}
-      <a class="button button-secondary" href="{{.AppBase}}settings/users">Settings</a>
-      {{end}}
-      <a class="button button-secondary" href="/auth/logout">Logout</a>
+      <a class="button button-secondary topbar-icon-link" href="{{.AppBase}}settings/profile" aria-label="Settings" title="Settings">
+        <span aria-hidden="true">⚙️</span>
+        <span class="sr-only">Settings</span>
+      </a>
+      <a class="button button-secondary topbar-icon-link" href="/auth/logout" aria-label="Logout" title="Logout">
+        <span aria-hidden="true">⎋</span>
+        <span class="sr-only">Logout</span>
+      </a>
       {{end}}
     </nav>
   </header>
@@ -79,6 +87,15 @@
           if (isNaN(d.getTime())) continue;
           el.textContent = d.toLocaleString();
           el.title = raw;
+        }
+
+        var timezoneInfo = document.getElementById("client-timezone-info");
+        if (timezoneInfo) {
+          var timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          if (timezone) {
+            timezoneInfo.textContent = "TZ: " + timezone;
+            timezoneInfo.hidden = false;
+          }
         }
       });
     })();

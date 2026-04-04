@@ -165,6 +165,66 @@ func (s *Store) DeleteMonitor(ctx context.Context, id int64) error {
 	return nil
 }
 
+func (s *Store) DeleteMonitorGroup(ctx context.Context, groupName string) error {
+	groupName = strings.TrimSpace(groupName)
+	if groupName == "" {
+		return errors.New("group name is required")
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin delete monitor group transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM monitors WHERE TRIM(group_name) = ?`, groupName); err != nil {
+		return fmt.Errorf("delete monitors in group: %w", err)
+	}
+
+	result, err := tx.ExecContext(ctx, `DELETE FROM monitor_groups WHERE name = ?`, groupName)
+	if err != nil {
+		return fmt.Errorf("delete monitor group metadata: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete monitor group rows affected: %w", err)
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete monitor group transaction: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Store) SetMonitorEnabled(ctx context.Context, id int64, enabled bool) error {
+	if id <= 0 {
+		return errors.New("monitor id is required")
+	}
+
+	result, err := s.db.ExecContext(ctx, `
+UPDATE monitors
+SET enabled = ?, updated_at = ?
+WHERE id = ?
+`, boolToInt(enabled), time.Now().UTC(), id)
+	if err != nil {
+		return fmt.Errorf("set monitor enabled: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set monitor enabled rows affected: %w", err)
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
 func (s *Store) UpdateMonitorTarget(ctx context.Context, id int64, target string) error {
 	var kindRaw string
 	var tlsModeRaw string
@@ -206,6 +266,18 @@ WHERE id = ?
 }
 
 func (s *Store) ListMonitorSnapshots(ctx context.Context) ([]monitor.Snapshot, error) {
+	snapshots, err := s.listMonitorSnapshotsWithResults(ctx)
+	if err == nil {
+		return snapshots, nil
+	}
+	if !isMalformedSQLiteError(err) {
+		return nil, err
+	}
+
+	return s.listMonitorSnapshotsWithoutResults(ctx)
+}
+
+func (s *Store) listMonitorSnapshotsWithResults(ctx context.Context) ([]monitor.Snapshot, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT
     m.id,
@@ -260,6 +332,93 @@ ORDER BY m.sort_order ASC, m.id ASC
 	}
 
 	return snapshots, nil
+}
+
+func (s *Store) listMonitorSnapshotsWithoutResults(ctx context.Context) ([]monitor.Snapshot, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT
+    id,
+    name,
+    group_name,
+    sort_order,
+    kind,
+    target,
+    interval_seconds,
+    timeout_seconds,
+    enabled,
+    tls_mode,
+    expected_status_code,
+    expected_text,
+    notify_on_recovery,
+    created_at,
+    updated_at
+FROM monitors
+ORDER BY sort_order ASC, id ASC
+`)
+	if err != nil {
+		return nil, fmt.Errorf("list monitors fallback: %w", err)
+	}
+	defer rows.Close()
+
+	snapshots := make([]monitor.Snapshot, 0)
+	for rows.Next() {
+		var (
+			item               monitor.Snapshot
+			kindRaw            string
+			tlsModeRaw         string
+			intervalSeconds    int
+			timeoutSeconds     int
+			enabledRaw         int
+			notifyOnRecovery   int
+			expectedStatusCode sql.NullInt64
+		)
+
+		if err := rows.Scan(
+			&item.Monitor.ID,
+			&item.Monitor.Name,
+			&item.Monitor.Group,
+			&item.Monitor.SortOrder,
+			&kindRaw,
+			&item.Monitor.Target,
+			&intervalSeconds,
+			&timeoutSeconds,
+			&enabledRaw,
+			&tlsModeRaw,
+			&expectedStatusCode,
+			&item.Monitor.ExpectedText,
+			&notifyOnRecovery,
+			&item.Monitor.CreatedAt,
+			&item.Monitor.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan monitor fallback: %w", err)
+		}
+
+		item.Monitor.Kind = monitor.Kind(kindRaw)
+		item.Monitor.TLSMode = monitor.TLSMode(tlsModeRaw)
+		item.Monitor.Interval = time.Duration(intervalSeconds) * time.Second
+		item.Monitor.Timeout = time.Duration(timeoutSeconds) * time.Second
+		item.Monitor.Enabled = enabledRaw == 1
+		item.Monitor.NotifyOnRecovery = notifyOnRecovery == 1
+		if expectedStatusCode.Valid {
+			value := int(expectedStatusCode.Int64)
+			item.Monitor.ExpectedStatusCode = &value
+		}
+
+		snapshots = append(snapshots, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate monitors fallback: %w", err)
+	}
+
+	return snapshots, nil
+}
+
+func isMalformedSQLiteError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "database disk image is malformed")
 }
 
 func (s *Store) ListMonitorHourlyRollupsSince(ctx context.Context, since time.Time) ([]MonitorHourlyRollup, error) {

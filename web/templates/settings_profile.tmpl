@@ -1,0 +1,88 @@
+{{define "content"}}
+<div class="admin-section">
+  <nav class="admin-nav card">
+    <a href="{{$.AppBase}}" class="admin-nav-link">Dashboard</a>
+    <a href="{{$.AppBase}}settings/profile" class="admin-nav-link is-active">Settings · Profil</a>
+    {{if or $.User.SuperAdmin (eq $.User.Role "admin")}}
+    <a href="{{$.AppBase}}settings/users" class="admin-nav-link">Settings · Benutzer</a>
+    {{end}}
+  </nav>
+
+  {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
+  {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+
+  <div class="admin-header">
+    <div>
+      <p class="eyebrow">Settings</p>
+      <h1>Profil · {{.AdminTenant.Name}}</h1>
+      <p class="muted compact">Tenant: {{.AdminTenant.Slug}}</p>
+    </div>
+  </div>
+
+  <form method="POST" action="{{$.AppBase}}settings/profile/save" class="card stack admin-form">
+    <h2>Profil</h2>
+    <div class="form-group">
+      <label for="display_name">Anzeigename</label>
+      <input id="display_name" name="display_name" type="text" value="{{.ProfileUser.DisplayName}}" required>
+    </div>
+    <div class="form-group">
+      <label for="email">E-Mail</label>
+      <input id="email" name="email" type="email" value="{{.ProfileUser.Email}}">
+    </div>
+
+    <h3>Benachrichtigungen</h3>
+    <label class="checkbox-row">
+      <input type="checkbox" name="email_enabled" {{if .ProfileNotify.EmailEnabled}}checked{{end}}>
+      <span>E-Mail-Benachrichtigungen aktiv (Opt-out)</span>
+    </label>
+
+    <div class="inline-grid">
+      <div class="form-group">
+        <label for="matrix_homeserver_url">Matrix Homeserver URL</label>
+        <input id="matrix_homeserver_url" name="matrix_homeserver_url" type="url" value="{{.ProfileNotify.MatrixHomeserver}}" placeholder="https://matrix.example.com">
+      </div>
+      <div class="form-group">
+        <label for="matrix_room_id">Matrix Room ID</label>
+        <input id="matrix_room_id" name="matrix_room_id" type="text" value="{{.ProfileNotify.MatrixRoomID}}" placeholder="!room:id">
+      </div>
+    </div>
+    <div class="form-group">
+      <label for="matrix_access_token">Matrix Access Token</label>
+      <input id="matrix_access_token" name="matrix_access_token" type="password" placeholder="leer lassen, um vorhandenen Token beizubehalten">
+    </div>
+    <label class="checkbox-row">
+      <input type="checkbox" name="matrix_enabled" {{if .ProfileNotify.MatrixEnabled}}checked{{end}}>
+      <span>Matrix-Benachrichtigungen aktiv</span>
+    </label>
+
+    <div class="form-actions">
+      <button type="submit" class="button">Speichern</button>
+    </div>
+  </form>
+
+  {{if .ProfileNotify.HasLocalCredentials}}
+  <form method="POST" action="{{$.AppBase}}settings/profile/password" class="card stack admin-form">
+    <h2>Passwort ändern</h2>
+    <div class="form-group">
+      <label for="current_password">Aktuelles Passwort</label>
+      <input id="current_password" name="current_password" type="password" required>
+    </div>
+    <div class="form-group">
+      <label for="new_password">Neues Passwort</label>
+      <input id="new_password" name="new_password" type="password" required>
+    </div>
+    <div class="form-group">
+      <label for="confirm_password">Neues Passwort bestätigen</label>
+      <input id="confirm_password" name="confirm_password" type="password" required>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="button button-secondary">Passwort aktualisieren</button>
+    </div>
+  </form>
+  {{else}}
+  <div class="card notice">
+    Passwort-Änderung ist für SSO-only Konten nicht verfügbar. Bitte über deinen Identity Provider ändern.
+  </div>
+  {{end}}
+</div>
+{{end}}

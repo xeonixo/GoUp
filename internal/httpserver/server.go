@@ -96,6 +96,8 @@ type pageData struct {
 	AdminLocalUsers  []store.LocalUser
 	AdminTenantUsers []store.TenantUser
 	AdminLocalUser   store.LocalUser
+	ProfileUser      store.TenantUser
+	ProfileNotify    store.UserNotificationSettings
 	AdminAuditEvents []store.AuditEvent
 	AuditAction      string
 	AuditActor       string
@@ -136,6 +138,12 @@ type monitorGroupView struct {
 type monitorServiceGroupView struct {
 	Title       string
 	Subtitle    string
+	StatusLabel string
+	StatusClass string
+	StatusInfo  string
+	TrendLabel  string
+	UptimeLabel string
+	TrendPoints []trendPointView
 	IconSlug    string
 	IconURL     string
 	Monitors    []monitorView
@@ -234,12 +242,14 @@ type trendRange struct {
 	Label      string
 	BucketSize time.Duration
 	Buckets    int
+	Step       string
 }
 
 var supportedTrendRanges = []trendRange{
-	{Value: "24h", Label: "24h", BucketSize: time.Hour, Buckets: 24},
-	{Value: "7d", Label: "7d", BucketSize: 24 * time.Hour, Buckets: 7},
-	{Value: "30d", Label: "30d", BucketSize: 24 * time.Hour, Buckets: 30},
+	{Value: "24h", Label: "24h", BucketSize: time.Hour, Buckets: 24, Step: "hour"},
+	{Value: "7d", Label: "7d", BucketSize: 24 * time.Hour, Buckets: 7, Step: "day"},
+	{Value: "30d", Label: "30d", BucketSize: 24 * time.Hour, Buckets: 30, Step: "day"},
+	{Value: "12m", Label: "12M", BucketSize: 24 * time.Hour, Buckets: 12, Step: "month"},
 }
 
 const (
@@ -585,9 +595,14 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/monitors/update-target", s.requireAuth(http.HandlerFunc(s.handleUpdateMonitorTarget)))
 	mux.Handle("/monitors/reorder", s.requireAuth(http.HandlerFunc(s.handleReorderMonitor)))
 	mux.Handle("/groups/save", s.requireAuth(http.HandlerFunc(s.handleSaveGroup)))
+	mux.Handle("/groups/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteGroup)))
 	mux.Handle("/groups/reorder", s.requireAuth(http.HandlerFunc(s.handleReorderGroup)))
 	mux.Handle("/icons/search", s.requireAuth(http.HandlerFunc(s.handleSearchDashboardIcons)))
 	mux.Handle("/monitors/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteMonitor)))
+	mux.Handle("/monitors/enabled", s.requireAuth(http.HandlerFunc(s.handleSetMonitorEnabled)))
+	mux.Handle("/settings/profile", s.requireAuth(http.HandlerFunc(s.handleSettingsProfile)))
+	mux.Handle("/settings/profile/save", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileSave)))
+	mux.Handle("/settings/profile/password", s.requireAuth(http.HandlerFunc(s.handleSettingsProfilePassword)))
 	mux.Handle("/settings/users", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUsers)))
 	mux.Handle("/settings/local-users/new", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserForm)))
 	mux.Handle("/settings/local-users/{userID}/edit", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserForm)))
@@ -750,8 +765,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	events, err := appStore.ListRecentNotificationEvents(r.Context(), 20)
 	if err != nil {
-		http.Error(w, "unable to load notification events", http.StatusInternalServerError)
-		return
+		s.logger.Warn("load notification events failed", "error", err)
+		events = nil
 	}
 
 	groupMetadata, err := appStore.ListMonitorGroupMetadata(r.Context())
@@ -765,8 +780,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	trendSince := trendRangeStart(now, selectedTrend)
 	rollups, err := appStore.ListMonitorHourlyRollupsSince(r.Context(), trendSince)
 	if err != nil {
-		http.Error(w, "unable to load monitor trends", http.StatusInternalServerError)
-		return
+		s.logger.Warn("load monitor trends failed", "error", err)
+		rollups = nil
 	}
 
 	monitorViews := buildMonitorViews(snapshots, rollups, now, selectedTrend)
@@ -969,6 +984,36 @@ func (s *Server) handleSaveGroup(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "Gruppen-Icon gespeichert", ""), http.StatusSeeOther)
 }
 
+func (s *Server) handleDeleteGroup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	appStore, err := s.appStore(r)
+	if err != nil {
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Formular konnte nicht gelesen werden"), http.StatusSeeOther)
+		return
+	}
+	groupName := strings.TrimSpace(r.FormValue("group"))
+	if groupName == "" {
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Ungültige Gruppe"), http.StatusSeeOther)
+		return
+	}
+	if err := appStore.DeleteMonitorGroup(r.Context(), groupName); err != nil {
+		if err == sql.ErrNoRows {
+			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Gruppe wurde nicht gefunden"), http.StatusSeeOther)
+			return
+		}
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Gruppe konnte nicht gelöscht werden"), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "Gruppe inkl. Monitore gelöscht", ""), http.StatusSeeOther)
+}
+
 func (s *Server) handleReorderGroup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1141,6 +1186,48 @@ func (s *Server) handleDeleteMonitor(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape("Monitor gelöscht"), http.StatusSeeOther)
+}
+
+func (s *Server) handleSetMonitorEnabled(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	appStore, err := s.appStore(r)
+	if err != nil {
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Formular konnte nicht gelesen werden"), http.StatusSeeOther)
+		return
+	}
+
+	id, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("id")), 10, 64)
+	if err != nil || id <= 0 {
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Ungültige Monitor-ID"), http.StatusSeeOther)
+		return
+	}
+
+	enabledRaw := strings.ToLower(strings.TrimSpace(r.FormValue("enabled")))
+	enabled := enabledRaw == "1" || enabledRaw == "true" || enabledRaw == "on" || enabledRaw == "yes"
+
+	if err := appStore.SetMonitorEnabled(r.Context(), id, enabled); err != nil {
+		if err == sql.ErrNoRows {
+			http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Monitor wurde nicht gefunden"), http.StatusSeeOther)
+			return
+		}
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Monitor konnte nicht aktualisiert werden"), http.StatusSeeOther)
+		return
+	}
+
+	message := "Monitor pausiert"
+	if enabled {
+		message = "Monitor aktiviert"
+	}
+	http.Redirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape(message), http.StatusSeeOther)
 }
 
 func (s *Server) handleUpdateMonitorTarget(w http.ResponseWriter, r *http.Request) {
@@ -1430,7 +1517,7 @@ func (s *Server) logging(next http.Handler) http.Handler {
 }
 
 func parseTemplates() (map[string]*template.Template, error) {
-	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_provider_form", "admin_local_users", "admin_local_user_form", "settings_users", "admin_access", "no_tenant"}
+	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_provider_form", "admin_local_users", "admin_local_user_form", "settings_users", "settings_profile", "admin_access", "no_tenant"}
 	parsed := make(map[string]*template.Template, len(pages))
 	for _, page := range pages {
 		tmpl, err := template.ParseFS(web.FS, "templates/layout.tmpl", "templates/"+page+".tmpl")
@@ -1648,9 +1735,9 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 			TrendPoints:      buildTrendPoints(rollupsByMonitor[item.Monitor.ID], now, selectedTrend),
 		}
 		view.UptimeLabel = summarizeTrend(view.TrendPoints, selectedTrend)
-		view.StatusLabel = "Noch kein Lauf"
+		view.StatusLabel = "UNKNOWN"
 		view.StatusClass = "status-UNKNOWN"
-		view.StatusSummary = "Wartet auf den ersten Check"
+		view.StatusSummary = "No successful check yet"
 		if item.Monitor.ExpectedStatusCode != nil {
 			view.ExpectedStatus = strconv.Itoa(*item.Monitor.ExpectedStatusCode)
 		}
@@ -1675,9 +1762,9 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 			}
 		}
 		if !item.Monitor.Enabled {
-			view.StatusLabel = "PAUSIERT"
+			view.StatusLabel = "PAUSED"
 			view.StatusClass = "status-PAUSED"
-			view.StatusSummary = "Monitor ist deaktiviert"
+			view.StatusSummary = "Monitor is paused"
 		}
 		views = append(views, view)
 	}
@@ -1721,10 +1808,6 @@ func mergeAvailableGroups(existing []string, monitors []monitorView) []string {
 }
 
 func buildMonitorGroups(monitors []monitorView, metadata []store.MonitorGroup) []monitorGroupView {
-	problems := make([]monitorView, 0)
-	healthy := make([]monitorView, 0)
-	paused := make([]monitorView, 0)
-	pending := make([]monitorView, 0)
 	groupSortOrder := make(map[string]int, len(metadata))
 	groupIcons := make(map[string]string, len(metadata))
 	for idx, item := range metadata {
@@ -1733,24 +1816,25 @@ func buildMonitorGroups(monitors []monitorView, metadata []store.MonitorGroup) [
 		groupIcons[name] = normalizeDashboardIconSlug(item.IconSlug)
 	}
 
-	for _, item := range monitors {
-		switch item.StatusLabel {
-		case "DOWN", "DEGRADED":
-			problems = append(problems, item)
-		case "UP":
-			healthy = append(healthy, item)
-		case "PAUSIERT":
-			paused = append(paused, item)
-		default:
-			pending = append(pending, item)
-		}
+	services := buildMonitorServiceGroups(monitors, groupSortOrder, groupIcons, len(metadata))
+	serviceHint := "Keine Dienstgruppen"
+	if len(services) == 1 {
+		serviceHint = "1 Dienstgruppe"
+	} else if len(services) > 1 {
+		serviceHint = strconv.Itoa(len(services)) + " Dienstgruppen"
 	}
 
 	return []monitorGroupView{
-		buildMonitorStatusGroup("Braucht Aufmerksamkeit", "Down oder degradiert", "Aktuell keine Problemfälle.", "group-problem", problems, groupSortOrder, groupIcons, len(metadata)),
-		buildMonitorStatusGroup("Gesund", "Stabile Monitore", "Noch keine gesunden Monitore vorhanden.", "group-healthy", healthy, groupSortOrder, groupIcons, len(metadata)),
-		buildMonitorStatusGroup("Wartet auf Daten", "Noch kein vollständiger Lauf", "Alle Monitore haben bereits Daten.", "group-pending", pending, groupSortOrder, groupIcons, len(metadata)),
-		buildMonitorStatusGroup("Pausiert", "Bewusst deaktiviert", "Keine pausierten Monitore vorhanden.", "group-paused", paused, groupSortOrder, groupIcons, len(metadata)),
+		{
+			Title:       "Dienste",
+			Subtitle:    "Gesamtsicht aller Monitore",
+			EmptyText:   "Noch keine Monitore vorhanden.",
+			AccentClass: "group-healthy",
+			Monitors:    monitors,
+			Services:    services,
+			Count:       len(monitors),
+			ServiceHint: serviceHint,
+		},
 	}
 }
 
@@ -1776,7 +1860,7 @@ func buildMonitorStatusGroup(title string, subtitle string, emptyText string, ac
 }
 
 func buildMonitorServiceGroups(monitors []monitorView, groupSortOrder map[string]int, groupIcons map[string]string, totalGroups int) []monitorServiceGroupView {
-	if len(monitors) == 0 {
+	if len(monitors) == 0 && len(groupSortOrder) == 0 {
 		return nil
 	}
 
@@ -1784,6 +1868,11 @@ func buildMonitorServiceGroups(monitors []monitorView, groupSortOrder map[string
 	for _, item := range monitors {
 		label := monitorServiceLabel(item)
 		grouped[label] = append(grouped[label], item)
+	}
+	for label := range groupSortOrder {
+		if _, ok := grouped[label]; !ok {
+			grouped[label] = nil
+		}
 	}
 
 	labels := make([]string, 0, len(grouped))
@@ -1827,6 +1916,13 @@ func buildMonitorServiceGroups(monitors []monitorView, groupSortOrder map[string
 		if len(items) != 1 {
 			subtitle += "e"
 		}
+		statusLabel, statusClass, statusInfo := aggregateServiceStatus(items)
+		aggregatePoints := aggregateServiceTrendPoints(items)
+		uptimeLabel := summarizeTrendPoints(aggregatePoints)
+		trendLabel := ""
+		if len(items) > 0 {
+			trendLabel = items[0].TrendLabel
+		}
 		orderIndex := len(groupSortOrder)
 		if knownIndex, ok := groupSortOrder[label]; ok {
 			orderIndex = knownIndex
@@ -1835,16 +1931,138 @@ func buildMonitorServiceGroups(monitors []monitorView, groupSortOrder map[string
 		services = append(services, monitorServiceGroupView{
 			Title:       label,
 			Subtitle:    subtitle,
+			StatusLabel: statusLabel,
+			StatusClass: statusClass,
+			StatusInfo:  statusInfo,
+			TrendLabel:  trendLabel,
+			UptimeLabel: uptimeLabel,
+			TrendPoints: aggregatePoints,
 			IconSlug:    iconSlug,
 			IconURL:     dashboardIconURL(iconSlug),
 			Monitors:    items,
-			Open:        true,
+			Open:        false,
 			CanMoveUp:   orderIndex > 0,
 			CanMoveDown: orderIndex >= 0 && orderIndex < totalGroups-1,
 		})
 	}
 
 	return services
+}
+
+func aggregateServiceStatus(items []monitorView) (label string, class string, info string) {
+	if len(items) == 0 {
+		return "UNKNOWN", "status-UNKNOWN", "No monitors"
+	}
+	hasDown := false
+	hasDegraded := false
+	hasUnknown := false
+	hasPaused := false
+	hasUp := false
+	for _, item := range items {
+		switch item.StatusLabel {
+		case "DOWN":
+			hasDown = true
+		case "DEGRADED":
+			hasDegraded = true
+		case "UP":
+			hasUp = true
+		case "PAUSED":
+			hasPaused = true
+		default:
+			hasUnknown = true
+		}
+	}
+	hasOnlyDown := hasDown && !hasUp && !hasDegraded && !hasUnknown && !hasPaused
+	switch {
+	case hasOnlyDown:
+		return "DOWN", "status-DOWN", "Mindestens ein Dienst ist ausgefallen"
+	case hasDown:
+		return "DEGRADED", "status-DEGRADED", "Mindestens ein Dienst ist ausgefallen"
+	case hasDegraded:
+		return "DEGRADED", "status-DEGRADED", "Mindestens ein Dienst ist degradiert"
+	case hasUp && !hasUnknown && !hasPaused:
+		return "UP", "status-UP", "Alle Dienste sind erreichbar"
+	case hasPaused && !hasUp && !hasUnknown:
+		return "PAUSED", "status-PAUSED", "All monitors in this service are paused"
+	default:
+		return "DEGRADED", "status-DEGRADED", "Mixed state"
+	}
+}
+
+func aggregateServiceTrendPoints(items []monitorView) []trendPointView {
+	if len(items) == 0 {
+		return nil
+	}
+	buckets := make([]trendPointView, len(items[0].TrendPoints))
+	type aggregate struct {
+		totalChecks int
+		upChecks    int
+		latencySum  int
+		minMS       int
+		maxMS       int
+	}
+	agg := make([]aggregate, len(items[0].TrendPoints))
+	for i, point := range items[0].TrendPoints {
+		buckets[i] = trendPointView{
+			BucketRaw: point.BucketRaw,
+			Format:    point.Format,
+			Class:     "trend-none",
+			Label:     "Keine Daten",
+		}
+	}
+	for _, item := range items {
+		for i, point := range item.TrendPoints {
+			if i >= len(agg) || point.Checks <= 0 {
+				continue
+			}
+			agg[i].totalChecks += point.Checks
+			agg[i].upChecks += int(float64(point.Percent) / 100.0 * float64(point.Checks))
+			agg[i].latencySum += point.AvgMS * point.Checks
+			if agg[i].minMS == 0 || (point.MinMS > 0 && point.MinMS < agg[i].minMS) {
+				agg[i].minMS = point.MinMS
+			}
+			if point.MaxMS > agg[i].maxMS {
+				agg[i].maxMS = point.MaxMS
+			}
+		}
+	}
+	for i := range buckets {
+		if agg[i].totalChecks <= 0 {
+			continue
+		}
+		percent := int(float64(agg[i].upChecks) / float64(agg[i].totalChecks) * 100)
+		buckets[i].Percent = percent
+		buckets[i].Checks = agg[i].totalChecks
+		buckets[i].AvgMS = agg[i].latencySum / agg[i].totalChecks
+		buckets[i].MinMS = agg[i].minMS
+		buckets[i].MaxMS = agg[i].maxMS
+		buckets[i].Label = strconv.Itoa(percent) + "% Uptime · " + strconv.Itoa(agg[i].totalChecks) + " Checks"
+		switch {
+		case percent == 100:
+			buckets[i].Class = "trend-up"
+		case percent == 0:
+			buckets[i].Class = "trend-down"
+		default:
+			buckets[i].Class = "trend-degraded"
+		}
+	}
+	return buckets
+}
+
+func summarizeTrendPoints(points []trendPointView) string {
+	totalPercent := 0
+	counted := 0
+	for _, point := range points {
+		if point.Checks <= 0 {
+			continue
+		}
+		totalPercent += point.Percent
+		counted++
+	}
+	if counted == 0 {
+		return "Keine Daten"
+	}
+	return strconv.Itoa(totalPercent/counted) + "% Uptime"
 }
 
 func (s *Server) redirectDashboardPath(r *http.Request, trend string, notice string, errText string) string {
@@ -2226,7 +2444,7 @@ func buildTrendPoints(items []store.MonitorHourlyRollup, now time.Time, selected
 	start := trendRangeStart(now, selectedTrend)
 	buckets := make(map[string]*aggregate, selectedTrend.Buckets)
 	for idx := 0; idx < selectedTrend.Buckets; idx++ {
-		bucketStart := start.Add(time.Duration(idx) * selectedTrend.BucketSize)
+		bucketStart := trendBucketAt(start, selectedTrend, idx)
 		buckets[bucketStart.Format(time.RFC3339)] = &aggregate{}
 	}
 
@@ -2254,7 +2472,7 @@ func buildTrendPoints(items []store.MonitorHourlyRollup, now time.Time, selected
 
 	points := make([]trendPointView, 0, selectedTrend.Buckets)
 	for idx := 0; idx < selectedTrend.Buckets; idx++ {
-		bucket := start.Add(time.Duration(idx) * selectedTrend.BucketSize)
+		bucket := trendBucketAt(start, selectedTrend, idx)
 		key := bucket.Format(time.RFC3339)
 		agg := buckets[key]
 		point := trendPointView{
@@ -2286,8 +2504,11 @@ func buildTrendPoints(items []store.MonitorHourlyRollup, now time.Time, selected
 }
 
 func trendPointFormat(selected trendRange) string {
-	if selected.BucketSize == time.Hour {
+	if selected.Step == "hour" {
 		return "hour"
+	}
+	if selected.Step == "month" {
+		return "month"
 	}
 	return "date"
 }
@@ -2333,8 +2554,12 @@ func buildTrendRangeOptions(selected trendRange) []trendRangeOptionView {
 }
 
 func trendRangeStart(now time.Time, selected trendRange) time.Time {
-	if selected.BucketSize == time.Hour {
+	if selected.Step == "hour" {
 		return now.UTC().Truncate(time.Hour).Add(-time.Duration(selected.Buckets-1) * time.Hour)
+	}
+	if selected.Step == "month" {
+		startOfMonth := time.Date(now.UTC().Year(), now.UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
+		return startOfMonth.AddDate(0, -(selected.Buckets - 1), 0)
 	}
 	startOfDay := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
 	return startOfDay.AddDate(0, 0, -(selected.Buckets - 1))
@@ -2344,10 +2569,20 @@ func bucketStartFor(checkedAt time.Time, rangeStart time.Time, selected trendRan
 	if checkedAt.Before(rangeStart) {
 		return time.Time{}
 	}
-	if selected.BucketSize == time.Hour {
+	if selected.Step == "hour" {
 		return checkedAt.Truncate(time.Hour)
 	}
+	if selected.Step == "month" {
+		return time.Date(checkedAt.Year(), checkedAt.Month(), 1, 0, 0, 0, 0, time.UTC)
+	}
 	return time.Date(checkedAt.Year(), checkedAt.Month(), checkedAt.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+func trendBucketAt(start time.Time, selected trendRange, idx int) time.Time {
+	if selected.Step == "month" {
+		return start.AddDate(0, idx, 0)
+	}
+	return start.Add(time.Duration(idx) * selected.BucketSize)
 }
 
 func defaultTLSMode(kind monitor.Kind) monitor.TLSMode {

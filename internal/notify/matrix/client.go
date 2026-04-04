@@ -10,8 +10,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"goup/internal/config"
 )
 
 type Client struct {
@@ -21,12 +19,12 @@ type Client struct {
 	roomID        string
 }
 
-func New(cfg config.MatrixConfig) *Client {
+func New(homeserverURL, accessToken, roomID string) *Client {
 	return &Client{
 		httpClient:    &http.Client{Timeout: 10 * time.Second},
-		homeserverURL: strings.TrimRight(cfg.HomeserverURL, "/"),
-		accessToken:   cfg.AccessToken,
-		roomID:        cfg.RoomID,
+		homeserverURL: strings.TrimRight(homeserverURL, "/"),
+		accessToken:   accessToken,
+		roomID:        roomID,
 	}
 }
 

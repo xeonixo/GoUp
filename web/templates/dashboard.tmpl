@@ -1,19 +1,15 @@
-{{define "content"}}
-<section class="hero">
-  <div class="hero-copy">
-    <span class="eyebrow">GoUp Control Center</span>
-    <h1>Admin Dashboard</h1>
-    <p>Leichtes Uptime-Monitoring mit Fokus auf schnelle Übersicht, klare Problemzonen und detailreiche Verlaufsdaten.</p>
-    <p class="muted compact">Zeiten werden im Browser in <span id="client-timezone">deiner Zeitzone</span> angezeigt.</p>
+{{define "topbar_actions"}}
+<div class="topbar-dashboard-actions">
+  <div class="trend-range-toggle topbar-trend-range" role="tablist" aria-label="Trend-Zeitraum">
+  {{range .TrendRanges}}
+  <a href="{{$.AppBase}}?trend={{.Value}}" class="button button-small {{if not .Selected}}button-secondary{{end}}" {{if .Selected}}aria-current="page"{{end}}>{{.Label}}</a>
+  {{end}}
   </div>
-  <div class="hero-actions">
-    <button class="button" type="button" id="open-create-monitor">+ Monitor</button>
-    {{if .AuthDisabled}}
-    <div class="notice warning">OIDC ist aktuell deaktiviert. Das ist nur für lokales Scaffolding sinnvoll.</div>
-    {{end}}
-  </div>
-</section>
+  <button class="button" type="button" id="open-create-monitor">+ Monitor</button>
+</div>
+{{end}}
 
+{{define "content"}}
 {{if .Notice}}
 <section class="notice success">{{.Notice}}</section>
 {{end}}
@@ -25,22 +21,14 @@
   <article class="card stat-card stat-card-primary">
     <h2>Monitore</h2>
     <div class="metric">{{.Stats.MonitorCount}}</div>
-    <p class="muted compact">Gesamtbestand aller konfigurierten Checks</p>
   </article>
   <article class="card stat-card">
     <h2>Aktiv</h2>
     <div class="metric">{{.Stats.EnabledMonitorCount}}</div>
-    <p class="muted compact">Werden aktuell durch den Scheduler ausgeführt</p>
   </article>
-  <article class="card stat-card">
+  <article class="card stat-card {{if gt .Stats.OpenIncidentCount 0}}stat-card-incident{{end}}">
     <h2>Offene Incidents</h2>
-    <div class="metric">{{.Stats.OpenIncidentCount}}</div>
-    <p class="muted compact">Noch nicht gelöste Ausfälle oder degradierte Zustände</p>
-  </article>
-  <article class="card stat-card stat-card-soft">
-    <h2>Trendfenster</h2>
-    <div class="metric metric-small">{{.TrendLabel}}</div>
-    <p class="muted compact">Verlaufsdaten und Uptime im aktuell gewählten Zeitraum</p>
+    <div class="metric {{if gt .Stats.OpenIncidentCount 0}}metric-danger{{end}}">{{.Stats.OpenIncidentCount}}</div>
   </article>
 </section>
 
@@ -225,66 +213,70 @@
   </div>
 </dialog>
 
-<p class="muted compact">TCP/SMTP/IMAP/Dovecot-Ziele werden als <strong>host:port</strong> angegeben. ICMP verwendet nur <strong>Hostname oder IP</strong>, zum Beispiel <strong>1.1.1.1</strong> oder <strong>router.local</strong>.</p>
-
 <section class="card stack dashboard-board">
-  <div class="section-header">
-    <div>
-      <h2>Monitore</h2>
-      <p class="muted compact">Gruppiert nach aktuellem Zustand, mit Fokus auf schnelle Erfassung und viel Detailtiefe.</p>
-    </div>
-    <div class="trend-range-toggle" role="tablist" aria-label="Trend-Zeitraum">
-    {{range .TrendRanges}}
-    <a href="{{$.AppBase}}?trend={{.Value}}" class="button button-small {{if not .Selected}}button-secondary{{end}}" {{if .Selected}}aria-current="page"{{end}}>{{.Label}}</a>
-    {{end}}
-    </div>
-  </div>
   {{range .MonitorGroups}}
   <section class="monitor-group {{.AccentClass}} stack">
-    <div class="section-header">
-      <div>
-        <h3>{{.Title}}</h3>
-          <p class="muted compact">{{.Subtitle}} · {{.ServiceHint}}</p>
-      </div>
-        <span class="group-count">{{.Count}}</span>
-    </div>
     {{if .Monitors}}
       <div class="service-group-list">
         {{range .Services}}
         {{$serviceTitle := .Title}}
         <details class="service-cluster" {{if .Open}}open{{end}} draggable="true" data-group="{{.Title}}">
           <summary class="service-cluster-header">
-            <div class="service-cluster-title">
-              {{if .IconURL}}
-              <img class="group-icon" src="{{.IconURL}}" alt="{{.Title}} Icon" loading="lazy" referrerpolicy="no-referrer">
-              {{end}}
-              <div>
-              <h4>{{.Title}}</h4>
-              <p class="muted compact">{{.Subtitle}}</p>
+            <div class="service-summary">
+              <div class="service-summary-top">
+                <div class="service-cluster-title">
+                  {{if .IconURL}}
+                  <img class="group-icon" src="{{.IconURL}}" alt="{{.Title}} Icon" loading="lazy" referrerpolicy="no-referrer">
+                  {{end}}
+                  <div>
+                    <h4>{{.Title}}</h4>
+                  </div>
+                </div>
+                <div class="service-summary-right">
+                  <span class="service-count" aria-label="{{len .Monitors}} Monitore">{{len .Monitors}}</span>
+                  <span class="status-pill {{.StatusClass}}">{{.StatusLabel}}</span>
+                  <details class="action-menu" onclick="event.stopPropagation();">
+                  <summary class="action-menu-trigger" aria-label="Aktionen für Gruppe {{.Title}}" onclick="event.stopPropagation();">⋯</summary>
+                  <div class="action-menu-list" onclick="event.stopPropagation();">
+                    <button
+                      class="action-menu-item group-settings"
+                      type="button"
+                      data-group="{{.Title}}"
+                      data-icon-slug="{{.IconSlug}}"
+                      aria-label="Gruppen-Icon für {{.Title}} konfigurieren">Icon bearbeiten</button>
+                    <form method="post" action="{{$.AppBase}}groups/delete" class="action-menu-form" onsubmit="return confirm('Gruppe inklusive aller Monitore wirklich löschen?');">
+                      <input type="hidden" name="group" value="{{.Title}}">
+                      <button class="action-menu-item action-menu-item-danger" type="submit">Gruppe löschen</button>
+                    </form>
+                  </div>
+                </details>
+                </div>
               </div>
+              {{if .TrendPoints}}
+              <button
+                class="trend-trigger service-summary-trend"
+                type="button"
+                data-monitor-name="Dienstgruppe: {{.Title}}"
+                data-monitor-kind="Service"
+                data-target="{{.Title}}"
+                data-status="{{.StatusLabel}}"
+                data-uptime="{{.UptimeLabel}}"
+                data-trend-label="{{.TrendLabel}}"
+                data-last-check=""
+                data-last-message="{{.StatusInfo}}"
+                aria-label="Trenddetails für Dienstgruppe {{.Title}} öffnen"
+                onclick="event.preventDefault();event.stopPropagation();">
+                <div class="trend-bars" style="--trend-columns: {{len .TrendPoints}};" aria-label="Trend {{.TrendLabel}}">
+                  {{range .TrendPoints}}
+                  <span class="trend-bar {{.Class}}" data-bucket="{{.BucketRaw}}" data-label="{{.Label}}" data-format="{{.Format}}" data-checks="{{.Checks}}" data-avg-ms="{{.AvgMS}}" data-min-ms="{{.MinMS}}" data-max-ms="{{.MaxMS}}"></span>
+                  {{end}}
+                </div>
+              </button>
+              {{else}}
+              <p class="muted compact">Keine Monitore in dieser Gruppe.</p>
+              {{end}}
             </div>
-            <span class="service-count">{{len .Monitors}}</span>
           </summary>
-          <div class="service-cluster-actions">
-            <form method="post" action="{{$.AppBase}}groups/reorder">
-              <input type="hidden" name="group" value="{{.Title}}">
-              <input type="hidden" name="trend" value="{{$.TrendValue}}">
-              <input type="hidden" name="direction" value="up">
-              <button class="button button-secondary button-tiny reorder-button" type="submit" {{if not .CanMoveUp}}disabled{{end}} aria-label="Gruppe {{.Title}} nach oben verschieben">↑ Gruppe</button>
-            </form>
-            <form method="post" action="{{$.AppBase}}groups/reorder">
-              <input type="hidden" name="group" value="{{.Title}}">
-              <input type="hidden" name="trend" value="{{$.TrendValue}}">
-              <input type="hidden" name="direction" value="down">
-              <button class="button button-secondary button-tiny reorder-button" type="submit" {{if not .CanMoveDown}}disabled{{end}} aria-label="Gruppe {{.Title}} nach unten verschieben">↓ Gruppe</button>
-            </form>
-            <button
-              class="button button-secondary button-tiny group-settings"
-              type="button"
-              data-group="{{.Title}}"
-              data-icon-slug="{{.IconSlug}}"
-              aria-label="Gruppen-Icon für {{.Title}} konfigurieren">Icon</button>
-          </div>
           <div class="monitor-grid">
       {{range .Monitors}}
       <article class="card monitor-card {{.StatusClass}}" draggable="true" data-monitor-id="{{.ID}}" data-group="{{$serviceTitle}}">
@@ -293,8 +285,59 @@
               <h5>{{.Name}}</h5>
             <p class="muted compact">{{.Kind}}{{if .TLSMode}} / {{.TLSMode}}{{end}} · alle {{.Interval}} · Timeout {{.Timeout}}</p>
           </div>
-          <span class="status-pill {{.StatusClass}}">{{.StatusLabel}}</span>
+          <div class="monitor-header-right">
+            <span class="status-pill {{.StatusClass}}">{{.StatusLabel}}</span>
+            <details class="action-menu" onclick="event.stopPropagation();">
+              <summary class="action-menu-trigger" aria-label="Aktionen für Monitor {{.Name}}" onclick="event.stopPropagation();">⋯</summary>
+              <div class="action-menu-list" onclick="event.stopPropagation();">
+                <button
+                  class="action-menu-item edit-monitor"
+                  type="button"
+                  data-id="{{.ID}}"
+                  data-name="{{.Name}}"
+                  data-group="{{.Group}}"
+                  data-kind="{{.KindValue}}"
+                  data-tls-mode="{{.TLSModeValue}}"
+                  data-target="{{.Target}}"
+                  data-interval="{{.IntervalSeconds}}"
+                  data-timeout="{{.TimeoutSeconds}}"
+                  data-enabled="{{if .Enabled}}1{{else}}0{{end}}"
+                  data-notify-on-recovery="{{if .NotifyOnRecovery}}1{{else}}0{{end}}"
+                  data-expected-status="{{.ExpectedStatus}}">
+                  Bearbeiten
+                </button>
+                <form method="post" action="{{$.AppBase}}monitors/enabled" class="action-menu-form">
+                  <input type="hidden" name="id" value="{{.ID}}">
+                  <input type="hidden" name="enabled" value="{{if .Enabled}}0{{else}}1{{end}}">
+                  <button class="action-menu-item" type="submit">{{if .Enabled}}Pausieren{{else}}Aktivieren{{end}}</button>
+                </form>
+                <form method="post" action="{{$.AppBase}}monitors/delete" class="action-menu-form" onsubmit="return confirm('Monitor wirklich löschen?');">
+                  <input type="hidden" name="id" value="{{.ID}}">
+                  <button class="action-menu-item action-menu-item-danger" type="submit">Löschen</button>
+                </form>
+              </div>
+            </details>
+          </div>
         </div>
+
+        <button
+          class="trend-trigger monitor-summary-trend"
+          type="button"
+          data-monitor-name="{{.Name}}"
+          data-monitor-kind="{{.Kind}}"
+          data-target="{{.TargetLabel}}"
+          data-status="{{.StatusLabel}}"
+          data-uptime="{{.UptimeLabel}}"
+          data-trend-label="{{.TrendLabel}}"
+          data-last-check="{{.LastCheckedAtRaw}}"
+          data-last-message="{{.LastMessage}}"
+          aria-label="Trenddetails für {{.Name}} öffnen">
+          <div class="trend-bars" style="--trend-columns: {{len .TrendPoints}};" aria-label="Trend {{.TrendLabel}}">
+            {{range .TrendPoints}}
+            <span class="trend-bar {{.Class}}" data-bucket="{{.BucketRaw}}" data-label="{{.Label}}" data-format="{{.Format}}" data-checks="{{.Checks}}" data-avg-ms="{{.AvgMS}}" data-min-ms="{{.MinMS}}" data-max-ms="{{.MaxMS}}"></span>
+            {{end}}
+          </div>
+        </button>
 
         <div class="monitor-card-body stack compact-stack">
           <div class="info-row">
@@ -326,65 +369,6 @@
             </div>
           </div>
 
-          <button
-            class="trend-trigger trend-panel"
-            type="button"
-            data-monitor-name="{{.Name}}"
-            data-monitor-kind="{{.Kind}}"
-            data-target="{{.TargetLabel}}"
-            data-status="{{.StatusLabel}}"
-            data-uptime="{{.UptimeLabel}}"
-            data-trend-label="{{.TrendLabel}}"
-            data-last-check="{{.LastCheckedAtRaw}}"
-            data-last-message="{{.LastMessage}}"
-            aria-label="Trenddetails für {{.Name}} öffnen">
-            <div class="trend-panel-header">
-              <span>Trend {{.TrendLabel}}</span>
-              <span class="muted">{{.UptimeLabel}}</span>
-            </div>
-            <div class="trend-bars" style="--trend-columns: {{len .TrendPoints}};" aria-label="Trend {{.TrendLabel}}">
-              {{range .TrendPoints}}
-              <span class="trend-bar {{.Class}}" data-bucket="{{.BucketRaw}}" data-label="{{.Label}}" data-format="{{.Format}}" data-checks="{{.Checks}}" data-avg-ms="{{.AvgMS}}" data-min-ms="{{.MinMS}}" data-max-ms="{{.MaxMS}}"></span>
-              {{end}}
-            </div>
-          </button>
-        </div>
-
-        <div class="monitor-card-actions">
-          <form method="post" action="{{$.AppBase}}monitors/reorder">
-            <input type="hidden" name="id" value="{{.ID}}">
-            <input type="hidden" name="group" value="{{$serviceTitle}}">
-            <input type="hidden" name="trend" value="{{$.TrendValue}}">
-            <input type="hidden" name="direction" value="up">
-            <button class="button button-secondary button-tiny reorder-button" type="submit" {{if not .CanMoveUp}}disabled{{end}} aria-label="Monitor {{.Name}} nach oben verschieben">↑</button>
-          </form>
-          <form method="post" action="{{$.AppBase}}monitors/reorder">
-            <input type="hidden" name="id" value="{{.ID}}">
-            <input type="hidden" name="group" value="{{$serviceTitle}}">
-            <input type="hidden" name="trend" value="{{$.TrendValue}}">
-            <input type="hidden" name="direction" value="down">
-            <button class="button button-secondary button-tiny reorder-button" type="submit" {{if not .CanMoveDown}}disabled{{end}} aria-label="Monitor {{.Name}} nach unten verschieben">↓</button>
-          </form>
-          <button
-            class="button button-secondary button-small edit-monitor"
-            type="button"
-            data-id="{{.ID}}"
-            data-name="{{.Name}}"
-            data-group="{{.Group}}"
-            data-kind="{{.KindValue}}"
-            data-tls-mode="{{.TLSModeValue}}"
-            data-target="{{.Target}}"
-            data-interval="{{.IntervalSeconds}}"
-            data-timeout="{{.TimeoutSeconds}}"
-            data-enabled="{{if .Enabled}}1{{else}}0{{end}}"
-            data-notify-on-recovery="{{if .NotifyOnRecovery}}1{{else}}0{{end}}"
-            data-expected-status="{{.ExpectedStatus}}">
-            Bearbeiten
-          </button>
-          <form method="post" action="{{$.AppBase}}monitors/delete" onsubmit="return confirm('Monitor wirklich löschen?');">
-            <input type="hidden" name="id" value="{{.ID}}">
-            <button class="button button-danger button-small" type="submit">Löschen</button>
-          </form>
         </div>
       </article>
       {{end}}
@@ -399,7 +383,7 @@
   {{end}}
 </section>
 
-<section class="card stack">
+<section class="card stack notification-events-card">
   <h2>Letzte Notification-Events</h2>
   {{if .Events}}
   <div class="table-wrap">
@@ -441,7 +425,6 @@
     const dialog = document.getElementById('monitor-modal');
     const groupDialog = document.getElementById('group-modal');
     const openCreateButton = document.getElementById('open-create-monitor');
-    const timezoneLabel = document.getElementById('client-timezone');
     const cancelButton = document.getElementById('monitor-cancel');
     const groupCancelButton = document.getElementById('group-cancel');
     const groupResetButton = document.getElementById('group-reset-icon');
@@ -484,10 +467,21 @@
     const tlsModeRow = document.getElementById('tls-mode-row');
     const expectedStatusRow = document.getElementById('expected-status-row');
     const currentTrend = '{{.TrendValue}}';
-    const dashboardStateScrollKey = 'goup.dashboard.scrollY';
-    const dashboardStateGroupsKey = 'goup.dashboard.openGroups';
+    const dashboardStateOwner = '{{if .User}}{{if .User.Email}}{{js .User.Email}}{{else}}{{js .User.Name}}{{end}}{{end}}' || 'anonymous';
+    const dashboardStateScope = `${GOUP_APP_BASE || '/'}:${dashboardStateOwner}:${window.location.pathname}`;
+    const dashboardStateScrollKey = `goup.dashboard.scrollY:${dashboardStateScope}`;
+    const dashboardStateGroupsKey = `goup.dashboard.openGroups:${dashboardStateScope}`;
+    const actionMenus = Array.from(document.querySelectorAll('.action-menu'));
     let iconSearchTimer = null;
     let iconSearchRequest = null;
+
+    const closeActionMenus = (except = null) => {
+      actionMenus.forEach((menu) => {
+        if (menu !== except) {
+          menu.removeAttribute('open');
+        }
+      });
+    };
 
     const normalizeIconSlug = (value) => value.trim().toLowerCase().replace(/\s+/g, '-');
 
@@ -497,14 +491,14 @@
         const openGroups = Array.from(document.querySelectorAll('.service-cluster[open]'))
           .map((element) => element.dataset.group || '')
           .filter(Boolean);
-        sessionStorage.setItem(dashboardStateGroupsKey, JSON.stringify(openGroups));
+        localStorage.setItem(dashboardStateGroupsKey, JSON.stringify(openGroups));
       } catch (_) {
       }
     };
 
     const restoreDashboardState = () => {
       try {
-        const openGroupsRaw = sessionStorage.getItem(dashboardStateGroupsKey);
+        const openGroupsRaw = localStorage.getItem(dashboardStateGroupsKey);
         if (openGroupsRaw) {
           const openGroups = JSON.parse(openGroupsRaw);
           if (Array.isArray(openGroups)) {
@@ -513,7 +507,6 @@
               cluster.open = openGroups.includes(group);
             });
           }
-          sessionStorage.removeItem(dashboardStateGroupsKey);
         }
         const scrollRaw = sessionStorage.getItem(dashboardStateScrollKey);
         if (scrollRaw) {
@@ -756,8 +749,40 @@
     document.querySelectorAll('.group-settings').forEach((button) => {
       button.addEventListener('click', () => openGroupDialog(button));
     });
+
+    actionMenus.forEach((menu) => {
+      menu.addEventListener('toggle', () => {
+        if (menu.open) {
+          closeActionMenus(menu);
+        }
+      });
+    });
+
+    document.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        closeActionMenus();
+        return;
+      }
+      if (!target.closest('.action-menu')) {
+        closeActionMenus();
+      }
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        closeActionMenus();
+      }
+    });
+
     document.querySelectorAll(`form[action^="${GOUP_APP_BASE}"]`).forEach((form) => {
       form.addEventListener('submit', saveDashboardState);
+    });
+    document.querySelectorAll('.trend-range-toggle a').forEach((link) => {
+      link.addEventListener('click', saveDashboardState);
+    });
+    document.querySelectorAll('.service-cluster').forEach((cluster) => {
+      cluster.addEventListener('toggle', saveDashboardState);
     });
     document.querySelectorAll('.group-icon').forEach((image) => {
       image.addEventListener('error', () => {
@@ -767,16 +792,12 @@
 
     restoreDashboardState();
 
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (timezoneLabel && timezone) {
-      timezoneLabel.textContent = timezone;
-    }
-
     const formatters = {
       datetime: new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'medium' }),
       minute: new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }),
       hour: new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' }),
-      date: new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
+      date: new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }),
+      month: new Intl.DateTimeFormat(undefined, { month: 'short', year: 'numeric' })
     };
 
     document.querySelectorAll('.client-time').forEach((element) => {

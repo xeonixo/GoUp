@@ -127,12 +127,6 @@ Auth:
 
 OIDC wird tenant-basiert über den Admin-Bereich konfiguriert (`Provider` je Tenant). Eine globale OIDC-Konfiguration über `.env` ist nicht erforderlich.
 
-Matrix:
-
-- `GOUP_MATRIX_HOMESERVER_URL`
-- `GOUP_MATRIX_ACCESS_TOKEN`
-- `GOUP_MATRIX_ROOM_ID`
-
 E-Mail-Notifications:
 
 - Automatisch: E-Mail-Adressen der Benutzer-Mitgliedschaften im jeweiligen Tenant

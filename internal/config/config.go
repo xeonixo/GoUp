@@ -27,7 +27,6 @@ type Config struct {
 	SSOSecretKey         string
 	ControlPlaneAdminKey string
 	Auth                 AuthConfig
-	Matrix               MatrixConfig
 	Notify               NotifyConfig
 }
 
@@ -41,12 +40,6 @@ type OIDCConfig struct {
 	ClientID     string
 	ClientSecret string
 	RedirectURL  string
-}
-
-type MatrixConfig struct {
-	HomeserverURL string
-	AccessToken   string
-	RoomID        string
 }
 
 type NotifyConfig struct {
@@ -73,11 +66,6 @@ func Load() (Config, error) {
 				ClientSecret: os.Getenv("GOUP_OIDC_CLIENT_SECRET"),
 				RedirectURL:  strings.TrimRight(os.Getenv("GOUP_OIDC_REDIRECT_URL"), "/"),
 			},
-		},
-		Matrix: MatrixConfig{
-			HomeserverURL: strings.TrimRight(os.Getenv("GOUP_MATRIX_HOMESERVER_URL"), "/"),
-			AccessToken:   os.Getenv("GOUP_MATRIX_ACCESS_TOKEN"),
-			RoomID:        os.Getenv("GOUP_MATRIX_ROOM_ID"),
 		},
 		Notify: NotifyConfig{
 			EmailRecipients:    parseCSVEnv("GOUP_NOTIFY_EMAIL_TO"),
