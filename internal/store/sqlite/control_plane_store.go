@@ -1465,16 +1465,7 @@ WHERE tenant_id = ? AND provider_key = ?
 
 	plaintext, err := decryptProviderSecret(s.secretKey, ciphertext)
 	if err != nil {
-		// Backward compatibility: older installs without an explicit
-		// GOUP_SESSION_KEY used the historical dev default value.
-		legacy := sha256.Sum256([]byte("dev-session-key-change-me"))
-		legacyPlaintext, legacyErr := decryptProviderSecret(legacy[:], ciphertext)
-		if legacyErr != nil {
-			return "", fmt.Errorf("decrypt auth provider secret: %w", err)
-		}
-		// Opportunistic migration to the currently configured key.
-		_ = s.UpdateAuthProviderSecret(ctx, tenantID, providerKey, legacyPlaintext)
-		return legacyPlaintext, nil
+		return "", fmt.Errorf("decrypt auth provider secret: %w", err)
 	}
 
 	return plaintext, nil
@@ -2235,10 +2226,8 @@ func (s *ControlPlaneStore) GetControlPlaneAdmin(ctx context.Context) (ControlPl
 	if totpCiphertext != "" {
 		decrypted, err := decryptProviderSecret(s.secretKey, totpCiphertext)
 		if err != nil {
-			// Graceful recovery path for legacy/migrated installations where
-			// the encryption key changed and existing TOTP material can no
-			// longer be decrypted. We keep username/password login possible
-			// and force a TOTP re-setup from the security page.
+			// Graceful recovery path for unrecoverable key mismatch: keep
+			// username/password login possible and require TOTP re-setup.
 			a.TOTPEnabled = false
 			a.TOTPSecret = ""
 			return a, nil

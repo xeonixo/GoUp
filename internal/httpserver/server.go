@@ -3325,15 +3325,9 @@ func (s *Server) handleTenantAuthCallback(w http.ResponseWriter, r *http.Request
 	if err == nil {
 		tenantOIDCCfg.ClientSecret = secret
 	} else {
-		fallbackSecret := strings.TrimSpace(s.cfg.Auth.OIDC.ClientSecret)
-		if fallbackSecret != "" {
-			// Fallback for setups that still keep the OIDC client secret in env.
-			tenantOIDCCfg.ClientSecret = fallbackSecret
-		} else {
-			s.logger.Error("client secret not available for provider", "tenant_id", tenant.ID, "provider_key", provider.ProviderKey, "error", err)
-			http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("SSO ist nicht vollständig konfiguriert. Bitte Client-Secret im Admin-Provider neu speichern."), http.StatusSeeOther)
-			return
-		}
+		s.logger.Error("client secret not available for provider", "tenant_id", tenant.ID, "provider_key", provider.ProviderKey, "error", err)
+		http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("SSO ist nicht vollständig konfiguriert. Bitte Client-Secret im Admin-Provider neu speichern."), http.StatusSeeOther)
+		return
 	}
 
 	identity, err := s.dynamicOIDC.CompleteAuthForTenant(r.Context(), r, tenantOIDCCfg)
