@@ -28,7 +28,7 @@ func finalizeTLSResult(result *Result, okMessage string) (Status, string) {
 	if daysRemaining < 0 {
 		return StatusDown, fmt.Sprintf("certificate expired %d days ago", -daysRemaining)
 	}
-	if daysRemaining < certificateWarningDays {
+	if daysRemaining <= certificateWarningDays {
 		return StatusDegraded, fmt.Sprintf("%s; certificate expires in %d days", okMessage, daysRemaining)
 	}
 

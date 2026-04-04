@@ -14,6 +14,9 @@ const (
 	KindICMP  Kind = "icmp"
 	KindSMTP  Kind = "smtp"
 	KindIMAP  Kind = "imap"
+	KindDNS   Kind = "dns"
+	KindUDP   Kind = "udp"
+	KindWhois Kind = "whois"
 )
 
 const (

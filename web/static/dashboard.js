@@ -47,13 +47,22 @@
     const groupField = document.getElementById('monitor-group');
     const tlsModeField = document.getElementById('monitor-tls-mode');
     const targetField = document.getElementById('monitor-target');
+    const targetHintField = document.getElementById('monitor-target-hint');
     const intervalField = document.getElementById('monitor-interval');
     const timeoutField = document.getElementById('monitor-timeout');
     const expectedStatusField = document.getElementById('monitor-expected-status');
+    const expectedTextField = document.getElementById('monitor-expected-text');
+    const useHTTPSField = document.getElementById('monitor-use-https');
+    const useHTTPSLabelField = document.getElementById('monitor-use-https-label');
+    const verifyCertField = document.getElementById('monitor-verify-cert');
+    const verifyCertLabelField = document.getElementById('monitor-verify-cert-label');
     const enabledField = document.getElementById('monitor-enabled');
     const notifyField = document.getElementById('monitor-notify');
     const tlsModeRow = document.getElementById('tls-mode-row');
+    const httpsModeRow = document.getElementById('https-mode-row');
+    const httpsVerifyRow = document.getElementById('https-verify-row');
     const expectedStatusRow = document.getElementById('expected-status-row');
+    const expectedTextRow = document.getElementById('expected-text-row');
     const dashboardStateScope = `${appBase || '/'}:${dashboardStateOwner}:${window.location.pathname}`;
     const dashboardStateScrollKey = `goup.dashboard.scrollY:${dashboardStateScope}`;
     const dashboardStateGroupsKey = `goup.dashboard.openGroups:${dashboardStateScope}`;
@@ -293,30 +302,142 @@
     };
 
     const applyKindRules = () => {
-      if (!kindField || !tlsModeRow || !expectedStatusRow || !tlsModeField || !expectedStatusField) {
+      if (!kindField || !tlsModeRow || !httpsModeRow || !httpsVerifyRow || !expectedStatusRow || !expectedTextRow || !tlsModeField || !expectedStatusField || !expectedTextField || !useHTTPSField || !verifyCertField) {
         return;
       }
       const kind = kindField.value;
-      const isHTTPS = kind === 'https';
+      const isHTTPMonitor = kind === 'https';
+      const isTCPMonitor = kind === 'tcp';
       const isMail = kind === 'smtp' || kind === 'imap';
+      const isDNS = kind === 'dns';
+      const isUDP = kind === 'udp';
+      const isWhois = kind === 'whois';
+      const supportsTLSChecks = isHTTPMonitor || isTCPMonitor;
 
       tlsModeRow.hidden = !isMail;
-      expectedStatusRow.hidden = !isHTTPS;
+      httpsModeRow.hidden = !supportsTLSChecks;
+      httpsVerifyRow.hidden = !supportsTLSChecks || !useHTTPSField.checked;
+      expectedStatusRow.hidden = !isHTTPMonitor;
+      expectedTextRow.hidden = !isHTTPMonitor && !isDNS;
 
-      if (isHTTPS) {
-        tlsModeField.value = 'tls';
+      if (isHTTPMonitor) {
+        if (useHTTPSLabelField) {
+          useHTTPSLabelField.textContent = 'HTTPS verwenden';
+        }
+        if (verifyCertLabelField) {
+          verifyCertLabelField.textContent = 'Zertifikat prüfen';
+        }
+        if (!useHTTPSField.checked) {
+          verifyCertField.checked = false;
+          tlsModeField.value = 'none';
+        } else {
+          tlsModeField.value = verifyCertField.checked ? 'tls' : 'starttls';
+        }
+        if (targetField) {
+          targetField.placeholder = 'example.com/health';
+        }
+        if (targetHintField) {
+          targetHintField.textContent = useHTTPSField.checked
+            ? 'Für HTTPS: Host/Pfad ohne Protokoll (https:// wird automatisch ergänzt).'
+            : 'Für HTTP: Host/Pfad ohne Protokoll (http:// wird automatisch ergänzt).';
+        }
+      } else if (isTCPMonitor) {
+        if (useHTTPSLabelField) {
+          useHTTPSLabelField.textContent = 'TLS Handshake prüfen';
+        }
+        if (verifyCertLabelField) {
+          verifyCertLabelField.textContent = 'Zertifikat prüfen';
+        }
+        expectedStatusField.value = '';
+        expectedTextField.value = '';
+        if (!useHTTPSField.checked) {
+          verifyCertField.checked = false;
+          tlsModeField.value = 'none';
+        } else {
+          tlsModeField.value = verifyCertField.checked ? 'tls' : 'starttls';
+        }
+        if (targetField) {
+          targetField.placeholder = 'example.com:443';
+        }
+        if (targetHintField) {
+          targetHintField.textContent = 'Für TCP: host:port';
+        }
       } else if (isMail) {
+        useHTTPSField.checked = false;
+        verifyCertField.checked = false;
         if (tlsModeField.value !== 'tls' && tlsModeField.value !== 'starttls') {
           tlsModeField.value = kind === 'smtp' ? 'starttls' : 'tls';
         }
-      } else {
+        if (targetField) {
+          targetField.placeholder = 'mail.example.com:587';
+        }
+        if (targetHintField) {
+          targetHintField.textContent = 'Für Mail-Monitore: host:port';
+        }
+      } else if (isDNS) {
+        useHTTPSField.checked = false;
+        verifyCertField.checked = false;
         tlsModeField.value = 'none';
         expectedStatusField.value = '';
+        if (targetField) {
+          targetField.placeholder = 'example.com';
+        }
+        if (targetHintField) {
+          targetHintField.textContent = 'Hostname, der aufgelöst werden soll (z. B. example.com).';
+        }
+        if (expectedTextField) {
+          expectedTextField.placeholder = '1.2.3.4';
+        }
+      } else if (isUDP) {
+        useHTTPSField.checked = false;
+        verifyCertField.checked = false;
+        tlsModeField.value = 'none';
+        expectedStatusField.value = '';
+        expectedTextField.value = '';
+        if (targetField) {
+          targetField.placeholder = 'example.com:53';
+        }
+        if (targetHintField) {
+          targetHintField.textContent = 'Für UDP: host:port';
+        }
+      } else if (isWhois) {
+        useHTTPSField.checked = false;
+        verifyCertField.checked = false;
+        tlsModeField.value = 'none';
+        expectedStatusField.value = '';
+        expectedTextField.value = '';
+        if (targetField) {
+          targetField.placeholder = 'example.com';
+        }
+        if (targetHintField) {
+          targetHintField.textContent = 'Domain ohne Protokoll (z. B. example.com). Prüft Ablaufdatum via WHOIS.';
+        }
+      } else {
+        useHTTPSField.checked = false;
+        verifyCertField.checked = false;
+        tlsModeField.value = 'none';
+        expectedStatusField.value = '';
+        expectedTextField.value = '';
+        if (kind === 'tcp') {
+          if (targetField) {
+            targetField.placeholder = 'example.com:443';
+          }
+          if (targetHintField) {
+            targetHintField.textContent = 'Für TCP: host:port';
+          }
+        } else if (kind === 'icmp') {
+          if (targetField) {
+            targetField.placeholder = '1.1.1.1';
+          }
+          if (targetHintField) {
+            targetHintField.textContent = 'Für ICMP: IPv4/IPv6-Adresse';
+          }
+        }
       }
     };
 
     const openCreate = () => {
-      if (!title || !idField || !nameField || !groupField || !kindField || !tlsModeField || !targetField || !intervalField || !timeoutField || !expectedStatusField || !enabledField || !notifyField || !dialog) {
+      if (!title || !idField || !nameField || !groupField || !kindField || !tlsModeField || !targetField || !intervalField || !timeoutField || !expectedStatusField || !expectedTextField || !enabledField || !notifyField || !dialog) {
         return;
       }
       title.textContent = 'Monitor anlegen';
@@ -329,6 +450,9 @@
       intervalField.value = '60';
       timeoutField.value = '10';
       expectedStatusField.value = '';
+      expectedTextField.value = '';
+      useHTTPSField.checked = true;
+      verifyCertField.checked = true;
       enabledField.checked = true;
       notifyField.checked = true;
       applyKindRules();
@@ -336,7 +460,7 @@
     };
 
     const openEdit = (button) => {
-      if (!title || !idField || !nameField || !groupField || !kindField || !tlsModeField || !targetField || !intervalField || !timeoutField || !expectedStatusField || !enabledField || !notifyField || !dialog) {
+      if (!title || !idField || !nameField || !groupField || !kindField || !tlsModeField || !targetField || !intervalField || !timeoutField || !expectedStatusField || !expectedTextField || !enabledField || !notifyField || !dialog) {
         return;
       }
       title.textContent = 'Monitor bearbeiten';
@@ -349,6 +473,18 @@
       intervalField.value = button.dataset.interval || '60';
       timeoutField.value = button.dataset.timeout || '10';
       expectedStatusField.value = button.dataset.expectedStatus || '';
+      expectedTextField.value = button.dataset.expectedText || '';
+      const tlsMode = button.dataset.tlsMode || 'tls';
+      if (tlsMode === 'none') {
+        useHTTPSField.checked = false;
+        verifyCertField.checked = false;
+      } else if (tlsMode === 'starttls') {
+        useHTTPSField.checked = true;
+        verifyCertField.checked = false;
+      } else {
+        useHTTPSField.checked = true;
+        verifyCertField.checked = true;
+      }
       enabledField.checked = button.dataset.enabled === '1';
       notifyField.checked = button.dataset.notifyOnRecovery === '1';
       applyKindRules();
@@ -373,6 +509,8 @@
       scheduleIconSearch(groupIconSearch?.value || '');
     });
     kindField?.addEventListener('change', applyKindRules);
+    useHTTPSField?.addEventListener('change', applyKindRules);
+    verifyCertField?.addEventListener('change', applyKindRules);
     groupIconSearch?.addEventListener('input', () => scheduleIconSearch(groupIconSearch.value));
     groupIconCustom?.addEventListener('input', () => {
       if (groupIconSlugField) {

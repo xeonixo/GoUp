@@ -48,6 +48,9 @@
         <option value="icmp">ICMP</option>
         <option value="smtp">SMTP</option>
         <option value="imap">IMAP</option>
+        <option value="dns">DNS</option>
+        <option value="udp">UDP</option>
+        <option value="whois">WHOIS (Domain-Ablauf)</option>
       </select>
     </label>
 
@@ -56,7 +59,18 @@
       <select name="tls_mode" id="monitor-tls-mode">
         <option value="tls">TLS</option>
         <option value="starttls">STARTTLS</option>
+        <option value="none">Kein TLS</option>
       </select>
+    </label>
+
+    <label id="https-mode-row" class="checkbox-row" hidden>
+      <input type="checkbox" id="monitor-use-https" checked>
+      <span id="monitor-use-https-label">HTTPS verwenden</span>
+    </label>
+
+    <label id="https-verify-row" class="checkbox-row" hidden>
+      <input type="checkbox" id="monitor-verify-cert" checked>
+      <span id="monitor-verify-cert-label">Zertifikat prüfen</span>
     </label>
 
     <label>
@@ -77,7 +91,8 @@
 
     <label>
       <span>Ziel</span>
-      <input type="text" name="target" id="monitor-target" placeholder="https://example.com/health, example.com:443 oder 1.1.1.1" required>
+      <input type="text" name="target" id="monitor-target" placeholder="example.com/health" required>
+      <small class="muted compact" id="monitor-target-hint">Für HTTP(S): Host/Pfad ohne Protokoll (wird automatisch ergänzt).</small>
     </label>
 
     <div class="inline-grid">
@@ -91,9 +106,15 @@
       </label>
     </div>
 
-    <label id="expected-status-row">
-      <span>Erwarteter HTTP-Status (nur HTTPS)</span>
+    <label id="expected-status-row" hidden>
+      <span>Erwarteter HTTP-Status (optional)</span>
       <input type="number" name="expected_status_code" id="monitor-expected-status" min="100" max="599" placeholder="200">
+    </label>
+
+    <label id="expected-text-row" hidden>
+      <span>Erwartete Keywords (optional)</span>
+      <input type="text" name="expected_text" id="monitor-expected-text" placeholder="z. B. healthy, ok">
+      <small class="muted compact">Mehrere Keywords mit Komma trennen. Alle Keywords müssen im Body vorkommen.</small>
     </label>
 
     <label class="checkbox-row">
@@ -310,7 +331,8 @@
                   data-timeout="{{.TimeoutSeconds}}"
                   data-enabled="{{if .Enabled}}1{{else}}0{{end}}"
                   data-notify-on-recovery="{{if .NotifyOnRecovery}}1{{else}}0{{end}}"
-                  data-expected-status="{{.ExpectedStatus}}">
+                  data-expected-status="{{.ExpectedStatus}}"
+                  data-expected-text="{{.ExpectedText}}">
                   Bearbeiten
                 </button>
                 <form method="post" action="{{$.AppBase}}monitors/enabled" class="action-menu-form">
@@ -362,19 +384,29 @@
               <span class="muted">Latenz</span>
               <strong>{{if .LastLatency}}{{.LastLatency}}{{else}}—{{end}}</strong>
             </div>
+            {{if eq .KindValue "https"}}
             <div class="monitor-metric">
               <span class="muted">HTTP</span>
               <strong>{{if .HTTPStatusCode}}{{.HTTPStatusCode}}{{else}}—{{end}}</strong>
             </div>
+            {{end}}
             <div class="monitor-metric">
               <span class="muted">Letzter Lauf</span>
               <strong>{{if .LastCheckedAtRaw}}<time class="client-time" datetime="{{.LastCheckedAtRaw}}" data-format="datetime">{{.LastCheckedAt}}</time>{{else}}—{{end}}</strong>
             </div>
+            {{if eq .KindValue "https" "tcp" "smtp" "imap"}}
             <div class="monitor-metric">
               <span class="muted">Zertifikat</span>
               <strong>{{if .TLSNotAfterRaw}}<time class="client-time" datetime="{{.TLSNotAfterRaw}}" data-format="minute">{{.TLSNotAfter}}</time>{{else}}—{{end}}</strong>
               {{if .TLSDaysRemaining}}<span class="muted compact">{{.TLSDaysRemaining}} verbleibend</span>{{end}}
             </div>
+            {{else if eq .KindValue "whois"}}
+            <div class="monitor-metric">
+              <span class="muted">Domain-Ablauf</span>
+              <strong>{{if .TLSNotAfterRaw}}<time class="client-time" datetime="{{.TLSNotAfterRaw}}" data-format="minute">{{.TLSNotAfter}}</time>{{else}}—{{end}}</strong>
+              {{if .TLSDaysRemaining}}<span class="muted compact">{{.TLSDaysRemaining}} verbleibend</span>{{end}}
+            </div>
+            {{end}}
           </div>
 
         </div>

@@ -52,6 +52,9 @@ func NewRunner(logger *slog.Logger, store Store, notifiers ...Notifier) *Runner 
 			KindICMP:  ICMPChecker{},
 			KindSMTP:  SMTPChecker{},
 			KindIMAP:  IMAPChecker{},
+			KindDNS:   DNSChecker{},
+			KindUDP:   UDPChecker{},
+			KindWhois: WhoisChecker{},
 		},
 	}
 }

@@ -216,6 +216,7 @@ type monitorView struct {
 	Enabled          bool
 	NotifyOnRecovery bool
 	ExpectedStatus   string
+	ExpectedText     string
 	TrendLabel       string
 	StatusLabel      string
 	StatusClass      string
@@ -1152,6 +1153,7 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var expectedStatusCode *int
+	expectedText := ""
 	kind := monitor.Kind(strings.ToLower(strings.TrimSpace(r.FormValue("kind"))))
 	if kind == "" {
 		kind = monitor.KindHTTPS
@@ -1165,17 +1167,26 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 		}
 		expectedStatusCode = &value
 	}
+	if kind == monitor.KindHTTPS || kind == monitor.KindDNS {
+		expectedText = strings.TrimSpace(r.FormValue("expected_text"))
+	}
+
+	target := strings.TrimSpace(r.FormValue("target"))
+	if kind == monitor.KindHTTPS {
+		target = normalizeHTTPMonitorTarget(target, tlsMode)
+	}
 
 	params := store.CreateMonitorParams{
 		Name:               strings.TrimSpace(r.FormValue("name")),
 		Group:              strings.TrimSpace(r.FormValue("group")),
 		Kind:               kind,
-		Target:             strings.TrimSpace(r.FormValue("target")),
+		Target:             target,
 		Interval:           time.Duration(intervalSeconds) * time.Second,
 		Timeout:            time.Duration(timeoutSeconds) * time.Second,
 		Enabled:            r.FormValue("enabled") == "on",
 		TLSMode:            tlsMode,
 		ExpectedStatusCode: expectedStatusCode,
+		ExpectedText:       expectedText,
 		NotifyOnRecovery:   r.FormValue("notify_on_recovery") == "on",
 	}
 
@@ -1890,14 +1901,21 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 	rollupsByMonitor := groupRollupsByMonitor(rollups)
 	views := make([]monitorView, 0, len(items))
 	for _, item := range items {
+		kindLabel := monitorKindLabel(item.Monitor.Kind)
+		tlsLabel := monitorTLSModeLabel(item.Monitor)
+		if item.Monitor.Kind == monitor.KindHTTPS {
+			kindLabel = monitorHTTPKindLabel(item.Monitor.TLSMode)
+			tlsLabel = ""
+		}
+
 		view := monitorView{
 			ID:               item.Monitor.ID,
 			Name:             item.Monitor.Name,
 			Group:            effectiveMonitorGroup(strings.TrimSpace(item.Monitor.Group), item.Monitor.Name, item.Monitor.Target),
 			SortOrder:        item.Monitor.SortOrder,
 			KindValue:        string(item.Monitor.Kind),
-			Kind:             monitorKindLabel(item.Monitor.Kind),
-			TLSMode:          monitorTLSModeLabel(item.Monitor),
+			Kind:             kindLabel,
+			TLSMode:          tlsLabel,
 			TLSModeValue:     string(item.Monitor.TLSMode),
 			Target:           item.Monitor.Target,
 			TargetLabel:      monitorTargetLabel(item.Monitor),
@@ -1917,6 +1935,7 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 		if item.Monitor.ExpectedStatusCode != nil {
 			view.ExpectedStatus = strconv.Itoa(*item.Monitor.ExpectedStatusCode)
 		}
+		view.ExpectedText = strings.TrimSpace(item.Monitor.ExpectedText)
 		if item.LastResult != nil {
 			view.LastCheckedAt = item.LastResult.CheckedAt.UTC().Format(time.RFC3339)
 			view.LastCheckedAtRaw = item.LastResult.CheckedAt.UTC().Format(time.RFC3339)
@@ -2502,6 +2521,9 @@ func monitorGroupingTokens(value string) []string {
 		"icmp":       {},
 		"smtp":       {},
 		"imap":       {},
+		"dns":        {},
+		"udp":        {},
+		"whois":      {},
 		"tls":        {},
 		"starttls":   {},
 		"monitor":    {},
@@ -2549,7 +2571,7 @@ func monitorTargetHost(target string) string {
 func monitorKindLabel(kind monitor.Kind) string {
 	switch kind {
 	case monitor.KindHTTPS:
-		return "HTTPS"
+		return "HTTP(S)"
 	case monitor.KindTCP:
 		return "TCP"
 	case monitor.KindICMP:
@@ -2558,6 +2580,12 @@ func monitorKindLabel(kind monitor.Kind) string {
 		return "SMTP"
 	case monitor.KindIMAP:
 		return "IMAP"
+	case monitor.KindDNS:
+		return "DNS"
+	case monitor.KindUDP:
+		return "UDP"
+	case monitor.KindWhois:
+		return "WHOIS"
 	default:
 		return strings.ToUpper(string(kind))
 	}
@@ -2772,8 +2800,16 @@ func defaultTLSMode(kind monitor.Kind) monitor.TLSMode {
 func normalizeTLSMode(kind monitor.Kind, requested monitor.TLSMode) monitor.TLSMode {
 	switch kind {
 	case monitor.KindHTTPS:
+		if requested == monitor.TLSModeNone || requested == monitor.TLSModeTLS || requested == monitor.TLSModeSTARTTLS {
+			return requested
+		}
 		return monitor.TLSModeTLS
 	case monitor.KindTCP, monitor.KindICMP:
+		if kind == monitor.KindTCP {
+			if requested == monitor.TLSModeNone || requested == monitor.TLSModeTLS || requested == monitor.TLSModeSTARTTLS {
+				return requested
+			}
+		}
 		return monitor.TLSModeNone
 	case monitor.KindSMTP:
 		if requested == monitor.TLSModeTLS || requested == monitor.TLSModeSTARTTLS {
@@ -2785,6 +2821,8 @@ func normalizeTLSMode(kind monitor.Kind, requested monitor.TLSMode) monitor.TLSM
 			return requested
 		}
 		return monitor.TLSModeTLS
+	case monitor.KindDNS, monitor.KindUDP, monitor.KindWhois:
+		return monitor.TLSModeNone
 	default:
 		return requested
 	}
@@ -2807,14 +2845,51 @@ func monitorTargetLabel(item monitor.Monitor) string {
 func monitorTLSModeLabel(item monitor.Monitor) string {
 	switch item.Kind {
 	case monitor.KindHTTPS:
-		return "TLS"
+		return ""
 	case monitor.KindSMTP, monitor.KindIMAP:
 		if item.TLSMode == monitor.TLSModeSTARTTLS {
 			return "STARTTLS"
 		}
 		return "TLS"
+	case monitor.KindTCP:
+		switch item.TLSMode {
+		case monitor.TLSModeTLS:
+			return "TLS"
+		case monitor.TLSModeSTARTTLS:
+			return "TLS (selfsigned)"
+		default:
+			return ""
+		}
 	default:
 		return ""
+	}
+}
+
+func normalizeHTTPMonitorTarget(raw string, mode monitor.TLSMode) string {
+	target := strings.TrimSpace(raw)
+	if target == "" {
+		return target
+	}
+	if strings.Contains(target, "://") {
+		return target
+	}
+	if strings.HasPrefix(target, "//") {
+		target = strings.TrimPrefix(target, "//")
+	}
+	if mode == monitor.TLSModeNone {
+		return "http://" + target
+	}
+	return "https://" + target
+}
+
+func monitorHTTPKindLabel(mode monitor.TLSMode) string {
+	switch mode {
+	case monitor.TLSModeNone:
+		return "HTTP"
+	case monitor.TLSModeSTARTTLS:
+		return "HTTPS (selfsigned)"
+	default:
+		return "HTTPS"
 	}
 }
 

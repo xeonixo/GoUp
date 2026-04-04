@@ -17,6 +17,12 @@
   box-sizing: border-box;
 }
 
+/* Ensure the HTML `hidden` attribute is always respected, even when a
+   class rule (e.g. display:flex on .checkbox-row) would otherwise win. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -507,10 +513,11 @@ button {
 
 .service-summary-trend .trend-bars {
   margin: 0;
+  height: 1rem;
 }
 
 .service-summary-trend .trend-bar {
-  height: 0.95rem;
+  height: 100%;
 }
 
 .service-cluster-title {
@@ -610,10 +617,12 @@ button {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 1rem;
+  align-items: stretch;
 }
 
 .monitor-card {
   display: grid;
+  grid-template-rows: auto auto 1fr;
   gap: 1rem;
   min-height: 100%;
   border-radius: 14px;
@@ -655,14 +664,21 @@ button {
 }
 
 .monitor-summary-trend {
-  border: 0;
-  background: transparent;
-  padding: 0;
+  border: 1px solid rgba(37, 48, 78, 0.56);
+  background: rgba(8, 12, 24, 0.34);
+  border-radius: 12px;
+  padding: 0.55rem 0.65rem;
   width: 100%;
+  min-height: 2rem;
+}
+
+.monitor-summary-trend .trend-bars {
+  margin: 0;
+  height: 1rem;
 }
 
 .monitor-summary-trend .trend-bar {
-  height: 0.9rem;
+  height: 100%;
 }
 
 .monitor-card-header h4,
@@ -676,6 +692,12 @@ button {
   gap: 0.8rem;
 }
 
+.monitor-card-body {
+  display: grid;
+  gap: 0.85rem;
+  align-content: start;
+}
+
 .info-row {
   display: grid;
   gap: 0.25rem;
@@ -684,7 +706,9 @@ button {
 .monitor-metrics {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(5.1rem, auto);
   gap: 0.75rem;
+  min-height: calc(5.1rem * 2 + 0.75rem);
 }
 
 .monitor-metric {
@@ -692,6 +716,7 @@ button {
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(37, 48, 78, 0.5);
+  min-height: 5.1rem;
 }
 
 .monitor-metric strong {
@@ -747,13 +772,15 @@ button {
   grid-auto-flow: column;
   grid-auto-columns: minmax(4px, 1fr);
   gap: 0.18rem;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0;
   min-width: 132px;
+  height: 1rem;
+  align-items: stretch;
 }
 
 .trend-bar {
   display: block;
-  height: 1.1rem;
+  height: 100%;
   border-radius: 999px;
   background: rgba(154, 167, 196, 0.2);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
@@ -914,6 +941,7 @@ button {
 
 .trend-bars-large {
   min-width: 0;
+  height: 1.25rem;
 }
 
 .table-wrap {
@@ -1101,6 +1129,7 @@ li + li {
 
   .monitor-metrics {
     grid-template-columns: 1fr;
+    min-height: 0;
   }
 
   .topbar-main,
