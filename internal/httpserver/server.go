@@ -93,6 +93,7 @@ type pageData struct {
 	MonitorGroups     []monitorGroupView
 	AvailableGroups   []string
 	Events            []notificationEventView
+	StateEvents       []monitorStateEventView
 	AdminTenants      []store.Tenant
 	AdminTenant       store.Tenant
 	AdminProviders    []store.AuthProvider
@@ -245,6 +246,18 @@ type notificationEventView struct {
 	Error          string
 	DeliveredAt    string
 	DeliveredAtRaw string
+}
+
+type monitorStateEventView struct {
+	ID        int64
+	When      string
+	WhenRaw   string
+	Monitor   string
+	From      string
+	FromClass string
+	To        string
+	ToClass   string
+	Message   string
 }
 
 type trendRange struct {
@@ -822,6 +835,12 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		events = nil
 	}
 
+	stateEvents, err := appStore.ListRecentMonitorStateEvents(r.Context(), 40)
+	if err != nil {
+		s.logger.Warn("load monitor state events failed", "error", err)
+		stateEvents = nil
+	}
+
 	groupMetadata, err := appStore.ListMonitorGroupMetadata(r.Context())
 	if err != nil {
 		http.Error(w, "unable to load monitor groups", http.StatusInternalServerError)
@@ -858,6 +877,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		MonitorGroups:   buildMonitorGroups(monitorViews, groupMetadata),
 		AvailableGroups: availableGroups,
 		Events:          buildNotificationEventViews(events),
+		StateEvents:     buildMonitorStateEventViews(stateEvents),
 		AppBase:         s.tenantAppBase(r),
 	})
 }
@@ -2618,6 +2638,37 @@ func buildNotificationEventViews(items []store.NotificationEvent) []notification
 		if strings.TrimSpace(view.Error) == "" {
 			view.Error = "—"
 		}
+		views = append(views, view)
+	}
+	return views
+}
+
+func buildMonitorStateEventViews(items []store.MonitorStateEvent) []monitorStateEventView {
+	views := make([]monitorStateEventView, 0, len(items))
+	for _, item := range items {
+		view := monitorStateEventView{
+			ID:      item.ID,
+			When:    item.CheckedAt.UTC().Format(time.RFC3339),
+			WhenRaw: item.CheckedAt.UTC().Format(time.RFC3339),
+			Monitor: item.MonitorName,
+			From:    strings.ToUpper(strings.TrimSpace(item.FromStatus)),
+			To:      strings.ToUpper(strings.TrimSpace(item.ToStatus)),
+			Message: strings.TrimSpace(item.Message),
+		}
+		if view.Monitor == "" {
+			view.Monitor = strconv.FormatInt(item.MonitorID, 10)
+		}
+		if view.Message == "" {
+			view.Message = "—"
+		}
+		if view.From == "" {
+			view.From = "UNKNOWN"
+		}
+		if view.To == "" {
+			view.To = "UNKNOWN"
+		}
+		view.FromClass = "status-" + view.From
+		view.ToClass = "status-" + view.To
 		views = append(views, view)
 	}
 	return views

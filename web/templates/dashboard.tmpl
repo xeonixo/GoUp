@@ -424,6 +424,62 @@
 </section>
 
 <section class="card stack notification-events-card">
+  <h2>Letzte Statusänderungen</h2>
+  {{if .StateEvents}}
+  <div class="state-events-toolbar">
+    <label>
+      <span class="sr-only">Monitor/Details durchsuchen</span>
+      <input type="search" id="state-events-search" placeholder="Monitor oder Details filtern…" autocomplete="off" spellcheck="false">
+    </label>
+    <label>
+      <span class="sr-only">Zielstatus filtern</span>
+      <select id="state-events-status-filter">
+        <option value="all">Alle Zielstatus</option>
+        <option value="down">DOWN</option>
+        <option value="degraded">DEGRADED</option>
+        <option value="up">UP</option>
+      </select>
+    </label>
+    <label class="checkbox-row">
+      <input type="checkbox" id="state-events-incidents-only">
+      <span>Nur Incidents</span>
+    </label>
+    <button class="button button-secondary button-small" type="button" id="state-events-export">CSV exportieren</button>
+  </div>
+  <p class="muted compact" id="state-events-filter-status"></p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Zeitpunkt</th>
+          <th>Monitor</th>
+          <th>Von</th>
+          <th>Nach</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody id="state-events-body">
+        {{range .StateEvents}}
+        <tr data-monitor="{{.Monitor}}" data-from="{{.From}}" data-to="{{.To}}" data-message="{{.Message}}" data-when="{{.WhenRaw}}">
+          <td><time class="client-time" datetime="{{.WhenRaw}}" data-format="datetime">{{.When}}</time></td>
+          <td>{{.Monitor}}</td>
+          <td><span class="status-pill {{.FromClass}}">{{.From}}</span></td>
+          <td><span class="status-pill {{.ToClass}}">{{.To}}</span></td>
+          <td class="break-all">{{.Message}}</td>
+        </tr>
+        {{end}}
+        <tr id="state-events-empty-row" hidden>
+          <td colspan="5" class="muted">Keine Statusänderungen für den aktuellen Filter.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <p class="muted">Noch keine Statusänderungen vorhanden.</p>
+  {{end}}
+</section>
+
+<section class="card stack notification-events-card">
   <h2>Letzte Notification-Events</h2>
   {{if .Events}}
   <div class="table-wrap">

@@ -63,6 +63,13 @@
     const httpsVerifyRow = document.getElementById('https-verify-row');
     const expectedStatusRow = document.getElementById('expected-status-row');
     const expectedTextRow = document.getElementById('expected-text-row');
+    const stateEventsBody = document.getElementById('state-events-body');
+    const stateEventsSearch = document.getElementById('state-events-search');
+    const stateEventsStatusFilter = document.getElementById('state-events-status-filter');
+    const stateEventsIncidentsOnly = document.getElementById('state-events-incidents-only');
+    const stateEventsExport = document.getElementById('state-events-export');
+    const stateEventsFilterStatus = document.getElementById('state-events-filter-status');
+    const stateEventsEmptyRow = document.getElementById('state-events-empty-row');
     const dashboardStateScope = `${appBase || '/'}:${dashboardStateOwner}:${window.location.pathname}`;
     const dashboardStateScrollKey = `goup.dashboard.scrollY:${dashboardStateScope}`;
     const dashboardStateGroupsKey = `goup.dashboard.openGroups:${dashboardStateScope}`;
@@ -707,6 +714,103 @@
     document.querySelectorAll('.trend-trigger').forEach((button) => {
       button.addEventListener('click', () => openTrendDetail(button));
     });
+
+    const stateEventRows = stateEventsBody
+      ? Array.from(stateEventsBody.querySelectorAll('tr')).filter((row) => row.id !== 'state-events-empty-row')
+      : [];
+
+    const updateStateEventFilterStatus = (visible, total) => {
+      if (!stateEventsFilterStatus) {
+        return;
+      }
+      if (total <= 0) {
+        stateEventsFilterStatus.textContent = 'Keine Statusänderungen vorhanden.';
+        return;
+      }
+      if (visible === total) {
+        stateEventsFilterStatus.textContent = `${total} Einträge`;
+        return;
+      }
+      stateEventsFilterStatus.textContent = `${visible} von ${total} Einträgen sichtbar`;
+    };
+
+    const applyStateEventFilters = () => {
+      if (!stateEventRows.length) {
+        updateStateEventFilterStatus(0, 0);
+        return;
+      }
+
+      const query = (stateEventsSearch?.value || '').trim().toLowerCase();
+      const statusFilter = (stateEventsStatusFilter?.value || 'all').trim().toLowerCase();
+      const incidentsOnly = stateEventsIncidentsOnly?.checked === true;
+
+      let visible = 0;
+      stateEventRows.forEach((row) => {
+        const monitor = (row.dataset.monitor || '').toLowerCase();
+        const fromStatus = (row.dataset.from || '').toLowerCase();
+        const toStatus = (row.dataset.to || '').toLowerCase();
+        const message = (row.dataset.message || '').toLowerCase();
+        const when = (row.dataset.when || '').toLowerCase();
+
+        const matchesQuery = !query || monitor.includes(query) || message.includes(query) || when.includes(query) || fromStatus.includes(query) || toStatus.includes(query);
+        const matchesStatus = statusFilter === 'all' || toStatus === statusFilter;
+        const matchesIncidentsOnly = !incidentsOnly || toStatus === 'down' || toStatus === 'degraded';
+        const rowVisible = matchesQuery && matchesStatus && matchesIncidentsOnly;
+
+        row.hidden = !rowVisible;
+        if (rowVisible) {
+          visible += 1;
+        }
+      });
+
+      if (stateEventsEmptyRow) {
+        stateEventsEmptyRow.hidden = visible > 0;
+      }
+      updateStateEventFilterStatus(visible, stateEventRows.length);
+    };
+
+    const exportStateEventsCSV = () => {
+      if (!stateEventRows.length) {
+        return;
+      }
+
+      const visibleRows = stateEventRows.filter((row) => !row.hidden);
+      if (!visibleRows.length) {
+        return;
+      }
+
+      const esc = (value) => {
+        const text = String(value ?? '');
+        return `"${text.replace(/"/g, '""')}"`;
+      };
+
+      const lines = [
+        ['Zeitpunkt', 'Monitor', 'Von', 'Nach', 'Details'],
+        ...visibleRows.map((row) => [
+          row.dataset.when || '',
+          row.dataset.monitor || '',
+          row.dataset.from || '',
+          row.dataset.to || '',
+          row.dataset.message || ''
+        ])
+      ].map((columns) => columns.map((column) => esc(column)).join(';'));
+
+      const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `goup-statusaenderungen-${new Date().toISOString().replace(/[:]/g, '-').slice(0, 19)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    };
+
+    stateEventsSearch?.addEventListener('input', applyStateEventFilters);
+    stateEventsStatusFilter?.addEventListener('change', applyStateEventFilters);
+    stateEventsIncidentsOnly?.addEventListener('change', applyStateEventFilters);
+    stateEventsExport?.addEventListener('click', exportStateEventsCSV);
+    applyStateEventFilters();
 
     if (!isAdmin) {
       return;

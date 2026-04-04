@@ -544,6 +544,19 @@ CREATE TABLE IF NOT EXISTS incidents (
     FOREIGN KEY(monitor_id) REFERENCES monitors(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS monitor_state_events (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	monitor_id INTEGER NOT NULL,
+	checked_at DATETIME NOT NULL,
+	from_status TEXT NOT NULL,
+	to_status TEXT NOT NULL,
+	message TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY(monitor_id) REFERENCES monitors(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_monitor_state_events_checked_at
+ON monitor_state_events(checked_at DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS notification_endpoints (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     kind TEXT NOT NULL,

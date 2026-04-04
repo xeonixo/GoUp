@@ -2,9 +2,14 @@ package monitor
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 )
+
+// ErrNoRecipients is returned by a Notifier when no recipients are configured.
+// The runner treats this as "nothing to do" and skips recording a notification event.
+var ErrNoRecipients = errors.New("no notification recipients configured")
 
 type Store interface {
 	ListMonitorSnapshots(ctx context.Context) ([]Snapshot, error)
@@ -116,6 +121,11 @@ func (r *Runner) runDueChecks(ctx context.Context) {
 				notifyCtx, notifyCancel := context.WithTimeout(ctx, 5*time.Second)
 				err := notifier.Notify(notifyCtx, transition)
 				notifyCancel()
+
+				// No recipients configured – nothing was sent, don't pollute the log.
+				if errors.Is(err, ErrNoRecipients) {
+					continue
+				}
 
 				var deliveredAt *time.Time
 				errorMessage := ""

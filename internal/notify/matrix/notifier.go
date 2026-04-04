@@ -57,7 +57,7 @@ func (n *Notifier) Notify(ctx context.Context, transition monitor.Transition) er
 			return err
 		}
 		if len(targets) == 0 {
-			return nil
+			return monitor.ErrNoRecipients
 		}
 
 		headline := fmt.Sprintf("%s %s: %s → %s", statusEmoji(transition.Current), transition.Monitor.Name, strings.ToUpper(string(transition.Previous)), strings.ToUpper(string(transition.Current)))

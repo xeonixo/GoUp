@@ -1041,6 +1041,28 @@ th {
   margin-top: 1.6rem;
 }
 
+.state-events-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) minmax(170px, 1fr) auto auto;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.state-events-toolbar > label {
+  margin: 0;
+}
+
+.state-events-toolbar input,
+.state-events-toolbar select {
+  width: 100%;
+}
+
+.state-events-toolbar .checkbox-row {
+  width: auto;
+  white-space: nowrap;
+  justify-self: start;
+}
+
 .action-menu-item {
   width: 100%;
   border: 0;
@@ -1140,6 +1162,10 @@ li + li {
   .topbar-dashboard-actions {
     justify-content: space-between;
   }
+
+  .state-events-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 @media (max-width: 600px) {
@@ -1193,6 +1219,10 @@ li + li {
   .hero-actions .button,
   .hero-actions .notice {
     width: 100%;
+  }
+
+  .state-events-toolbar {
+    grid-template-columns: 1fr;
   }
 }
 

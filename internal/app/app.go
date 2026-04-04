@@ -110,7 +110,7 @@ func New(ctx context.Context) (*App, error) {
 			logger,
 			sqliteStore,
 			matrixnotify.NewTenantNotifier(controlStore, matrixEndpointID, defaultTenant.ID),
-			emailnotify.NewNotifier(controlStore, emailEndpointID, defaultTenant.ID, nil, cfg.Notify.EmailSubjectPrefix),
+			emailnotify.NewNotifier(controlStore, emailEndpointID, defaultTenant.ID, nil, cfg.Notify.EmailSubjectPrefix, cfg.BaseURL, defaultTenant.Slug),
 		)
 	}
 

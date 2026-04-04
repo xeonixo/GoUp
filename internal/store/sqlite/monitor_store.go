@@ -949,6 +949,10 @@ func (s *Store) RecordMonitorState(ctx context.Context, monitorID int64, status 
 		checkedAt = time.Now().UTC()
 	}
 
+	if err := s.recordMonitorStateTransition(ctx, monitorID, status, message, checkedAt); err != nil {
+		return err
+	}
+
 	if status == monitor.StatusUp {
 		result, err := s.db.ExecContext(ctx, `
 UPDATE incidents
@@ -1025,6 +1029,63 @@ WHERE id = ?
 `, strings.TrimSpace(message), string(status), incidentID)
 	if err != nil {
 		return fmt.Errorf("update incident: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Store) recordMonitorStateTransition(ctx context.Context, monitorID int64, status monitor.Status, message string, checkedAt time.Time) error {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT status
+FROM monitor_results
+WHERE monitor_id = ?
+ORDER BY checked_at DESC, id DESC
+LIMIT 2
+`, monitorID)
+	if err != nil {
+		if isMalformedSQLiteError(err) {
+			return nil
+		}
+		return fmt.Errorf("load previous monitor states: %w", err)
+	}
+	defer rows.Close()
+
+	states := make([]monitor.Status, 0, 2)
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			if isMalformedSQLiteError(err) {
+				return nil
+			}
+			return fmt.Errorf("scan previous monitor state: %w", err)
+		}
+		states = append(states, monitor.Status(strings.TrimSpace(raw)))
+	}
+	if err := rows.Err(); err != nil {
+		if isMalformedSQLiteError(err) {
+			return nil
+		}
+		return fmt.Errorf("iterate previous monitor states: %w", err)
+	}
+
+	if len(states) < 2 {
+		return nil
+	}
+
+	previous := states[1]
+	if previous == status {
+		return nil
+	}
+
+	_, err = s.db.ExecContext(ctx, `
+INSERT INTO monitor_state_events (monitor_id, checked_at, from_status, to_status, message)
+VALUES (?, ?, ?, ?, ?)
+`, monitorID, checkedAt.UTC(), string(previous), string(status), strings.TrimSpace(message))
+	if err != nil {
+		if isMalformedSQLiteError(err) {
+			return nil
+		}
+		return fmt.Errorf("insert monitor state transition: %w", err)
 	}
 
 	return nil
