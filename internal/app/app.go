@@ -14,6 +14,7 @@ import (
 	"goup/internal/config"
 	"goup/internal/httpserver"
 	monitorrunner "goup/internal/monitor"
+	emailnotify "goup/internal/notify/email"
 	matrixnotify "goup/internal/notify/matrix"
 	store "goup/internal/store/sqlite"
 )
@@ -57,9 +58,10 @@ func New(ctx context.Context) (*App, error) {
 		controlStore.Close()
 		return nil, fmt.Errorf("ensure default tenant: %w", err)
 	}
+	hasGlobalOIDC := strings.TrimSpace(cfg.Auth.OIDC.IssuerURL) != "" && strings.TrimSpace(cfg.Auth.OIDC.ClientID) != "" && strings.TrimSpace(cfg.Auth.OIDC.ClientSecret) != ""
 
 	// If OIDC is enabled, ensure default provider for default tenant
-	if cfg.Auth.Mode == config.AuthModeOIDC && cfg.Auth.OIDC.IssuerURL != "" {
+	if cfg.Auth.Mode == config.AuthModeOIDC && hasGlobalOIDC {
 		if _, err := controlStore.EnsureDefaultOIDCProvider(ctx, defaultTenant.ID, cfg.Auth.OIDC.IssuerURL, cfg.Auth.OIDC.ClientID, cfg.Auth.OIDC.ClientSecret); err != nil {
 			controlStore.Close()
 			return nil, fmt.Errorf("ensure default oidc provider: %w", err)
@@ -75,7 +77,7 @@ func New(ctx context.Context) (*App, error) {
 	sessions := auth.NewSessionManager([]byte(cfg.SessionKey), cfg.SecureCookies())
 
 	var oidcManager *auth.OIDCManager
-	if cfg.Auth.Mode == config.AuthModeOIDC {
+	if cfg.Auth.Mode == config.AuthModeOIDC && hasGlobalOIDC {
 		oidcManager, err = auth.NewOIDCManager(ctx, cfg)
 		if err != nil {
 			sqliteStore.Close()
@@ -85,7 +87,7 @@ func New(ctx context.Context) (*App, error) {
 	}
 
 	matrixClient := matrixnotify.New(cfg.Matrix)
-	configJSON, marshalErr := json.Marshal(map[string]string{
+	matrixConfigJSON, marshalErr := json.Marshal(map[string]string{
 		"homeserver_url": cfg.Matrix.HomeserverURL,
 		"room_id":        cfg.Matrix.RoomID,
 	})
@@ -95,15 +97,37 @@ func New(ctx context.Context) (*App, error) {
 		return nil, fmt.Errorf("marshal matrix endpoint config: %w", marshalErr)
 	}
 
-	matrixEndpointID, err := sqliteStore.EnsureSystemNotificationEndpoint(ctx, "matrix", "system-matrix", string(configJSON), matrixClient.Enabled())
+	matrixEndpointID, err := sqliteStore.EnsureSystemNotificationEndpoint(ctx, "matrix", "system-matrix", string(matrixConfigJSON), matrixClient.Enabled())
 	if err != nil {
 		sqliteStore.Close()
 		controlStore.Close()
 		return nil, fmt.Errorf("ensure matrix endpoint: %w", err)
 	}
 
+	emailEnabled := len(cfg.Notify.EmailRecipients) > 0
+	emailConfigJSON, marshalErr := json.Marshal(map[string]any{
+		"recipients": cfg.Notify.EmailRecipients,
+	})
+	if marshalErr != nil {
+		sqliteStore.Close()
+		controlStore.Close()
+		return nil, fmt.Errorf("marshal email endpoint config: %w", marshalErr)
+	}
+
+	emailEndpointID, err := sqliteStore.EnsureSystemNotificationEndpoint(ctx, "email", "system-email", string(emailConfigJSON), emailEnabled)
+	if err != nil {
+		sqliteStore.Close()
+		controlStore.Close()
+		return nil, fmt.Errorf("ensure email endpoint: %w", err)
+	}
+
 	tenantStores := store.NewTenantStoreManager(controlStore, defaultTenant, sqliteStore)
-	runner := monitorrunner.NewRunner(logger, sqliteStore, matrixnotify.NewNotifier(matrixClient, matrixEndpointID))
+	runner := monitorrunner.NewRunner(
+		logger,
+		sqliteStore,
+		matrixnotify.NewNotifier(matrixClient, matrixEndpointID),
+		emailnotify.NewNotifier(controlStore, emailEndpointID, defaultTenant.ID, cfg.Notify.EmailRecipients, cfg.Notify.EmailSubjectPrefix),
+	)
 
 	server, err := httpserver.New(httpserver.Dependencies{
 		Config:        cfg,

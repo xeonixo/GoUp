@@ -18,11 +18,11 @@ type Checker interface {
 }
 
 type Runner struct {
-	logger   *slog.Logger
-	store    Store
-	notifier Notifier
-	checkers map[Kind]Checker
-	interval time.Duration
+	logger    *slog.Logger
+	store     Store
+	notifiers []Notifier
+	checkers  map[Kind]Checker
+	interval  time.Duration
 }
 
 type Transition struct {
@@ -40,12 +40,12 @@ type Notifier interface {
 	Notify(ctx context.Context, transition Transition) error
 }
 
-func NewRunner(logger *slog.Logger, store Store, notifier Notifier) *Runner {
+func NewRunner(logger *slog.Logger, store Store, notifiers ...Notifier) *Runner {
 	return &Runner{
-		logger:   logger,
-		store:    store,
-		notifier: notifier,
-		interval: 5 * time.Second,
+		logger:    logger,
+		store:     store,
+		notifiers: notifiers,
+		interval:  5 * time.Second,
 		checkers: map[Kind]Checker{
 			KindHTTPS:   HTTPSChecker{},
 			KindTCP:     TCPChecker{},
@@ -106,9 +106,13 @@ func (r *Runner) runDueChecks(ctx context.Context) {
 		}
 
 		if transition, ok := buildTransition(snapshot, result); ok {
-			if r.notifier != nil && r.notifier.Enabled() {
+			for _, notifier := range r.notifiers {
+				if notifier == nil || !notifier.Enabled() {
+					continue
+				}
+
 				notifyCtx, notifyCancel := context.WithTimeout(ctx, 5*time.Second)
-				err := r.notifier.Notify(notifyCtx, transition)
+				err := notifier.Notify(notifyCtx, transition)
 				notifyCancel()
 
 				var deliveredAt *time.Time
@@ -120,12 +124,12 @@ func (r *Runner) runDueChecks(ctx context.Context) {
 					errorMessage = err.Error()
 				}
 
-				if recordErr := r.store.RecordNotificationEvent(ctx, snapshot.Monitor.ID, r.notifier.EndpointID(), r.notifier.EventType(), deliveredAt, errorMessage); recordErr != nil {
-					r.logger.Error("record notification event failed", "monitor_id", snapshot.Monitor.ID, "error", recordErr)
+				if recordErr := r.store.RecordNotificationEvent(ctx, snapshot.Monitor.ID, notifier.EndpointID(), notifier.EventType(), deliveredAt, errorMessage); recordErr != nil {
+					r.logger.Error("record notification event failed", "monitor_id", snapshot.Monitor.ID, "endpoint_id", notifier.EndpointID(), "error", recordErr)
 				}
 
 				if err != nil {
-					r.logger.Error("send transition notification failed", "monitor_id", snapshot.Monitor.ID, "error", err)
+					r.logger.Error("send transition notification failed", "monitor_id", snapshot.Monitor.ID, "endpoint_id", notifier.EndpointID(), "error", err)
 				}
 			}
 		}

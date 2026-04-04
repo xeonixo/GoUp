@@ -44,6 +44,8 @@
     {{end}}
   {{else if .AuthEnabled}}
   <a class="button" href="/auth/login">Mit Authentik anmelden</a>
+  {{else if .OIDCTenantOnly}}
+  <div class="notice warning">OIDC ist tenant-basiert konfiguriert. Bitte nutze die Tenant-Login-URL unter /t/{tenant}/login.</div>
   {{else if .AuthDisabled}}
   <div class="notice warning">Authentifizierung ist deaktiviert. Dashboard ist im Dev-Modus ohne Login erreichbar.</div>
   <a class="button" href="/app/">Zum Dashboard</a>

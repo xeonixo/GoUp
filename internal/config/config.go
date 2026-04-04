@@ -27,6 +27,7 @@ type Config struct {
 	SSOSecretKey       string
 	Auth               AuthConfig
 	Matrix             MatrixConfig
+	Notify             NotifyConfig
 }
 
 type AuthConfig struct {
@@ -45,6 +46,11 @@ type MatrixConfig struct {
 	HomeserverURL string
 	AccessToken   string
 	RoomID        string
+}
+
+type NotifyConfig struct {
+	EmailRecipients    []string
+	EmailSubjectPrefix string
 }
 
 func Load() (Config, error) {
@@ -70,6 +76,10 @@ func Load() (Config, error) {
 			HomeserverURL: strings.TrimRight(os.Getenv("GOUP_MATRIX_HOMESERVER_URL"), "/"),
 			AccessToken:   os.Getenv("GOUP_MATRIX_ACCESS_TOKEN"),
 			RoomID:        os.Getenv("GOUP_MATRIX_ROOM_ID"),
+		},
+		Notify: NotifyConfig{
+			EmailRecipients:    parseCSVEnv("GOUP_NOTIFY_EMAIL_TO"),
+			EmailSubjectPrefix: strings.TrimSpace(os.Getenv("GOUP_NOTIFY_EMAIL_SUBJECT_PREFIX")),
 		},
 	}
 
@@ -114,8 +124,17 @@ func validate(cfg Config) error {
 	case AuthModeLocal:
 		return nil
 	case AuthModeOIDC:
-		if cfg.Auth.OIDC.IssuerURL == "" || cfg.Auth.OIDC.ClientID == "" || cfg.Auth.OIDC.ClientSecret == "" {
-			return fmt.Errorf("OIDC mode requires issuer URL, client ID and client secret")
+		issuer := strings.TrimSpace(cfg.Auth.OIDC.IssuerURL)
+		clientID := strings.TrimSpace(cfg.Auth.OIDC.ClientID)
+		clientSecret := strings.TrimSpace(cfg.Auth.OIDC.ClientSecret)
+
+		// Tenant-based OIDC is allowed without a global default provider.
+		if issuer == "" && clientID == "" && clientSecret == "" {
+			return nil
+		}
+
+		if issuer == "" || clientID == "" || clientSecret == "" {
+			return fmt.Errorf("OIDC mode with global provider requires issuer URL, client ID and client secret")
 		}
 		return nil
 	default:
@@ -128,4 +147,30 @@ func envOrDefault(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func parseCSVEnv(key string) []string {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	items := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		value := strings.TrimSpace(part)
+		if value == "" {
+			continue
+		}
+		normalized := strings.ToLower(value)
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		items = append(items, value)
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	return items
 }

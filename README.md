@@ -24,6 +24,7 @@ Ziele:
 - Zertifikatsauswertung inkl. Restlaufzeit
 - Incident-/Status-Tracking und Notification-Events
 - Matrix-Benachrichtigungen bei Statuswechseln
+- E-Mail-Benachrichtigungen bei Statuswechseln (via globalem SMTP)
 - Admin-Bereich für:
 	- Tenants
 	- Auth-Provider (OIDC / Local)
@@ -132,6 +133,12 @@ Matrix:
 - `GOUP_MATRIX_HOMESERVER_URL`
 - `GOUP_MATRIX_ACCESS_TOKEN`
 - `GOUP_MATRIX_ROOM_ID`
+
+E-Mail-Notifications:
+
+- Automatisch: E-Mail-Adressen der Benutzer-Mitgliedschaften im jeweiligen Tenant
+- `GOUP_NOTIFY_EMAIL_TO` – optional zusätzliche Komma-separierte Empfänger, z. B. `ops@example.com,oncall@example.com`
+- `GOUP_NOTIFY_EMAIL_SUBJECT_PREFIX` – optionales Subject-Präfix
 
 > Hinweis: In `oidc`-Mode müssen Issuer, Client-ID und Client-Secret gesetzt sein.
 

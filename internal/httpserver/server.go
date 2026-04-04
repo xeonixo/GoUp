@@ -77,6 +77,7 @@ type pageData struct {
 	IsEdit           bool
 	AuthEnabled      bool
 	AuthDisabled     bool
+	OIDCTenantOnly   bool
 	TrendValue       string
 	TrendLabel       string
 	TrendRanges      []trendRangeOptionView
@@ -525,8 +526,9 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 		Title:        "Login · GoUp",
 		Error:        strings.TrimSpace(r.URL.Query().Get("error")),
 		Notice:       strings.TrimSpace(r.URL.Query().Get("notice")),
-		AuthEnabled:  s.cfg.Auth.Mode == config.AuthModeOIDC,
+		AuthEnabled:  s.cfg.Auth.Mode == config.AuthModeOIDC && s.oidc != nil,
 		AuthDisabled: s.cfg.Auth.Mode == config.AuthModeDisabled,
+		OIDCTenantOnly: s.cfg.Auth.Mode == config.AuthModeOIDC && s.oidc == nil,
 		User:         s.currentUser(r),
 	})
 }

@@ -1568,3 +1568,41 @@ LIMIT ?
 	}
 	return items, nil
 }
+
+func (s *ControlPlaneStore) ListTenantNotificationEmails(ctx context.Context, tenantID int64) ([]string, error) {
+	if tenantID <= 0 {
+		return nil, fmt.Errorf("tenant id is required")
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT DISTINCT trim(u.email)
+FROM tenant_memberships tm
+JOIN users u ON u.id = tm.user_id
+JOIN tenants t ON t.id = tm.tenant_id
+WHERE tm.tenant_id = ?
+	AND t.active = 1
+	AND trim(u.email) <> ''
+ORDER BY lower(trim(u.email)) ASC
+`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("query tenant notification emails: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]string, 0)
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return nil, fmt.Errorf("scan tenant notification email: %w", err)
+		}
+		value = strings.TrimSpace(value)
+		if value != "" {
+			items = append(items, value)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate tenant notification emails: %w", err)
+	}
+
+	return items, nil
+}
