@@ -70,7 +70,20 @@ Für lokalen Start reicht die Standardkonfiguration ohne zusätzliche Auth-Varia
 ### 2) Starten
 
 ```bash
-docker compose up -d --build
+docker compose up -d
+```
+
+Standardmäßig nutzt Compose ein vorgebautes Image (`ghcr.io/xeonixo/goup:latest`).
+Optional kannst du ein eigenes Tag verwenden:
+
+```bash
+GOUP_IMAGE=ghcr.io/<owner>/goup:<tag> docker compose up -d
+```
+
+Für lokale Entwicklung mit eigenem Build (statt Registry-Image):
+
+```bash
+docker compose -f docker-compose.dev.yml up -d --build
 ```
 
 ### 3) Prüfen
@@ -82,6 +95,15 @@ Stoppen:
 
 ```bash
 docker compose down
+```
+
+### Multi-Arch Image selbst bauen und pushen (optional)
+
+```bash
+docker buildx build \
+	--platform linux/amd64,linux/arm64 \
+	-t ghcr.io/<owner>/goup:latest \
+	--push .
 ```
 
 ---

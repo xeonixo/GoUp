@@ -1,7 +1,9 @@
 services:
   goup:
-    image: ${GOUP_IMAGE:-ghcr.io/xeonixo/goup:latest}
-    pull_policy: always
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: goup:dev
     ports:
       - "8080:8080"
     env_file:
