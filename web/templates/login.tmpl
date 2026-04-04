@@ -23,7 +23,7 @@
       <div class="login-actions stack">
         {{range .LoginProviders}}
           {{if eq .Kind "oidc"}}
-          <a class="button" href="/t/{{$.TenantSlug}}/auth/login?provider={{.ProviderKey}}">Mit {{.DisplayName}} anmelden</a>
+          <a class="button" href="/{{$.TenantSlug}}/auth/login?provider={{.ProviderKey}}">Mit {{.DisplayName}} anmelden</a>
           {{end}}
         {{end}}
       </div>
@@ -34,14 +34,14 @@
       {{end}}
 
       {{if .HasLocalLogin}}
-      <form method="POST" action="/t/{{.TenantSlug}}/auth/local" class="stack login-form">
+      <form method="POST" action="/{{.TenantSlug}}/auth/local" class="stack login-form">
         <label for="login_name">Benutzername</label>
         <input id="login_name" name="login_name" type="text" required autocomplete="username">
         <label for="password">Passwort</label>
         <input id="password" name="password" type="password" required autocomplete="current-password">
         <button type="submit" class="button">Lokal anmelden</button>
         {{if .ResetEnabled}}
-        <a class="button button-secondary" href="/t/{{.TenantSlug}}/password-reset">Passwort vergessen?</a>
+        <a class="button button-secondary" href="/{{.TenantSlug}}/password-reset">Passwort vergessen?</a>
         {{end}}
       </form>
       {{end}}
@@ -49,15 +49,8 @@
       {{if and (not .HasLocalLogin) (not .HasOIDCLogin)}}
       <div class="notice warning">Für diesen Tenant ist keine Anmeldung konfiguriert.</div>
       {{end}}
-    {{else if .AuthEnabled}}
-    <a class="button" href="/auth/login">Mit Authentik anmelden</a>
-    {{else if .OIDCTenantOnly}}
-    <div class="notice warning">OIDC ist tenant-basiert konfiguriert. Bitte nutze die Tenant-Login-URL unter /t/{tenant}/login.</div>
-    {{else if .AuthDisabled}}
-    <div class="notice warning">Authentifizierung ist deaktiviert. Dashboard ist im Dev-Modus ohne Login erreichbar.</div>
-    <a class="button" href="/app/">Zum Dashboard</a>
     {{else}}
-    <div class="notice warning">Lokale Anmeldung ist aktiv. Bitte nutze die tenant-spezifische Login-URL unter /t/{tenant}/login.</div>
+    <div class="notice warning">Bitte nutze die tenant-spezifische URL, z.B. <strong>/mein-tenant/login</strong>.</div>
     {{end}}
   </article>
 </section>

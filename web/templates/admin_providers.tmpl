@@ -1,10 +1,10 @@
 {{define "content"}}
 <div class="admin-section">
   <nav class="admin-nav card">
-    <a href="/app/admin/" class="admin-nav-link">Dashboard</a>
-    <a href="/app/admin/tenants" class="admin-nav-link">Tenants</a>
-    <a href="/app/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link is-active">Provider</a>
-    <a href="/app/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link">Lokale Benutzer</a>
+    <a href="/admin/" class="admin-nav-link">Dashboard</a>
+    <a href="/admin/tenants" class="admin-nav-link">Tenants</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link is-active">Provider</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link">Lokale Benutzer</a>
   </nav>
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
@@ -15,7 +15,7 @@
       <p class="eyebrow">Authentifizierung</p>
       <h1>Provider für {{.AdminTenant.Name}} ({{.AdminTenant.Slug}})</h1>
     </div>
-    <a href="/app/admin/tenants" class="button button-secondary">Zurück zu Tenants</a>
+    <a href="/admin/tenants" class="button button-secondary">Zurück zu Tenants</a>
   </div>
 
   <div class="card table-card">
@@ -44,9 +44,9 @@
           {{end}}
         </td>
         <td class="admin-actions-inline">
-          <a href="/app/admin/tenants/{{$.AdminTenant.ID}}/providers/{{.ProviderKey}}/edit" class="button button-secondary button-small">Bearbeiten</a>
+          <a href="/admin/tenants/{{$.AdminTenant.ID}}/providers/{{.ProviderKey}}/edit" class="button button-secondary button-small">Bearbeiten</a>
           {{if .Enabled}}
-          <form method="POST" action="/app/admin/tenants/{{$.AdminTenant.ID}}/providers/{{.ProviderKey}}/delete" class="inline-form" onsubmit="return confirm('Provider wirklich deaktivieren?');">
+          <form method="POST" action="/admin/tenants/{{$.AdminTenant.ID}}/providers/{{.ProviderKey}}/delete" class="inline-form" onsubmit="return confirm('Provider wirklich deaktivieren?');">
             <button type="submit" class="button button-danger button-small">Deaktivieren</button>
           </form>
           {{end}}
@@ -63,8 +63,8 @@
   </div>
 
   <div class="admin-actions">
-    <a href="/app/admin/tenants/{{.AdminTenant.ID}}/providers/new" class="button">+ Neuer Provider</a>
-    <a href="/app/admin/tenants/{{.AdminTenant.ID}}/local-users" class="button button-secondary">Lokale Benutzer</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/providers/new" class="button">+ Neuer Provider</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="button button-secondary">Lokale Benutzer</a>
   </div>
 </div>
 {{end}}

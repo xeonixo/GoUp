@@ -54,6 +54,7 @@ type Server struct {
 	oidc               *auth.OIDCManager
 	dynamicOIDC        *auth.DynamicOIDCManager
 	templates          map[string]*template.Template
+	appMux             http.Handler
 	handler            http.Handler
 	iconIndexMu        sync.RWMutex
 	iconIndex          []dashboardIconEntry
@@ -104,6 +105,7 @@ type pageData struct {
 	GlobalSMTP       store.GlobalSMTPSettings
 	TenantSlug       string
 	TenantName       string
+	AppBase          string
 	LoginProviders   []store.AuthProvider
 	HasLocalLogin    bool
 	HasOIDCLogin     bool
@@ -266,6 +268,7 @@ func New(deps Dependencies) (*Server, error) {
 		templates:          templates,
 		localLoginAttempts: make(map[string]localLoginAttempt),
 	}
+	s.appMux = s.buildAppMux()
 	s.handler = s.routes()
 
 	return s, nil
@@ -312,69 +315,30 @@ func (s *Server) routes() http.Handler {
 	}
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 	mux.HandleFunc("/", s.handleRoot)
-	mux.HandleFunc("/login", s.handleLoginPage)
 	mux.HandleFunc("/healthz", s.handleHealthz)
-	mux.HandleFunc("/auth/login", s.handleAuthLogin)
-	mux.HandleFunc("/auth/callback", s.handleAuthCallback)
 	mux.HandleFunc("/auth/logout", s.handleLogout)
 
-	// Tenant-specific login routes (new multi-tenant SSO support) - using /t/ prefix to avoid route ambiguity
-	mux.HandleFunc("/t/{tenantSlug}/login", s.handleTenantLoginPage)
-	mux.HandleFunc("/t/{tenantSlug}/auth/login", s.handleTenantAuthLogin)
-	mux.HandleFunc("/t/{tenantSlug}/auth/callback", s.handleTenantAuthCallback)
-	mux.HandleFunc("/t/{tenantSlug}/auth/local", s.handleTenantLocalLogin)
-	mux.HandleFunc("/t/{tenantSlug}/password-reset", s.handleTenantPasswordResetRequestPage)
-	mux.HandleFunc("/t/{tenantSlug}/password-reset/request", s.handleTenantPasswordResetRequest)
-	mux.HandleFunc("/t/{tenantSlug}/password-reset/confirm", s.handleTenantPasswordResetConfirm)
-	// Compatibility aliases for callers that prefix tenant auth with /app
-	mux.HandleFunc("/app/t/{tenantSlug}/login", s.handleTenantLoginPage)
-	mux.HandleFunc("/app/t/{tenantSlug}/auth/login", s.handleTenantAuthLogin)
-	mux.HandleFunc("/app/t/{tenantSlug}/auth/callback", s.handleTenantAuthCallback)
-	mux.HandleFunc("/app/t/{tenantSlug}/auth/local", s.handleTenantLocalLogin)
-	mux.HandleFunc("/app/t/{tenantSlug}/password-reset", s.handleTenantPasswordResetRequestPage)
-	mux.HandleFunc("/app/t/{tenantSlug}/password-reset/request", s.handleTenantPasswordResetRequest)
-	mux.HandleFunc("/app/t/{tenantSlug}/password-reset/confirm", s.handleTenantPasswordResetConfirm)
-
-	// Control-plane admin routes (separate access mechanism)
-	mux.HandleFunc("/app/admin/access", s.handleAdminAccess)
-	mux.Handle("/app/admin/", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminDashboard)))
-	mux.Handle("/app/admin/tenants", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantsList)))
-	mux.Handle("/app/admin/tenants/new", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantForm)))
-	mux.Handle("/app/admin/tenants/{id}/edit", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantForm)))
-	mux.Handle("/app/admin/tenants/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantSave)))
-	mux.Handle("/app/admin/tenants/{id}/delete", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantDelete)))
-	mux.Handle("/app/admin/tenants/{id}/purge", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantPurge)))
-	mux.Handle("/app/admin/tenants/{id}/providers", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminProvidersList)))
-	mux.Handle("/app/admin/tenants/{id}/providers/new", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminProviderForm)))
-	mux.Handle("/app/admin/tenants/{id}/providers/{providerKey}/edit", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminProviderForm)))
-	mux.Handle("/app/admin/tenants/{id}/providers/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminProviderSave)))
-	mux.Handle("/app/admin/tenants/{id}/providers/{providerKey}/delete", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminProviderDelete)))
-	mux.Handle("/app/admin/tenants/{id}/local-users", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUsersList)))
-	mux.Handle("/app/admin/tenants/{id}/local-users/new", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUserForm)))
-	mux.Handle("/app/admin/tenants/{id}/local-users/{userID}/edit", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUserForm)))
-	mux.Handle("/app/admin/tenants/{id}/local-users/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUserSave)))
-	mux.Handle("/app/admin/tenants/{id}/local-users/{userID}/delete", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUserDelete)))
-	mux.Handle("/app/admin/tenants/{id}/users/{userID}/remove", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantUserRemove)))
-	mux.Handle("/app/admin/settings/smtp/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSMTPSettingsSave)))
-
-	// Tenant settings routes (tenant admin + super-admin)
-	mux.Handle("/app/settings/users", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUsers)))
-	mux.Handle("/app/settings/local-users/new", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserForm)))
-	mux.Handle("/app/settings/local-users/{userID}/edit", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserForm)))
-	mux.Handle("/app/settings/local-users/save", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserSave)))
-	mux.Handle("/app/settings/local-users/{userID}/delete", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserDelete)))
-	mux.Handle("/app/settings/users/{userID}/role", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUserRoleSave)))
-	mux.Handle("/app/settings/users/{userID}/remove", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUserRemove)))
-
-	mux.Handle("/app/", s.requireAuth(http.HandlerFunc(s.handleDashboard)))
-	mux.Handle("/app/monitors", s.requireAuth(http.HandlerFunc(s.handleSaveMonitor)))
-	mux.Handle("/app/monitors/save", s.requireAuth(http.HandlerFunc(s.handleSaveMonitor)))
-	mux.Handle("/app/monitors/update-target", s.requireAuth(http.HandlerFunc(s.handleUpdateMonitorTarget)))
-	mux.Handle("/app/monitors/reorder", s.requireAuth(http.HandlerFunc(s.handleReorderMonitor)))
-	mux.Handle("/app/groups/save", s.requireAuth(http.HandlerFunc(s.handleSaveGroup)))
-	mux.Handle("/app/groups/reorder", s.requireAuth(http.HandlerFunc(s.handleReorderGroup)))
-	mux.Handle("/app/icons/search", s.requireAuth(http.HandlerFunc(s.handleSearchDashboardIcons)))
-	mux.Handle("/app/monitors/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteMonitor)))
+	// Control-plane admin routes (separate access mechanism, no tenant session required)
+	mux.HandleFunc("/admin/access", s.handleAdminAccess)
+	mux.Handle("/admin/", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminDashboard)))
+	mux.Handle("/admin/tenants", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantsList)))
+	mux.Handle("/admin/tenants/new", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantForm)))
+	mux.Handle("/admin/tenants/{id}/edit", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantForm)))
+	mux.Handle("/admin/tenants/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantSave)))
+	mux.Handle("/admin/tenants/{id}/delete", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantDelete)))
+	mux.Handle("/admin/tenants/{id}/purge", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantPurge)))
+	mux.Handle("/admin/tenants/{id}/providers", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminProvidersList)))
+	mux.Handle("/admin/tenants/{id}/providers/new", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminProviderForm)))
+	mux.Handle("/admin/tenants/{id}/providers/{providerKey}/edit", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminProviderForm)))
+	mux.Handle("/admin/tenants/{id}/providers/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminProviderSave)))
+	mux.Handle("/admin/tenants/{id}/providers/{providerKey}/delete", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminProviderDelete)))
+	mux.Handle("/admin/tenants/{id}/local-users", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUsersList)))
+	mux.Handle("/admin/tenants/{id}/local-users/new", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUserForm)))
+	mux.Handle("/admin/tenants/{id}/local-users/{userID}/edit", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUserForm)))
+	mux.Handle("/admin/tenants/{id}/local-users/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUserSave)))
+	mux.Handle("/admin/tenants/{id}/local-users/{userID}/delete", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUserDelete)))
+	mux.Handle("/admin/tenants/{id}/users/{userID}/remove", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantUserRemove)))
+	mux.Handle("/admin/settings/smtp/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSMTPSettingsSave)))
 
 	return s.logging(s.requireSameOrigin(mux))
 }
@@ -517,20 +481,163 @@ func normalizeRefererOrigin(raw string) string {
 	return strings.ToLower(parsed.Scheme) + "://" + host
 }
 
-func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
+type tenantSlugContextKey struct{}
+
+func requestWithTenantSlug(r *http.Request, slug string) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), tenantSlugContextKey{}, strings.TrimSpace(slug)))
+}
+
+func tenantSlugFromRequest(r *http.Request) string {
+	if slug := strings.TrimSpace(r.PathValue("tenantSlug")); slug != "" {
+		return slug
+	}
+	if value, ok := r.Context().Value(tenantSlugContextKey{}).(string); ok {
+		return strings.TrimSpace(value)
+	}
+	return ""
+}
+
+func (s *Server) handlePrettyTenantPath(w http.ResponseWriter, r *http.Request) bool {
+	trimmed := strings.Trim(strings.TrimSpace(r.URL.Path), "/")
+	if trimmed == "" {
+		return false
+	}
+	parts := strings.Split(trimmed, "/")
+	if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" {
+		return false
 	}
 
-	if s.cfg.Auth.Mode == config.AuthModeOIDC || s.cfg.Auth.Mode == config.AuthModeLocal {
-		if _, err := s.sessions.Get(r); err != nil {
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
+	slug := strings.TrimSpace(parts[0])
+
+	// Reserve built-in top-level paths for the main mux.
+	if slug == "admin" || slug == "static" || slug == "healthz" || slug == "auth" {
+		return false
+	}
+
+	r = requestWithTenantSlug(r, slug)
+
+	switch {
+	case len(parts) == 1:
+		if strings.HasSuffix(r.URL.Path, "/") {
+			// /{slug}/ — forward to appMux as /
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = "/"
+			r2.URL.RawPath = ""
+			s.appMux.ServeHTTP(w, r2)
+		} else {
+			// /{slug} — canonical URL is /{slug}/
+			http.Redirect(w, r, "/"+slug+"/", http.StatusMovedPermanently)
+		}
+		return true
+	case len(parts) == 2 && parts[1] == "login":
+		s.handleTenantLoginPage(w, r)
+		return true
+	case len(parts) == 2 && parts[1] == "password-reset":
+		s.handleTenantPasswordResetRequestPage(w, r)
+		return true
+	case len(parts) == 3 && parts[1] == "auth" && parts[2] == "login":
+		s.handleTenantAuthLogin(w, r)
+		return true
+	case len(parts) == 3 && parts[1] == "auth" && parts[2] == "callback":
+		s.handleTenantAuthCallback(w, r)
+		return true
+	case len(parts) == 3 && parts[1] == "auth" && parts[2] == "local":
+		s.handleTenantLocalLogin(w, r)
+		return true
+	case len(parts) == 3 && parts[1] == "password-reset" && parts[2] == "request":
+		s.handleTenantPasswordResetRequest(w, r)
+		return true
+	case len(parts) == 3 && parts[1] == "password-reset" && parts[2] == "confirm":
+		s.handleTenantPasswordResetConfirm(w, r)
+		return true
+	default:
+		// /{slug}/X — rewrite to /X and forward to appMux.
+		rewrittenPath := "/" + strings.Join(parts[1:], "/")
+		if strings.HasSuffix(r.URL.Path, "/") && !strings.HasSuffix(rewrittenPath, "/") {
+			rewrittenPath += "/"
+		}
+		r2 := r.Clone(r.Context())
+		r2.URL.Path = rewrittenPath
+		r2.URL.RawPath = ""
+		s.appMux.ServeHTTP(w, r2)
+		return true
+	}
+}
+
+func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		if s.handlePrettyTenantPath(w, r) {
 			return
 		}
 	}
+	s.handleNoTenant(w, r)
+}
 
-	http.Redirect(w, r, "/app/", http.StatusSeeOther)
+// buildAppMux returns a handler that services all tenant-scoped app routes.
+// Requests are dispatched here from handlePrettyTenantPath after the tenant slug
+// has been injected into the request context and the URL has been rewritten from
+// /{slug}/X to /X.
+func (s *Server) buildAppMux() http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/", s.requireAuth(http.HandlerFunc(s.handleDashboard)))
+	mux.Handle("/monitors", s.requireAuth(http.HandlerFunc(s.handleSaveMonitor)))
+	mux.Handle("/monitors/save", s.requireAuth(http.HandlerFunc(s.handleSaveMonitor)))
+	mux.Handle("/monitors/update-target", s.requireAuth(http.HandlerFunc(s.handleUpdateMonitorTarget)))
+	mux.Handle("/monitors/reorder", s.requireAuth(http.HandlerFunc(s.handleReorderMonitor)))
+	mux.Handle("/groups/save", s.requireAuth(http.HandlerFunc(s.handleSaveGroup)))
+	mux.Handle("/groups/reorder", s.requireAuth(http.HandlerFunc(s.handleReorderGroup)))
+	mux.Handle("/icons/search", s.requireAuth(http.HandlerFunc(s.handleSearchDashboardIcons)))
+	mux.Handle("/monitors/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteMonitor)))
+	mux.Handle("/settings/users", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUsers)))
+	mux.Handle("/settings/local-users/new", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserForm)))
+	mux.Handle("/settings/local-users/{userID}/edit", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserForm)))
+	mux.Handle("/settings/local-users/save", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserSave)))
+	mux.Handle("/settings/local-users/{userID}/delete", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserDelete)))
+	mux.Handle("/settings/users/{userID}/role", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUserRoleSave)))
+	mux.Handle("/settings/users/{userID}/remove", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUserRemove)))
+	return mux
+}
+
+// handleNoTenant is the landing page for / and any unknown path that could not
+// be matched to a tenant. When exactly one active tenant exists the request is
+// silently redirected there. Otherwise a hint is rendered asking the user to
+// supply the tenant slug in the URL. The list of available tenants is never
+// exposed to unauthenticated callers.
+func (s *Server) handleNoTenant(w http.ResponseWriter, r *http.Request) {
+	tenants, err := s.controlStore.GetAllTenants(r.Context())
+	if err == nil {
+		active := make([]store.Tenant, 0, len(tenants))
+		for _, t := range tenants {
+			if t.Active {
+				active = append(active, t)
+			}
+		}
+		if len(active) == 1 {
+			http.Redirect(w, r, "/"+active[0].Slug+"/", http.StatusSeeOther)
+			return
+		}
+	}
+	s.render(w, "no_tenant", pageData{
+		Title: "Tenant auswählen · GoUp",
+	})
+}
+
+// tenantAppBase returns the canonical base URL for the tenant app portion of the
+// current request, e.g. "/default/app/". It reads the tenant slug from the
+// request context (set by the pretty-URL dispatcher) and falls back to the
+// session when called from within the appMux (where the context slug is always
+// present).
+func (s *Server) tenantAppBase(r *http.Request) string {
+	slug := tenantSlugFromRequest(r)
+	if slug == "" {
+		if user := s.currentUser(r); user != nil && user.TenantSlug != "" {
+			slug = user.TenantSlug
+		}
+	}
+	if slug != "" {
+		return "/" + slug + "/"
+	}
+	return "/"
 }
 
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
@@ -552,7 +659,7 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.Auth.Mode != config.AuthModeOIDC || s.oidc == nil {
-		http.Redirect(w, r, "/app/", http.StatusSeeOther)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -604,16 +711,21 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/app/", http.StatusSeeOther)
+	http.Redirect(w, r, "/"+resolvedUser.TenantSlug+"/", http.StatusSeeOther)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	session, _ := s.sessions.Get(r)
 	s.sessions.Clear(w)
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	if session != nil && strings.TrimSpace(session.TenantSlug) != "" {
+		http.Redirect(w, r, "/"+session.TenantSlug+"/login", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/app/" {
+	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
@@ -676,6 +788,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		MonitorGroups:   buildMonitorGroups(monitorViews, groupMetadata),
 		AvailableGroups: availableGroups,
 		Events:          buildNotificationEventViews(events),
+		AppBase:         s.tenantAppBase(r),
 	})
 }
 
@@ -705,23 +818,23 @@ func (s *Server) handleReorderMonitor(w http.ResponseWriter, r *http.Request) {
 	}
 	appStore, err := s.appStore(r)
 	if err != nil {
-		http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", "Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, "/app/?error="+url.QueryEscape("Formular konnte nicht gelesen werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Formular konnte nicht gelesen werden"), http.StatusSeeOther)
 		return
 	}
 	if draggedIDRaw := strings.TrimSpace(r.FormValue("dragged_id")); draggedIDRaw != "" {
 		draggedID, parseErr := strconv.ParseInt(draggedIDRaw, 10, 64)
 		targetID, targetErr := strconv.ParseInt(strings.TrimSpace(r.FormValue("target_id")), 10, 64)
 		if parseErr != nil || targetErr != nil || draggedID <= 0 || targetID <= 0 {
-			http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", "Ungültige Drag&Drop-Monitor-ID"), http.StatusSeeOther)
+			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Ungültige Drag&Drop-Monitor-ID"), http.StatusSeeOther)
 			return
 		}
 		snapshots, err := appStore.ListMonitorSnapshots(r.Context())
 		if err != nil {
-			http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", "Monitore konnten nicht geladen werden"), http.StatusSeeOther)
+			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitore konnten nicht geladen werden"), http.StatusSeeOther)
 			return
 		}
 		monitorViews := buildMonitorViews(snapshots, nil, time.Now().UTC(), supportedTrendRanges[0])
@@ -739,14 +852,14 @@ func (s *Server) handleReorderMonitor(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if draggedGroupName == "" || targetGroupName == "" {
-			http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", "Monitor wurde nicht gefunden"), http.StatusSeeOther)
+			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitor wurde nicht gefunden"), http.StatusSeeOther)
 			return
 		}
 		if groupName == "" {
 			groupName = draggedGroupName
 		}
 		if draggedGroupName != groupName || targetGroupName != groupName {
-			http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", "Monitore müssen in derselben Gruppe liegen"), http.StatusSeeOther)
+			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitore müssen in derselben Gruppe liegen"), http.StatusSeeOther)
 			return
 		}
 		for _, item := range monitorViews {
@@ -756,30 +869,30 @@ func (s *Server) handleReorderMonitor(w http.ResponseWriter, r *http.Request) {
 		}
 		reorderedIDs, ok := reorderMonitorIDs(orderedIDs, draggedID, targetID)
 		if !ok {
-			http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", "Monitor konnte nicht neu einsortiert werden"), http.StatusSeeOther)
+			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitor konnte nicht neu einsortiert werden"), http.StatusSeeOther)
 			return
 		}
 		if err := appStore.ReorderMonitors(r.Context(), reorderedIDs); err != nil {
-			http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", err.Error()), http.StatusSeeOther)
+			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", err.Error()), http.StatusSeeOther)
 			return
 		}
-		http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "Monitor sortiert", ""), http.StatusSeeOther)
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "Monitor sortiert", ""), http.StatusSeeOther)
 		return
 	}
 	id, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("id")), 10, 64)
 	if err != nil || id <= 0 {
-		http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", "Ungültige Monitor-ID"), http.StatusSeeOther)
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Ungültige Monitor-ID"), http.StatusSeeOther)
 		return
 	}
 	groupName := strings.TrimSpace(r.FormValue("group"))
 	direction := strings.TrimSpace(r.FormValue("direction"))
 	if direction != "up" && direction != "down" {
-		http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", "Ungültige Sortierrichtung"), http.StatusSeeOther)
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Ungültige Sortierrichtung"), http.StatusSeeOther)
 		return
 	}
 	snapshots, err := appStore.ListMonitorSnapshots(r.Context())
 	if err != nil {
-		http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", "Monitore konnten nicht geladen werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitore konnten nicht geladen werden"), http.StatusSeeOther)
 		return
 	}
 	monitorViews := buildMonitorViews(snapshots, nil, time.Now().UTC(), supportedTrendRanges[0])
@@ -803,7 +916,7 @@ func (s *Server) handleReorderMonitor(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if currentIndex == -1 {
-		http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", "Monitor wurde nicht gefunden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitor wurde nicht gefunden"), http.StatusSeeOther)
 		return
 	}
 	targetIndex := currentIndex - 1
@@ -811,18 +924,18 @@ func (s *Server) handleReorderMonitor(w http.ResponseWriter, r *http.Request) {
 		targetIndex = currentIndex + 1
 	}
 	if targetIndex < 0 || targetIndex >= len(groupItems) {
-		http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", ""), http.StatusSeeOther)
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", ""), http.StatusSeeOther)
 		return
 	}
 	if err := appStore.SwapMonitors(r.Context(), id, groupItems[targetIndex].ID); err != nil {
 		if err == sql.ErrNoRows {
-			http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", "Monitor wurde nicht gefunden"), http.StatusSeeOther)
+			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitor wurde nicht gefunden"), http.StatusSeeOther)
 			return
 		}
-		http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "Monitor sortiert", ""), http.StatusSeeOther)
+	http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "Monitor sortiert", ""), http.StatusSeeOther)
 }
 
 func (s *Server) handleSaveGroup(w http.ResponseWriter, r *http.Request) {
@@ -832,28 +945,28 @@ func (s *Server) handleSaveGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	appStore, err := s.appStore(r)
 	if err != nil {
-		http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", "Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, "/app/?error="+url.QueryEscape("Formular konnte nicht gelesen werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Formular konnte nicht gelesen werden"), http.StatusSeeOther)
 		return
 	}
 	groupName := strings.TrimSpace(r.FormValue("group"))
 	if groupName == "" {
-		http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", "Ungültige Gruppe"), http.StatusSeeOther)
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Ungültige Gruppe"), http.StatusSeeOther)
 		return
 	}
 	iconSlug := normalizeDashboardIconSlug(strings.TrimSpace(r.FormValue("icon_slug")))
 	if err := appStore.UpdateMonitorGroupIcon(r.Context(), groupName, iconSlug); err != nil {
 		if err == sql.ErrNoRows {
-			http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", "Gruppe wurde nicht gefunden"), http.StatusSeeOther)
+			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Gruppe wurde nicht gefunden"), http.StatusSeeOther)
 			return
 		}
-		http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "Gruppen-Icon gespeichert", ""), http.StatusSeeOther)
+	http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "Gruppen-Icon gespeichert", ""), http.StatusSeeOther)
 }
 
 func (s *Server) handleReorderGroup(w http.ResponseWriter, r *http.Request) {
@@ -863,11 +976,11 @@ func (s *Server) handleReorderGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	appStore, err := s.appStore(r)
 	if err != nil {
-		http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", "Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, "/app/?error="+url.QueryEscape("Formular konnte nicht gelesen werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Formular konnte nicht gelesen werden"), http.StatusSeeOther)
 		return
 	}
 	groupName := strings.TrimSpace(r.FormValue("group"))
@@ -875,29 +988,29 @@ func (s *Server) handleReorderGroup(w http.ResponseWriter, r *http.Request) {
 		targetGroup := strings.TrimSpace(r.FormValue("target_group"))
 		if err := appStore.ReorderMonitorGroups(r.Context(), draggedGroup, targetGroup); err != nil {
 			if err == sql.ErrNoRows {
-				http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", "Gruppe wurde nicht gefunden"), http.StatusSeeOther)
+				http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Gruppe wurde nicht gefunden"), http.StatusSeeOther)
 				return
 			}
-			http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", err.Error()), http.StatusSeeOther)
+			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", err.Error()), http.StatusSeeOther)
 			return
 		}
-		http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "Gruppe sortiert", ""), http.StatusSeeOther)
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "Gruppe sortiert", ""), http.StatusSeeOther)
 		return
 	}
 	if groupName == "" {
-		http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", "Ungültige Gruppe"), http.StatusSeeOther)
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Ungültige Gruppe"), http.StatusSeeOther)
 		return
 	}
 	direction := strings.TrimSpace(r.FormValue("direction"))
 	if err := appStore.MoveMonitorGroup(r.Context(), groupName, direction); err != nil {
 		if err == sql.ErrNoRows {
-			http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", "Gruppe wurde nicht gefunden"), http.StatusSeeOther)
+			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Gruppe wurde nicht gefunden"), http.StatusSeeOther)
 			return
 		}
-		http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "", err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, redirectDashboardPath(strings.TrimSpace(r.FormValue("trend")), "Gruppe sortiert", ""), http.StatusSeeOther)
+	http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "Gruppe sortiert", ""), http.StatusSeeOther)
 }
 
 func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
@@ -908,12 +1021,12 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 
 	appStore, err := s.appStore(r)
 	if err != nil {
-		http.Redirect(w, r, "/app/?error="+url.QueryEscape("Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, "/app/?error="+url.QueryEscape("Formular konnte nicht gelesen werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Formular konnte nicht gelesen werden"), http.StatusSeeOther)
 		return
 	}
 
@@ -922,7 +1035,7 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 	if monitorIDRaw != "" {
 		parsedID, parseErr := strconv.ParseInt(monitorIDRaw, 10, 64)
 		if parseErr != nil || parsedID <= 0 {
-			http.Redirect(w, r, "/app/?error="+url.QueryEscape("Ungültige Monitor-ID"), http.StatusSeeOther)
+			http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Ungültige Monitor-ID"), http.StatusSeeOther)
 			return
 		}
 		monitorID = parsedID
@@ -930,12 +1043,12 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 
 	intervalSeconds, err := strconv.Atoi(strings.TrimSpace(r.FormValue("interval_seconds")))
 	if err != nil {
-		http.Redirect(w, r, "/app/?error="+url.QueryEscape("Ungültiges Intervall"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Ungültiges Intervall"), http.StatusSeeOther)
 		return
 	}
 	timeoutSeconds, err := strconv.Atoi(strings.TrimSpace(r.FormValue("timeout_seconds")))
 	if err != nil {
-		http.Redirect(w, r, "/app/?error="+url.QueryEscape("Ungültiges Timeout"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Ungültiges Timeout"), http.StatusSeeOther)
 		return
 	}
 
@@ -948,7 +1061,7 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 	if raw := strings.TrimSpace(r.FormValue("expected_status_code")); raw != "" && kind == monitor.KindHTTPS {
 		value, err := strconv.Atoi(raw)
 		if err != nil {
-			http.Redirect(w, r, "/app/?error="+url.QueryEscape("Ungültiger erwarteter HTTP-Status"), http.StatusSeeOther)
+			http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Ungültiger erwarteter HTTP-Status"), http.StatusSeeOther)
 			return
 		}
 		expectedStatusCode = &value
@@ -974,24 +1087,24 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 		})
 		if err != nil {
 			if err == sql.ErrNoRows {
-				http.Redirect(w, r, "/app/?error="+url.QueryEscape("Monitor wurde nicht gefunden"), http.StatusSeeOther)
+				http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Monitor wurde nicht gefunden"), http.StatusSeeOther)
 				return
 			}
-			http.Redirect(w, r, "/app/?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+			http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 			return
 		}
 
-		http.Redirect(w, r, "/app/?notice="+url.QueryEscape("Monitor aktualisiert"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape("Monitor aktualisiert"), http.StatusSeeOther)
 		return
 	}
 
 	_, err = appStore.CreateMonitor(r.Context(), params)
 	if err != nil {
-		http.Redirect(w, r, "/app/?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 
-	http.Redirect(w, r, "/app/?notice="+url.QueryEscape(strings.ToUpper(string(kind))+"-Monitor angelegt"), http.StatusSeeOther)
+	http.Redirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape(strings.ToUpper(string(kind))+"-Monitor angelegt"), http.StatusSeeOther)
 }
 
 func (s *Server) handleDeleteMonitor(w http.ResponseWriter, r *http.Request) {
@@ -1002,32 +1115,32 @@ func (s *Server) handleDeleteMonitor(w http.ResponseWriter, r *http.Request) {
 
 	appStore, err := s.appStore(r)
 	if err != nil {
-		http.Redirect(w, r, "/app/?error="+url.QueryEscape("Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, "/app/?error="+url.QueryEscape("Formular konnte nicht gelesen werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Formular konnte nicht gelesen werden"), http.StatusSeeOther)
 		return
 	}
 
 	id, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("id")), 10, 64)
 	if err != nil || id <= 0 {
-		http.Redirect(w, r, "/app/?error="+url.QueryEscape("Ungültige Monitor-ID"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Ungültige Monitor-ID"), http.StatusSeeOther)
 		return
 	}
 
 	err = appStore.DeleteMonitor(r.Context(), id)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			http.Redirect(w, r, "/app/?error="+url.QueryEscape("Monitor wurde nicht gefunden"), http.StatusSeeOther)
+			http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Monitor wurde nicht gefunden"), http.StatusSeeOther)
 			return
 		}
-		http.Redirect(w, r, "/app/?error="+url.QueryEscape("Monitor konnte nicht gelöscht werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Monitor konnte nicht gelöscht werden"), http.StatusSeeOther)
 		return
 	}
 
-	http.Redirect(w, r, "/app/?notice="+url.QueryEscape("Monitor gelöscht"), http.StatusSeeOther)
+	http.Redirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape("Monitor gelöscht"), http.StatusSeeOther)
 }
 
 func (s *Server) handleUpdateMonitorTarget(w http.ResponseWriter, r *http.Request) {
@@ -1038,38 +1151,38 @@ func (s *Server) handleUpdateMonitorTarget(w http.ResponseWriter, r *http.Reques
 
 	appStore, err := s.appStore(r)
 	if err != nil {
-		http.Redirect(w, r, "/app/?error="+url.QueryEscape("Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, "/app/?error="+url.QueryEscape("Formular konnte nicht gelesen werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Formular konnte nicht gelesen werden"), http.StatusSeeOther)
 		return
 	}
 
 	id, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("id")), 10, 64)
 	if err != nil || id <= 0 {
-		http.Redirect(w, r, "/app/?error="+url.QueryEscape("Ungültige Monitor-ID"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Ungültige Monitor-ID"), http.StatusSeeOther)
 		return
 	}
 
 	target := strings.TrimSpace(r.FormValue("target"))
 	if target == "" {
-		http.Redirect(w, r, "/app/?error="+url.QueryEscape("Ziel darf nicht leer sein"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Ziel darf nicht leer sein"), http.StatusSeeOther)
 		return
 	}
 
 	err = appStore.UpdateMonitorTarget(r.Context(), id, target)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			http.Redirect(w, r, "/app/?error="+url.QueryEscape("Monitor wurde nicht gefunden"), http.StatusSeeOther)
+			http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Monitor wurde nicht gefunden"), http.StatusSeeOther)
 			return
 		}
-		http.Redirect(w, r, "/app/?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 
-	http.Redirect(w, r, "/app/?notice="+url.QueryEscape("Monitor-Ziel aktualisiert"), http.StatusSeeOther)
+	http.Redirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape("Monitor-Ziel aktualisiert"), http.StatusSeeOther)
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -1090,7 +1203,12 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, err := s.sessions.Get(r); err != nil {
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			slug := tenantSlugFromRequest(r)
+			if slug != "" {
+				http.Redirect(w, r, "/"+slug+"/login", http.StatusSeeOther)
+			} else {
+				http.Redirect(w, r, "/", http.StatusSeeOther)
+			}
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -1105,7 +1223,7 @@ func (s *Server) requireSuperAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		session, err := s.sessions.Get(r)
 		if err != nil {
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
 		if !session.SuperAdmin {
@@ -1120,7 +1238,12 @@ func (s *Server) requireUserManagement(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		session, err := s.sessions.Get(r)
 		if err != nil {
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			slug := tenantSlugFromRequest(r)
+			if slug != "" {
+				http.Redirect(w, r, "/"+slug+"/login", http.StatusSeeOther)
+			} else {
+				http.Redirect(w, r, "/", http.StatusSeeOther)
+			}
 			return
 		}
 		if !(session.SuperAdmin || strings.EqualFold(strings.TrimSpace(session.Role), "admin")) {
@@ -1139,7 +1262,7 @@ func (s *Server) requireControlPlaneAdmin(next http.Handler) http.Handler {
 			return
 		}
 		if !s.hasControlPlaneAdminCookie(r, key) {
-			http.Redirect(w, r, "/app/admin/access", http.StatusSeeOther)
+			http.Redirect(w, r, "/admin/access", http.StatusSeeOther)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -1184,7 +1307,7 @@ func (s *Server) setControlPlaneAdminCookie(w http.ResponseWriter, key string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     controlPlaneCookie,
 		Value:    token,
-		Path:     "/app/admin",
+		Path:     "/admin",
 		HttpOnly: true,
 		Secure:   s.cfg.SecureCookies(),
 		SameSite: http.SameSiteLaxMode,
@@ -1197,7 +1320,7 @@ func (s *Server) clearControlPlaneAdminCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     controlPlaneCookie,
 		Value:    "",
-		Path:     "/app/admin",
+		Path:     "/admin",
 		HttpOnly: true,
 		Secure:   s.cfg.SecureCookies(),
 		SameSite: http.SameSiteLaxMode,
@@ -1307,7 +1430,7 @@ func (s *Server) logging(next http.Handler) http.Handler {
 }
 
 func parseTemplates() (map[string]*template.Template, error) {
-	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_provider_form", "admin_local_users", "admin_local_user_form", "settings_users", "admin_access"}
+	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_provider_form", "admin_local_users", "admin_local_user_form", "settings_users", "admin_access", "no_tenant"}
 	parsed := make(map[string]*template.Template, len(pages))
 	for _, page := range pages {
 		tmpl, err := template.ParseFS(web.FS, "templates/layout.tmpl", "templates/"+page+".tmpl")
@@ -1724,7 +1847,8 @@ func buildMonitorServiceGroups(monitors []monitorView, groupSortOrder map[string
 	return services
 }
 
-func redirectDashboardPath(trend string, notice string, errText string) string {
+func (s *Server) redirectDashboardPath(r *http.Request, trend string, notice string, errText string) string {
+	base := s.tenantAppBase(r)
 	values := url.Values{}
 	if strings.TrimSpace(trend) != "" {
 		values.Set("trend", strings.TrimSpace(trend))
@@ -1737,9 +1861,9 @@ func redirectDashboardPath(trend string, notice string, errText string) string {
 	}
 	encoded := values.Encode()
 	if encoded == "" {
-		return "/app/"
+		return base
 	}
-	return "/app/?" + encoded
+	return base + "?" + encoded
 }
 
 func monitorServiceLabel(item monitorView) string {
@@ -2290,22 +2414,47 @@ func monitorTLSModeLabel(item monitor.Monitor) string {
 
 // ========== Tenant-Specific Login Handlers (Multi-Tenant SSO) ==========
 
+func (s *Server) handleTenantEntry(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	tenantSlug := tenantSlugFromRequest(r)
+	if tenantSlug == "" {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	tenant, err := s.controlStore.GetTenantBySlug(r.Context(), tenantSlug)
+	if err != nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	if session, err := s.sessions.Get(r); err == nil && session != nil && session.TenantID == tenant.ID {
+		http.Redirect(w, r, "/"+tenantSlug+"/", http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/"+tenantSlug+"/login", http.StatusSeeOther)
+}
+
 func (s *Server) handleTenantLoginPage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	tenantSlug := r.PathValue("tenantSlug")
+	tenantSlug := tenantSlugFromRequest(r)
 	if tenantSlug == "" {
-		http.NotFound(w, r)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
 	tenant, err := s.controlStore.GetTenantBySlug(r.Context(), tenantSlug)
 	if err != nil {
 		s.logger.Warn("tenant not found for login", "slug", tenantSlug, "error", err)
-		http.NotFound(w, r)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -2348,19 +2497,19 @@ func (s *Server) handleTenantPasswordResetRequestPage(w http.ResponseWriter, r *
 		return
 	}
 
-	tenantSlug := r.PathValue("tenantSlug")
+	tenantSlug := tenantSlugFromRequest(r)
 	if tenantSlug == "" {
-		http.NotFound(w, r)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 	tenant, err := s.controlStore.GetTenantBySlug(r.Context(), tenantSlug)
 	if err != nil {
-		http.NotFound(w, r)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
 	if !s.passwordResetEnabled(r.Context()) {
-		http.Redirect(w, r, "/t/"+tenantSlug+"/login?error="+url.QueryEscape("Passwort-Reset ist derzeit nicht verfügbar"), http.StatusSeeOther)
+		http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Passwort-Reset ist derzeit nicht verfügbar"), http.StatusSeeOther)
 		return
 	}
 
@@ -2380,30 +2529,30 @@ func (s *Server) handleTenantPasswordResetRequest(w http.ResponseWriter, r *http
 		return
 	}
 
-	tenantSlug := r.PathValue("tenantSlug")
+	tenantSlug := tenantSlugFromRequest(r)
 	if tenantSlug == "" {
-		http.NotFound(w, r)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 	tenant, err := s.controlStore.GetTenantBySlug(r.Context(), tenantSlug)
 	if err != nil {
-		http.NotFound(w, r)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
 	if !s.passwordResetEnabled(r.Context()) {
-		http.Redirect(w, r, "/t/"+tenantSlug+"/login?error="+url.QueryEscape("Passwort-Reset ist derzeit nicht verfügbar"), http.StatusSeeOther)
+		http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Passwort-Reset ist derzeit nicht verfügbar"), http.StatusSeeOther)
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, "/t/"+tenantSlug+"/password-reset?error="+url.QueryEscape("Ungültige Eingaben"), http.StatusSeeOther)
+		http.Redirect(w, r, "/"+tenantSlug+"/password-reset?error="+url.QueryEscape("Ungültige Eingaben"), http.StatusSeeOther)
 		return
 	}
 	email := strings.TrimSpace(r.FormValue("email"))
 
 	// Always answer with the same success notice to avoid user enumeration.
-	noticeURL := "/t/" + tenantSlug + "/password-reset?notice=" + url.QueryEscape("Wenn ein Konto mit dieser E-Mail existiert, wurde ein Reset-Link versendet.")
+	noticeURL := "/" + tenantSlug + "/password-reset?notice=" + url.QueryEscape("Wenn ein Konto mit dieser E-Mail existiert, wurde ein Reset-Link versendet.")
 	if email == "" {
 		http.Redirect(w, r, noticeURL, http.StatusSeeOther)
 		return
@@ -2430,7 +2579,7 @@ func (s *Server) handleTenantPasswordResetRequest(w http.ResponseWriter, r *http
 		return
 	}
 
-	resetLink := s.cfg.BaseURL + "/t/" + tenantSlug + "/password-reset/confirm?token=" + url.QueryEscape(token)
+	resetLink := s.cfg.BaseURL + "/" + tenantSlug + "/password-reset/confirm?token=" + url.QueryEscape(token)
 	body := "Hallo " + strings.TrimSpace(localUser.DisplayName) + ",\n\n" +
 		"für dein Konto wurde eine Passwort-Zurücksetzung angefordert.\n" +
 		"Link: " + resetLink + "\n\n" +
@@ -2452,48 +2601,48 @@ func (s *Server) handleTenantPasswordResetRequest(w http.ResponseWriter, r *http
 }
 
 func (s *Server) handleTenantPasswordResetConfirm(w http.ResponseWriter, r *http.Request) {
-	tenantSlug := r.PathValue("tenantSlug")
+	tenantSlug := tenantSlugFromRequest(r)
 	if tenantSlug == "" {
-		http.NotFound(w, r)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 	tenant, err := s.controlStore.GetTenantBySlug(r.Context(), tenantSlug)
 	if err != nil {
-		http.NotFound(w, r)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
 	token := strings.TrimSpace(r.URL.Query().Get("token"))
 	if r.Method == http.MethodPost {
 		if err := r.ParseForm(); err != nil {
-			http.Redirect(w, r, "/t/"+tenantSlug+"/password-reset/confirm?token="+url.QueryEscape(token)+"&error="+url.QueryEscape("Ungültige Eingaben"), http.StatusSeeOther)
+			http.Redirect(w, r, "/"+tenantSlug+"/password-reset/confirm?token="+url.QueryEscape(token)+"&error="+url.QueryEscape("Ungültige Eingaben"), http.StatusSeeOther)
 			return
 		}
 		token = strings.TrimSpace(r.FormValue("token"))
 		newPassword := r.FormValue("password")
 		confirmPassword := r.FormValue("password_confirm")
 		if len(strings.TrimSpace(newPassword)) < 8 {
-			http.Redirect(w, r, "/t/"+tenantSlug+"/password-reset/confirm?token="+url.QueryEscape(token)+"&error="+url.QueryEscape("Passwort muss mindestens 8 Zeichen haben"), http.StatusSeeOther)
+			http.Redirect(w, r, "/"+tenantSlug+"/password-reset/confirm?token="+url.QueryEscape(token)+"&error="+url.QueryEscape("Passwort muss mindestens 8 Zeichen haben"), http.StatusSeeOther)
 			return
 		}
 		if newPassword != confirmPassword {
-			http.Redirect(w, r, "/t/"+tenantSlug+"/password-reset/confirm?token="+url.QueryEscape(token)+"&error="+url.QueryEscape("Passwörter stimmen nicht überein"), http.StatusSeeOther)
+			http.Redirect(w, r, "/"+tenantSlug+"/password-reset/confirm?token="+url.QueryEscape(token)+"&error="+url.QueryEscape("Passwörter stimmen nicht überein"), http.StatusSeeOther)
 			return
 		}
 
 		tokenTenantID, userID, _, err := s.parsePasswordResetToken(token)
 		if err != nil || tokenTenantID != tenant.ID {
-			http.Redirect(w, r, "/t/"+tenantSlug+"/login?error="+url.QueryEscape("Reset-Link ist ungültig oder abgelaufen"), http.StatusSeeOther)
+			http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Reset-Link ist ungültig oder abgelaufen"), http.StatusSeeOther)
 			return
 		}
 
 		if err := s.controlStore.ResetLocalUserPassword(r.Context(), tenant.ID, userID, newPassword); err != nil {
 			s.logger.Error("reset local user password failed", "tenant_id", tenant.ID, "user_id", userID, "error", err)
-			http.Redirect(w, r, "/t/"+tenantSlug+"/password-reset/confirm?token="+url.QueryEscape(token)+"&error="+url.QueryEscape("Passwort konnte nicht gesetzt werden"), http.StatusSeeOther)
+			http.Redirect(w, r, "/"+tenantSlug+"/password-reset/confirm?token="+url.QueryEscape(token)+"&error="+url.QueryEscape("Passwort konnte nicht gesetzt werden"), http.StatusSeeOther)
 			return
 		}
 
-		http.Redirect(w, r, "/t/"+tenantSlug+"/login?notice="+url.QueryEscape("Passwort wurde aktualisiert. Bitte anmelden."), http.StatusSeeOther)
+		http.Redirect(w, r, "/"+tenantSlug+"/login?notice="+url.QueryEscape("Passwort wurde aktualisiert. Bitte anmelden."), http.StatusSeeOther)
 		return
 	}
 
@@ -2503,13 +2652,13 @@ func (s *Server) handleTenantPasswordResetConfirm(w http.ResponseWriter, r *http
 	}
 
 	if token == "" {
-		http.Redirect(w, r, "/t/"+tenantSlug+"/login?error="+url.QueryEscape("Reset-Link fehlt"), http.StatusSeeOther)
+		http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Reset-Link fehlt"), http.StatusSeeOther)
 		return
 	}
 
 	tokenTenantID, _, _, err := s.parsePasswordResetToken(token)
 	if err != nil || tokenTenantID != tenant.ID {
-		http.Redirect(w, r, "/t/"+tenantSlug+"/login?error="+url.QueryEscape("Reset-Link ist ungültig oder abgelaufen"), http.StatusSeeOther)
+		http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Reset-Link ist ungültig oder abgelaufen"), http.StatusSeeOther)
 		return
 	}
 
@@ -2525,11 +2674,11 @@ func (s *Server) handleTenantPasswordResetConfirm(w http.ResponseWriter, r *http
 
 func (s *Server) handleTenantAuthLogin(w http.ResponseWriter, r *http.Request) {
 	if s.dynamicOIDC == nil {
-		http.NotFound(w, r)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
-	tenantSlug := r.PathValue("tenantSlug")
+	tenantSlug := tenantSlugFromRequest(r)
 	providerKey := strings.TrimSpace(r.URL.Query().Get("provider"))
 
 	if tenantSlug == "" || providerKey == "" {
@@ -2539,14 +2688,14 @@ func (s *Server) handleTenantAuthLogin(w http.ResponseWriter, r *http.Request) {
 
 	tenant, err := s.controlStore.GetTenantBySlug(r.Context(), tenantSlug)
 	if err != nil {
-		http.NotFound(w, r)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
 	provider, err := s.controlStore.GetAuthProvider(r.Context(), tenant.ID, providerKey)
 	if err != nil {
 		s.logger.Warn("auth provider not found", "tenant_id", tenant.ID, "provider_key", providerKey, "error", err)
-		http.NotFound(w, r)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -2560,7 +2709,7 @@ func (s *Server) handleTenantAuthLogin(w http.ResponseWriter, r *http.Request) {
 		ProviderKey: provider.ProviderKey,
 		IssuerURL:   provider.IssuerURL,
 		ClientID:    provider.ClientID,
-		RedirectURL: s.cfg.BaseURL + "/t/" + tenantSlug + "/auth/callback",
+		RedirectURL: s.cfg.BaseURL + "/" + tenantSlug + "/auth/callback",
 	}
 
 	redirectURL, err := s.dynamicOIDC.BeginAuthForTenant(w, r, cfg, s.cfg.SecureCookies())
@@ -2575,13 +2724,13 @@ func (s *Server) handleTenantAuthLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleTenantAuthCallback(w http.ResponseWriter, r *http.Request) {
 	if s.dynamicOIDC == nil {
-		http.NotFound(w, r)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
-	tenantSlug := r.PathValue("tenantSlug")
+	tenantSlug := tenantSlugFromRequest(r)
 	if tenantSlug == "" {
-		http.NotFound(w, r)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 	defer s.dynamicOIDC.ClearEphemeralCookiesForTenant(w, tenantSlug, s.cfg.SecureCookies())
@@ -2589,7 +2738,7 @@ func (s *Server) handleTenantAuthCallback(w http.ResponseWriter, r *http.Request
 	tenant, err := s.controlStore.GetTenantBySlug(r.Context(), tenantSlug)
 	if err != nil {
 		s.logger.Warn("tenant not found for callback", "slug", tenantSlug, "error", err)
-		http.NotFound(w, r)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -2610,7 +2759,7 @@ func (s *Server) handleTenantAuthCallback(w http.ResponseWriter, r *http.Request
 		providers, err := s.controlStore.GetAuthProvidersByTenant(r.Context(), tenant.ID)
 		if err != nil || len(providers) == 0 {
 			s.logger.Warn("no auth providers found for tenant callback", "tenant_id", tenant.ID)
-			http.Redirect(w, r, "/t/"+tenantSlug+"/login?error="+url.QueryEscape("Authentifizierung nicht konfiguriert"), http.StatusSeeOther)
+			http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Authentifizierung nicht konfiguriert"), http.StatusSeeOther)
 			return
 		}
 		provider = providers[0]
@@ -2627,7 +2776,7 @@ func (s *Server) handleTenantAuthCallback(w http.ResponseWriter, r *http.Request
 		IssuerURL:    provider.IssuerURL,
 		ClientID:     provider.ClientID,
 		ClientSecret: "",
-		RedirectURL:  s.cfg.BaseURL + "/t/" + tenantSlug + "/auth/callback",
+		RedirectURL:  s.cfg.BaseURL + "/" + tenantSlug + "/auth/callback",
 	}
 
 	secret, err := s.controlStore.GetAuthProviderSecret(r.Context(), tenant.ID, provider.ProviderKey)
@@ -2645,7 +2794,7 @@ func (s *Server) handleTenantAuthCallback(w http.ResponseWriter, r *http.Request
 	identity, err := s.dynamicOIDC.CompleteAuthForTenant(r.Context(), r, tenantOIDCCfg)
 	if err != nil {
 		s.logger.Warn("tenant oidc callback failed", "tenant_id", tenant.ID, "error", err)
-		http.Redirect(w, r, "/t/"+tenantSlug+"/login?error="+url.QueryEscape("Anmeldung fehlgeschlagen"), http.StatusSeeOther)
+		http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Anmeldung fehlgeschlagen"), http.StatusSeeOther)
 		return
 	}
 
@@ -2674,17 +2823,17 @@ func (s *Server) handleTenantAuthCallback(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	http.Redirect(w, r, "/app/", http.StatusSeeOther)
+	http.Redirect(w, r, "/"+tenantSlug+"/", http.StatusSeeOther)
 }
 
 func (s *Server) handleTenantLocalLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		tenantSlug := r.PathValue("tenantSlug")
+		tenantSlug := tenantSlugFromRequest(r)
 		if tenantSlug == "" {
-			http.NotFound(w, r)
+			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
-		http.Redirect(w, r, "/t/"+tenantSlug+"/login", http.StatusSeeOther)
+		http.Redirect(w, r, "/"+tenantSlug+"/login", http.StatusSeeOther)
 		return
 	}
 
@@ -2693,22 +2842,22 @@ func (s *Server) handleTenantLocalLogin(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	tenantSlug := r.PathValue("tenantSlug")
+	tenantSlug := tenantSlugFromRequest(r)
 	if tenantSlug == "" {
-		http.NotFound(w, r)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
 	tenant, err := s.controlStore.GetTenantBySlug(r.Context(), tenantSlug)
 	if err != nil {
-		http.NotFound(w, r)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
 	providers, err := s.controlStore.GetAuthProvidersByTenant(r.Context(), tenant.ID)
 	if err != nil {
 		s.logger.Warn("get providers for local login", "tenant_id", tenant.ID, "error", err)
-		http.Redirect(w, r, "/t/"+tenantSlug+"/login?error="+url.QueryEscape("Anmeldung nicht verfügbar"), http.StatusSeeOther)
+		http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Anmeldung nicht verfügbar"), http.StatusSeeOther)
 		return
 	}
 	hasLocalProvider := false
@@ -2719,12 +2868,12 @@ func (s *Server) handleTenantLocalLogin(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	if !hasLocalProvider {
-		http.Redirect(w, r, "/t/"+tenantSlug+"/login?error="+url.QueryEscape("Lokale Anmeldung ist für diesen Tenant nicht aktiviert"), http.StatusSeeOther)
+		http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Lokale Anmeldung ist für diesen Tenant nicht aktiviert"), http.StatusSeeOther)
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, "/t/"+tenantSlug+"/login?error="+url.QueryEscape("Ungültige Eingaben"), http.StatusSeeOther)
+		http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Ungültige Eingaben"), http.StatusSeeOther)
 		return
 	}
 
@@ -2736,14 +2885,14 @@ func (s *Server) handleTenantLocalLogin(w http.ResponseWriter, r *http.Request) 
 		if waitMinutes < 1 {
 			waitMinutes = 1
 		}
-		http.Redirect(w, r, "/t/"+tenantSlug+"/login?error="+url.QueryEscape(fmt.Sprintf("Zu viele Fehlversuche. Bitte in %d Minute(n) erneut versuchen", waitMinutes)), http.StatusSeeOther)
+		http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape(fmt.Sprintf("Zu viele Fehlversuche. Bitte in %d Minute(n) erneut versuchen", waitMinutes)), http.StatusSeeOther)
 		return
 	}
 
 	resolvedUser, err := s.controlStore.AuthenticateLocalUser(r.Context(), tenant.ID, loginName, password)
 	if err != nil {
 		s.registerLocalLoginFailure(key, time.Now())
-		http.Redirect(w, r, "/t/"+tenantSlug+"/login?error="+url.QueryEscape("Anmeldung fehlgeschlagen"), http.StatusSeeOther)
+		http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Anmeldung fehlgeschlagen"), http.StatusSeeOther)
 		return
 	}
 	s.clearLocalLoginAttempts(key)
@@ -2766,5 +2915,5 @@ func (s *Server) handleTenantLocalLogin(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	http.Redirect(w, r, "/app/", http.StatusSeeOther)
+	http.Redirect(w, r, "/"+tenantSlug+"/", http.StatusSeeOther)
 }

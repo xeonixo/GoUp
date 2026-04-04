@@ -1,8 +1,8 @@
 {{define "content"}}
 <div class="admin-section">
   <nav class="admin-nav card">
-    <a href="/app/" class="admin-nav-link">Dashboard</a>
-    <a href="/app/settings/users" class="admin-nav-link is-active">Settings · Benutzer</a>
+    <a href="{{$.AppBase}}" class="admin-nav-link">Dashboard</a>
+    <a href="{{$.AppBase}}settings/users" class="admin-nav-link is-active">Settings · Benutzer</a>
   </nav>
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
@@ -15,7 +15,7 @@
       <p class="muted compact">Tenant: {{.AdminTenant.Slug}}</p>
     </div>
     <div class="admin-actions-inline">
-      <a href="/app/settings/local-users/new" class="button">+ Lokales Konto</a>
+      <a href="{{$.AppBase}}settings/local-users/new" class="button">+ Lokales Konto</a>
     </div>
   </div>
 
@@ -46,7 +46,7 @@
           <td>{{.DisplayName}}</td>
           <td>{{.Email}}</td>
           <td>
-            <form method="POST" action="/app/settings/users/{{.UserID}}/role" class="admin-actions-inline">
+            <form method="POST" action="{{$.AppBase}}settings/users/{{.UserID}}/role" class="admin-actions-inline">
               <select name="role">
                 <option value="viewer" {{if eq .Role "viewer"}}selected{{end}}>viewer</option>
                 <option value="admin" {{if eq .Role "admin"}}selected{{end}}>admin</option>
@@ -60,13 +60,13 @@
           <td>{{if .LastLoginAt}}<span class="js-local-datetime" data-utc="{{.LastLoginAt.Format "2006-01-02T15:04:05Z07:00"}}">{{.LastLoginAt}}</span>{{else}}—{{end}}</td>
           <td class="admin-actions-inline">
             {{if .HasLocalCredentials}}
-            <a href="/app/settings/local-users/{{.UserID}}/edit" class="button button-secondary button-small">Lokal bearbeiten</a>
-            <form method="POST" action="/app/settings/local-users/{{.UserID}}/delete" class="inline-form" onsubmit="return confirm('Lokales Konto wirklich löschen?');">
+            <a href="{{$.AppBase}}settings/local-users/{{.UserID}}/edit" class="button button-secondary button-small">Lokal bearbeiten</a>
+            <form method="POST" action="{{$.AppBase}}settings/local-users/{{.UserID}}/delete" class="inline-form" onsubmit="return confirm('Lokales Konto wirklich löschen?');">
               <button type="submit" class="button button-danger button-small">Lokales Konto löschen</button>
             </form>
             {{end}}
             {{if ne $.User.UserID .UserID}}
-            <form method="POST" action="/app/settings/users/{{.UserID}}/remove" class="inline-form" onsubmit="return confirm('Benutzer wirklich aus diesem Tenant entfernen?');">
+            <form method="POST" action="{{$.AppBase}}settings/users/{{.UserID}}/remove" class="inline-form" onsubmit="return confirm('Benutzer wirklich aus diesem Tenant entfernen?');">
               <button type="submit" class="button button-danger button-small">Entfernen</button>
             </form>
             {{else}}

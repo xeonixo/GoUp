@@ -45,7 +45,7 @@
 </section>
 
 <dialog id="monitor-modal" class="monitor-modal">
-  <form method="post" action="/app/monitors/save" class="stack form-grid" id="monitor-form">
+  <form method="post" action="{{$.AppBase}}monitors/save" class="stack form-grid" id="monitor-form">
     <input type="hidden" name="id" id="monitor-id">
     <h2 id="monitor-modal-title">Monitor anlegen</h2>
 
@@ -124,7 +124,7 @@
 </dialog>
 
 <dialog id="group-modal" class="monitor-modal group-modal">
-  <form method="post" action="/app/groups/save" class="stack" id="group-form">
+  <form method="post" action="{{$.AppBase}}groups/save" class="stack" id="group-form">
     <input type="hidden" name="group" id="group-name-field">
     <input type="hidden" name="trend" value="{{.TrendValue}}">
     <input type="hidden" name="icon_slug" id="group-icon-slug">
@@ -235,7 +235,7 @@
     </div>
     <div class="trend-range-toggle" role="tablist" aria-label="Trend-Zeitraum">
     {{range .TrendRanges}}
-    <a href="/app/?trend={{.Value}}" class="button button-small {{if not .Selected}}button-secondary{{end}}" {{if .Selected}}aria-current="page"{{end}}>{{.Label}}</a>
+    <a href="{{$.AppBase}}?trend={{.Value}}" class="button button-small {{if not .Selected}}button-secondary{{end}}" {{if .Selected}}aria-current="page"{{end}}>{{.Label}}</a>
     {{end}}
     </div>
   </div>
@@ -266,13 +266,13 @@
             <span class="service-count">{{len .Monitors}}</span>
           </summary>
           <div class="service-cluster-actions">
-            <form method="post" action="/app/groups/reorder">
+            <form method="post" action="{{$.AppBase}}groups/reorder">
               <input type="hidden" name="group" value="{{.Title}}">
               <input type="hidden" name="trend" value="{{$.TrendValue}}">
               <input type="hidden" name="direction" value="up">
               <button class="button button-secondary button-tiny reorder-button" type="submit" {{if not .CanMoveUp}}disabled{{end}} aria-label="Gruppe {{.Title}} nach oben verschieben">↑ Gruppe</button>
             </form>
-            <form method="post" action="/app/groups/reorder">
+            <form method="post" action="{{$.AppBase}}groups/reorder">
               <input type="hidden" name="group" value="{{.Title}}">
               <input type="hidden" name="trend" value="{{$.TrendValue}}">
               <input type="hidden" name="direction" value="down">
@@ -351,14 +351,14 @@
         </div>
 
         <div class="monitor-card-actions">
-          <form method="post" action="/app/monitors/reorder">
+          <form method="post" action="{{$.AppBase}}monitors/reorder">
             <input type="hidden" name="id" value="{{.ID}}">
             <input type="hidden" name="group" value="{{$serviceTitle}}">
             <input type="hidden" name="trend" value="{{$.TrendValue}}">
             <input type="hidden" name="direction" value="up">
             <button class="button button-secondary button-tiny reorder-button" type="submit" {{if not .CanMoveUp}}disabled{{end}} aria-label="Monitor {{.Name}} nach oben verschieben">↑</button>
           </form>
-          <form method="post" action="/app/monitors/reorder">
+          <form method="post" action="{{$.AppBase}}monitors/reorder">
             <input type="hidden" name="id" value="{{.ID}}">
             <input type="hidden" name="group" value="{{$serviceTitle}}">
             <input type="hidden" name="trend" value="{{$.TrendValue}}">
@@ -381,7 +381,7 @@
             data-expected-status="{{.ExpectedStatus}}">
             Bearbeiten
           </button>
-          <form method="post" action="/app/monitors/delete" onsubmit="return confirm('Monitor wirklich löschen?');">
+          <form method="post" action="{{$.AppBase}}monitors/delete" onsubmit="return confirm('Monitor wirklich löschen?');">
             <input type="hidden" name="id" value="{{.ID}}">
             <button class="button button-danger button-small" type="submit">Löschen</button>
           </form>
@@ -436,6 +436,7 @@
 </section>
 
 <script>
+  const GOUP_APP_BASE = "{{$.AppBase}}";
   (() => {
     const dialog = document.getElementById('monitor-modal');
     const groupDialog = document.getElementById('group-modal');
@@ -635,7 +636,7 @@
       }
       iconSearchRequest = new AbortController();
       try {
-        const response = await fetch(`/app/icons/search?q=${encodeURIComponent(normalizedQuery)}`, {
+        const response = await fetch(`${GOUP_APP_BASE}icons/search?q=${encodeURIComponent(normalizedQuery)}`, {
           method: 'GET',
           headers: { Accept: 'application/json' },
           signal: iconSearchRequest.signal
@@ -755,7 +756,7 @@
     document.querySelectorAll('.group-settings').forEach((button) => {
       button.addEventListener('click', () => openGroupDialog(button));
     });
-    document.querySelectorAll('form[action^="/app/"]').forEach((form) => {
+    document.querySelectorAll(`form[action^="${GOUP_APP_BASE}"]`).forEach((form) => {
       form.addEventListener('submit', saveDashboardState);
     });
     document.querySelectorAll('.group-icon').forEach((image) => {
@@ -924,7 +925,7 @@
         if (!draggedGroup || !targetGroup || draggedGroup === targetGroup) {
           return;
         }
-        submitPost('/app/groups/reorder', {
+        submitPost(GOUP_APP_BASE + 'groups/reorder', {
           dragged_group: draggedGroup,
           target_group: targetGroup,
           trend: currentTrend
@@ -968,7 +969,7 @@
         if (!draggedMonitor || !targetId || draggedMonitor.id === targetId || draggedMonitor.group !== targetGroup) {
           return;
         }
-        submitPost('/app/monitors/reorder', {
+        submitPost(GOUP_APP_BASE + 'monitors/reorder', {
           dragged_id: draggedMonitor.id,
           target_id: targetId,
           group: targetGroup,

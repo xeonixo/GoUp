@@ -1,8 +1,8 @@
 {{define "content"}}
 <div class="admin-section">
   <nav class="admin-nav card">
-    <a href="/app/admin/" class="admin-nav-link">Dashboard</a>
-    <a href="/app/admin/tenants" class="admin-nav-link is-active">Tenants</a>
+    <a href="/admin/" class="admin-nav-link">Dashboard</a>
+    <a href="/admin/tenants" class="admin-nav-link is-active">Tenants</a>
   </nav>
 
   <h1>{{if .IsEdit}}Tenant bearbeiten{{else}}Neuen Tenant anlegen{{end}}</h1>
@@ -40,7 +40,7 @@
 
     <div class="form-actions">
       <button type="submit" class="button">Speichern</button>
-      <a href="/app/admin/tenants" class="button button-secondary">Abbrechen</a>
+      <a href="/admin/tenants" class="button button-secondary">Abbrechen</a>
     </div>
   </form>
 </div>

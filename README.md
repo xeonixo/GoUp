@@ -161,7 +161,7 @@ E-Mail-Notifications:
 ### `local`
 
 - Lokale Benutzeranmeldung je Tenant
-- Login über `/t/{tenantSlug}/login`
+- Login über `/{tenantSlug}` (bzw. `/{tenantSlug}/login`)
 - Optionaler Password-Reset via SMTP
 
 ### Control-Plane Zugriff (strikt getrennt)
@@ -177,7 +177,7 @@ E-Mail-Notifications:
 - Dashboard: `/app/`
 - Admin-Dashboard: `/app/admin/`
 - Tenants: `/app/admin/tenants`
-- Tenant Login: `/t/{tenantSlug}/login`
+- Tenant Login: `/{tenantSlug}/login`
 - Health: `/healthz`
 
 ---

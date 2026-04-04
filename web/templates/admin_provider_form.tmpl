@@ -1,10 +1,10 @@
 {{define "content"}}
 <div class="admin-section">
   <nav class="admin-nav card">
-    <a href="/app/admin/" class="admin-nav-link">Dashboard</a>
-    <a href="/app/admin/tenants" class="admin-nav-link">Tenants</a>
-    <a href="/app/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link is-active">Provider</a>
-    <a href="/app/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link">Lokale Benutzer</a>
+    <a href="/admin/" class="admin-nav-link">Dashboard</a>
+    <a href="/admin/tenants" class="admin-nav-link">Tenants</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link is-active">Provider</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link">Lokale Benutzer</a>
   </nav>
 
   <h1>{{if .IsEdit}}Auth Provider bearbeiten{{else}}Neuen Auth Provider anlegen{{end}}</h1>
@@ -59,7 +59,7 @@
 
     <div class="form-actions">
       <button type="submit" class="button">Speichern</button>
-      <a href="/app/admin/tenants/{{.AdminTenant.ID}}/providers" class="button button-secondary">Abbrechen</a>
+      <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="button button-secondary">Abbrechen</a>
     </div>
   </form>
 </div>

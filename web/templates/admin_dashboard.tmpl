@@ -1,8 +1,8 @@
 {{define "content"}}
 <div class="admin-section">
   <nav class="admin-nav card">
-    <a href="/app/admin/" class="admin-nav-link is-active">Dashboard</a>
-    <a href="/app/admin/tenants" class="admin-nav-link">Tenants</a>
+    <a href="/admin/" class="admin-nav-link is-active">Dashboard</a>
+    <a href="/admin/tenants" class="admin-nav-link">Tenants</a>
   </nav>
 
   <div class="admin-header">
@@ -10,7 +10,7 @@
       <p class="eyebrow">Control Plane</p>
       <h1>Admin Dashboard</h1>
     </div>
-    <a href="/app/admin/tenants" class="button">Tenants verwalten</a>
+    <a href="/admin/tenants" class="button">Tenants verwalten</a>
   </div>
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
@@ -24,7 +24,7 @@
     <article class="card stat-card stat-card-soft stack">
       <p class="muted">Schnellzugriff</p>
       <div class="admin-actions-inline">
-        <a class="button" href="/app/admin/tenants">Tenants</a>
+        <a class="button" href="/admin/tenants">Tenants</a>
         <a class="button button-secondary" href="/app/">Zur App</a>
       </div>
     </article>
@@ -56,7 +56,7 @@
             <span class="status-badge status-badge-muted">Deaktiviert</span>
             {{end}}
           </td>
-          <td><a class="button button-secondary button-small" href="/app/admin/tenants/{{.ID}}/edit">Bearbeiten</a></td>
+          <td><a class="button button-secondary button-small" href="/admin/tenants/{{.ID}}/edit">Bearbeiten</a></td>
         </tr>
       {{end}}
       </tbody>
@@ -66,7 +66,7 @@
     {{end}}
   </div>
 
-  <form method="POST" action="/app/admin/settings/smtp/save" class="admin-form card stack">
+  <form method="POST" action="/admin/settings/smtp/save" class="admin-form card stack">
     <h2>Globaler E-Mail-Server (SMTP)</h2>
     <div class="form-group">
       <label for="smtp-host">SMTP Host</label>
@@ -109,7 +109,7 @@
     <div class="admin-header" style="padding: 1rem 1rem 0;">
       <h2>Letzte Admin-Aktionen</h2>
     </div>
-    <form method="GET" action="/app/admin/" class="stack" style="padding: 0 1rem 1rem;">
+    <form method="GET" action="/admin/" class="stack" style="padding: 0 1rem 1rem;">
       <div class="inline-grid">
         <label>
           <span>Action</span>
@@ -137,7 +137,7 @@
         </label>
         <div class="form-actions" style="align-items: end;">
           <button type="submit" class="button button-secondary">Filter anwenden</button>
-          <a href="/app/admin/" class="button button-secondary">Zurücksetzen</a>
+          <a href="/admin/" class="button button-secondary">Zurücksetzen</a>
         </div>
       </div>
     </form>

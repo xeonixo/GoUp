@@ -40,22 +40,22 @@ func (s *Server) handleAdminAccess(w http.ResponseWriter, r *http.Request) {
 
 	if strings.TrimSpace(r.URL.Query().Get("logout")) == "1" {
 		s.clearControlPlaneAdminCookie(w)
-		http.Redirect(w, r, "/app/admin/access?notice="+url.QueryEscape("Control-Plane-Admin abgemeldet"), http.StatusSeeOther)
+		http.Redirect(w, r, "/admin/access?notice="+url.QueryEscape("Control-Plane-Admin abgemeldet"), http.StatusSeeOther)
 		return
 	}
 
 	if r.Method == http.MethodPost {
 		if err := r.ParseForm(); err != nil {
-			http.Redirect(w, r, "/app/admin/access?error="+url.QueryEscape("Ungültiges Formular"), http.StatusSeeOther)
+			http.Redirect(w, r, "/admin/access?error="+url.QueryEscape("Ungültiges Formular"), http.StatusSeeOther)
 			return
 		}
 		provided := strings.TrimSpace(r.FormValue("access_key"))
 		if provided == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(key)) != 1 {
-			http.Redirect(w, r, "/app/admin/access?error="+url.QueryEscape("Ungültiger Zugriffsschlüssel"), http.StatusSeeOther)
+			http.Redirect(w, r, "/admin/access?error="+url.QueryEscape("Ungültiger Zugriffsschlüssel"), http.StatusSeeOther)
 			return
 		}
 		s.setControlPlaneAdminCookie(w, key)
-		http.Redirect(w, r, "/app/admin/", http.StatusSeeOther)
+		http.Redirect(w, r, "/admin/", http.StatusSeeOther)
 		return
 	}
 
@@ -65,7 +65,7 @@ func (s *Server) handleAdminAccess(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if s.hasControlPlaneAdminCookie(r, key) {
-		http.Redirect(w, r, "/app/admin/", http.StatusSeeOther)
+		http.Redirect(w, r, "/admin/", http.StatusSeeOther)
 		return
 	}
 
@@ -79,7 +79,7 @@ func (s *Server) handleAdminAccess(w http.ResponseWriter, r *http.Request) {
 // Admin Handlers
 
 func (s *Server) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/app/admin/" {
+	if r.URL.Path != "/admin/" {
 		http.NotFound(w, r)
 		return
 	}
@@ -166,7 +166,7 @@ func (s *Server) handleAdminSMTPSettingsSave(w http.ResponseWriter, r *http.Requ
 	if rawPort := strings.TrimSpace(r.FormValue("port")); rawPort != "" {
 		parsedPort, err := strconv.Atoi(rawPort)
 		if err != nil || parsedPort <= 0 || parsedPort > 65535 {
-			http.Redirect(w, r, "/app/admin/?error="+url.QueryEscape("Ungültiger SMTP-Port"), http.StatusSeeOther)
+			http.Redirect(w, r, "/admin/?error="+url.QueryEscape("Ungültiger SMTP-Port"), http.StatusSeeOther)
 			return
 		}
 		port = parsedPort
@@ -184,12 +184,12 @@ func (s *Server) handleAdminSMTPSettingsSave(w http.ResponseWriter, r *http.Requ
 
 	if err := s.controlStore.UpsertGlobalSMTPSettings(r.Context(), settings, password); err != nil {
 		s.logger.Error("save global smtp settings failed", "error", err)
-		http.Redirect(w, r, "/app/admin/?error="+url.QueryEscape("SMTP-Einstellungen konnten nicht gespeichert werden"), http.StatusSeeOther)
+		http.Redirect(w, r, "/admin/?error="+url.QueryEscape("SMTP-Einstellungen konnten nicht gespeichert werden"), http.StatusSeeOther)
 		return
 	}
 	s.writeAudit(r, "smtp.settings.update", "system", 1, fmt.Sprintf("host=%s port=%d tls=%s", settings.Host, settings.Port, settings.TLSMode))
 
-	http.Redirect(w, r, "/app/admin/?notice="+url.QueryEscape("SMTP-Einstellungen gespeichert"), http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/?notice="+url.QueryEscape("SMTP-Einstellungen gespeichert"), http.StatusSeeOther)
 }
 
 func (s *Server) handleAdminTenantsList(w http.ResponseWriter, r *http.Request) {
@@ -221,7 +221,7 @@ func (s *Server) handleAdminTenantForm(w http.ResponseWriter, r *http.Request) {
 	data := pageData{
 		Title:      "Tenant · GoUp",
 		User:       user,
-		FormAction: "/app/admin/tenants/save",
+		FormAction: "/admin/tenants/save",
 		Notice:     strings.TrimSpace(r.URL.Query().Get("notice")),
 		Error:      strings.TrimSpace(r.URL.Query().Get("error")),
 	}
@@ -285,11 +285,11 @@ func (s *Server) handleAdminTenantSave(w http.ResponseWriter, r *http.Request) {
 		tenant, err := s.controlStore.CreateTenant(r.Context(), slug, name, dbPath)
 		if err != nil {
 			s.logger.Error("create tenant failed", "error", err)
-			http.Redirect(w, r, "/app/admin/tenants/new?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+			http.Redirect(w, r, "/admin/tenants/new?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 			return
 		}
 		s.writeAudit(r, "tenant.create", "tenant", tenant.ID, fmt.Sprintf("slug=%s name=%s", tenant.Slug, tenant.Name))
-		http.Redirect(w, r, "/app/admin/tenants/"+fmt.Sprintf("%d", tenant.ID)+"/edit?notice="+url.QueryEscape("Tenant erstellt"), http.StatusSeeOther)
+		http.Redirect(w, r, "/admin/tenants/"+fmt.Sprintf("%d", tenant.ID)+"/edit?notice="+url.QueryEscape("Tenant erstellt"), http.StatusSeeOther)
 	} else {
 		// Update existing tenant
 		tenantID, err := strconv.ParseInt(id, 10, 64)
@@ -308,11 +308,11 @@ func (s *Server) handleAdminTenantSave(w http.ResponseWriter, r *http.Request) {
 		_, err = s.controlStore.UpdateTenant(r.Context(), tenantID, name, dbPath, active)
 		if err != nil {
 			s.logger.Error("update tenant failed", "error", err)
-			http.Redirect(w, r, "/app/admin/tenants/"+id+"/edit?error="+url.QueryEscape("Tenant konnte nicht gespeichert werden"), http.StatusSeeOther)
+			http.Redirect(w, r, "/admin/tenants/"+id+"/edit?error="+url.QueryEscape("Tenant konnte nicht gespeichert werden"), http.StatusSeeOther)
 			return
 		}
 		s.writeAudit(r, "tenant.update", "tenant", tenantID, fmt.Sprintf("name=%s active=%t", name, active))
-		http.Redirect(w, r, "/app/admin/tenants?notice="+url.QueryEscape("Tenant aktualisiert"), http.StatusSeeOther)
+		http.Redirect(w, r, "/admin/tenants?notice="+url.QueryEscape("Tenant aktualisiert"), http.StatusSeeOther)
 	}
 }
 
@@ -336,7 +336,7 @@ func (s *Server) handleAdminTenantDelete(w http.ResponseWriter, r *http.Request)
 	}
 	s.writeAudit(r, "tenant.deactivate", "tenant", tenantID, "")
 
-	http.Redirect(w, r, "/app/admin/tenants?notice="+url.QueryEscape("Tenant deaktiviert"), http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/tenants?notice="+url.QueryEscape("Tenant deaktiviert"), http.StatusSeeOther)
 }
 
 func (s *Server) handleAdminTenantPurge(w http.ResponseWriter, r *http.Request) {
@@ -352,18 +352,18 @@ func (s *Server) handleAdminTenantPurge(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if tenantID == s.defaultTenant.ID {
-		http.Redirect(w, r, "/app/admin/tenants?error="+url.QueryEscape("Default-Tenant kann nicht restlos gelöscht werden"), http.StatusSeeOther)
+		http.Redirect(w, r, "/admin/tenants?error="+url.QueryEscape("Default-Tenant kann nicht restlos gelöscht werden"), http.StatusSeeOther)
 		return
 	}
 
 	if err := s.controlStore.PurgeTenant(r.Context(), tenantID); err != nil {
 		s.logger.Error("purge tenant failed", "tenant_id", tenantID, "error", err)
-		http.Redirect(w, r, "/app/admin/tenants?error="+url.QueryEscape("Tenant konnte nicht restlos gelöscht werden"), http.StatusSeeOther)
+		http.Redirect(w, r, "/admin/tenants?error="+url.QueryEscape("Tenant konnte nicht restlos gelöscht werden"), http.StatusSeeOther)
 		return
 	}
 	s.writeAudit(r, "tenant.purge", "tenant", tenantID, "permanent delete requested")
 
-	http.Redirect(w, r, "/app/admin/tenants?notice="+url.QueryEscape("Tenant restlos gelöscht"), http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/tenants?notice="+url.QueryEscape("Tenant restlos gelöscht"), http.StatusSeeOther)
 }
 
 func (s *Server) handleAdminProvidersList(w http.ResponseWriter, r *http.Request) {
@@ -422,7 +422,7 @@ func (s *Server) handleAdminProviderForm(w http.ResponseWriter, r *http.Request)
 		Title:       fmt.Sprintf("Provider für %s · GoUp", tenant.Name),
 		User:        user,
 		AdminTenant: tenant,
-		FormAction:  fmt.Sprintf("/app/admin/tenants/%d/providers/save", tenant.ID),
+		FormAction:  fmt.Sprintf("/admin/tenants/%d/providers/save", tenant.ID),
 		Notice:      strings.TrimSpace(r.URL.Query().Get("notice")),
 		Error:       strings.TrimSpace(r.URL.Query().Get("error")),
 	}
@@ -486,20 +486,20 @@ func (s *Server) handleAdminProviderSave(w http.ResponseWriter, r *http.Request)
 	_, err = s.controlStore.UpsertAuthProvider(r.Context(), tenantID, providerKey, kind, displayName, issuerURL, clientID)
 	if err != nil {
 		s.logger.Error("upsert auth provider failed", "error", err)
-		http.Redirect(w, r, fmt.Sprintf("/app/admin/tenants/%d/providers/new?error=%s", tenantID, url.QueryEscape("Provider konnte nicht gespeichert werden")), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/providers/new?error=%s", tenantID, url.QueryEscape("Provider konnte nicht gespeichert werden")), http.StatusSeeOther)
 		return
 	}
 
 	if kind == "oidc" && clientSecret != "" {
 		if err := s.controlStore.UpdateAuthProviderSecret(r.Context(), tenantID, providerKey, clientSecret); err != nil {
 			s.logger.Error("update auth provider secret failed", "tenant_id", tenantID, "provider_key", providerKey, "error", err)
-			http.Redirect(w, r, fmt.Sprintf("/app/admin/tenants/%d/providers/%s/edit?error=%s", tenantID, providerKey, url.QueryEscape("Provider gespeichert, Secret konnte nicht gespeichert werden")), http.StatusSeeOther)
+			http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/providers/%s/edit?error=%s", tenantID, providerKey, url.QueryEscape("Provider gespeichert, Secret konnte nicht gespeichert werden")), http.StatusSeeOther)
 			return
 		}
 	}
 	s.writeAudit(r, "auth_provider.upsert", "tenant", tenantID, fmt.Sprintf("provider=%s kind=%s", providerKey, kind))
 
-	http.Redirect(w, r, fmt.Sprintf("/app/admin/tenants/%d/providers?notice=%s", tenantID, url.QueryEscape("Provider gespeichert")), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/providers?notice=%s", tenantID, url.QueryEscape("Provider gespeichert")), http.StatusSeeOther)
 }
 
 func (s *Server) handleAdminProviderDelete(w http.ResponseWriter, r *http.Request) {
@@ -524,7 +524,7 @@ func (s *Server) handleAdminProviderDelete(w http.ResponseWriter, r *http.Reques
 	}
 	s.writeAudit(r, "auth_provider.deactivate", "tenant", tenantID, fmt.Sprintf("provider=%s", providerKey))
 
-	http.Redirect(w, r, fmt.Sprintf("/app/admin/tenants/%d/providers?notice=%s", tenantID, url.QueryEscape("Provider deaktiviert")), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/providers?notice=%s", tenantID, url.QueryEscape("Provider deaktiviert")), http.StatusSeeOther)
 }
 
 func (s *Server) handleAdminLocalUsersList(w http.ResponseWriter, r *http.Request) {
@@ -583,7 +583,7 @@ func (s *Server) handleAdminLocalUserForm(w http.ResponseWriter, r *http.Request
 		Title:       fmt.Sprintf("Lokaler Benutzer für %s · GoUp", tenant.Name),
 		User:        user,
 		AdminTenant: tenant,
-		FormAction:  fmt.Sprintf("/app/admin/tenants/%d/local-users/save", tenant.ID),
+		FormAction:  fmt.Sprintf("/admin/tenants/%d/local-users/save", tenant.ID),
 		Notice:      strings.TrimSpace(r.URL.Query().Get("notice")),
 		Error:       strings.TrimSpace(r.URL.Query().Get("error")),
 	}
@@ -637,23 +637,23 @@ func (s *Server) handleAdminLocalUserSave(w http.ResponseWriter, r *http.Request
 
 	if _, err := s.controlStore.UpsertAuthProvider(r.Context(), tenantID, "local-primary", "local", "Local Login", "", ""); err != nil {
 		s.logger.Error("ensure local auth provider failed", "tenant_id", tenantID, "error", err)
-		http.Redirect(w, r, fmt.Sprintf("/app/admin/tenants/%d/local-users?error=%s", tenantID, url.QueryEscape("Lokaler Provider konnte nicht angelegt werden")), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/local-users?error=%s", tenantID, url.QueryEscape("Lokaler Provider konnte nicht angelegt werden")), http.StatusSeeOther)
 		return
 	}
 
 	if userIDRaw == "" {
 		if strings.TrimSpace(password) == "" {
-			http.Redirect(w, r, fmt.Sprintf("/app/admin/tenants/%d/local-users/new?error=%s", tenantID, url.QueryEscape("Passwort ist erforderlich")), http.StatusSeeOther)
+			http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/local-users/new?error=%s", tenantID, url.QueryEscape("Passwort ist erforderlich")), http.StatusSeeOther)
 			return
 		}
 		_, err := s.controlStore.CreateLocalUserForTenant(r.Context(), tenantID, loginName, password, email, displayName, role)
 		if err != nil {
 			s.logger.Error("create local user failed", "tenant_id", tenantID, "error", err)
-			http.Redirect(w, r, fmt.Sprintf("/app/admin/tenants/%d/local-users/new?error=%s", tenantID, url.QueryEscape("Lokaler Benutzer konnte nicht erstellt werden")), http.StatusSeeOther)
+			http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/local-users/new?error=%s", tenantID, url.QueryEscape("Lokaler Benutzer konnte nicht erstellt werden")), http.StatusSeeOther)
 			return
 		}
 		s.writeAudit(r, "local_user.create", "tenant", tenantID, fmt.Sprintf("login=%s email=%s", loginName, email))
-		http.Redirect(w, r, fmt.Sprintf("/app/admin/tenants/%d/local-users?notice=%s", tenantID, url.QueryEscape("Lokaler Benutzer erstellt")), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/local-users?notice=%s", tenantID, url.QueryEscape("Lokaler Benutzer erstellt")), http.StatusSeeOther)
 		return
 	}
 
@@ -666,12 +666,12 @@ func (s *Server) handleAdminLocalUserSave(w http.ResponseWriter, r *http.Request
 	_, err = s.controlStore.UpdateLocalUserForTenant(r.Context(), tenantID, userID, loginName, password, email, displayName, role)
 	if err != nil {
 		s.logger.Error("update local user failed", "tenant_id", tenantID, "user_id", userID, "error", err)
-		http.Redirect(w, r, fmt.Sprintf("/app/admin/tenants/%d/local-users/%d/edit?error=%s", tenantID, userID, url.QueryEscape("Lokaler Benutzer konnte nicht gespeichert werden")), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/local-users/%d/edit?error=%s", tenantID, userID, url.QueryEscape("Lokaler Benutzer konnte nicht gespeichert werden")), http.StatusSeeOther)
 		return
 	}
 	s.writeAudit(r, "local_user.update", "tenant", tenantID, fmt.Sprintf("user_id=%d login=%s", userID, loginName))
 
-	http.Redirect(w, r, fmt.Sprintf("/app/admin/tenants/%d/local-users?notice=%s", tenantID, url.QueryEscape("Lokaler Benutzer gespeichert")), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/local-users?notice=%s", tenantID, url.QueryEscape("Lokaler Benutzer gespeichert")), http.StatusSeeOther)
 }
 
 func (s *Server) handleAdminLocalUserDelete(w http.ResponseWriter, r *http.Request) {
@@ -695,12 +695,12 @@ func (s *Server) handleAdminLocalUserDelete(w http.ResponseWriter, r *http.Reque
 
 	if err := s.controlStore.DeleteLocalUserFromTenant(r.Context(), tenantID, userID); err != nil {
 		s.logger.Error("delete local user failed", "tenant_id", tenantID, "user_id", userID, "error", err)
-		http.Redirect(w, r, fmt.Sprintf("/app/admin/tenants/%d/local-users?error=%s", tenantID, url.QueryEscape("Lokaler Benutzer konnte nicht entfernt werden")), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/local-users?error=%s", tenantID, url.QueryEscape("Lokaler Benutzer konnte nicht entfernt werden")), http.StatusSeeOther)
 		return
 	}
 	s.writeAudit(r, "local_user.delete", "tenant", tenantID, fmt.Sprintf("user_id=%d", userID))
 
-	http.Redirect(w, r, fmt.Sprintf("/app/admin/tenants/%d/local-users?notice=%s", tenantID, url.QueryEscape("Lokaler Benutzer entfernt")), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/local-users?notice=%s", tenantID, url.QueryEscape("Lokaler Benutzer entfernt")), http.StatusSeeOther)
 }
 
 func (s *Server) handleAdminTenantUserRemove(w http.ResponseWriter, r *http.Request) {
@@ -724,12 +724,12 @@ func (s *Server) handleAdminTenantUserRemove(w http.ResponseWriter, r *http.Requ
 
 	if err := s.controlStore.RemoveUserFromTenant(r.Context(), tenantID, userID); err != nil {
 		s.logger.Error("remove tenant user failed", "tenant_id", tenantID, "user_id", userID, "error", err)
-		http.Redirect(w, r, fmt.Sprintf("/app/admin/tenants/%d/local-users?error=%s", tenantID, url.QueryEscape("Benutzer konnte nicht entfernt werden")), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/local-users?error=%s", tenantID, url.QueryEscape("Benutzer konnte nicht entfernt werden")), http.StatusSeeOther)
 		return
 	}
 	s.writeAudit(r, "tenant_user.remove", "tenant", tenantID, fmt.Sprintf("user_id=%d", userID))
 
-	http.Redirect(w, r, fmt.Sprintf("/app/admin/tenants/%d/local-users?notice=%s", tenantID, url.QueryEscape("Benutzer entfernt")), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/local-users?notice=%s", tenantID, url.QueryEscape("Benutzer entfernt")), http.StatusSeeOther)
 }
 
 func (s *Server) handleSettingsUsers(w http.ResponseWriter, r *http.Request) {
@@ -740,7 +740,7 @@ func (s *Server) handleSettingsUsers(w http.ResponseWriter, r *http.Request) {
 
 	user := s.currentUser(r)
 	if user == nil || user.TenantID <= 0 {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -763,6 +763,7 @@ func (s *Server) handleSettingsUsers(w http.ResponseWriter, r *http.Request) {
 		User:             user,
 		AdminTenant:      tenant,
 		AdminTenantUsers: tenantUsers,
+		AppBase:          s.tenantAppBase(r),
 		Notice:           strings.TrimSpace(r.URL.Query().Get("notice")),
 		Error:            strings.TrimSpace(r.URL.Query().Get("error")),
 	})
@@ -780,21 +781,21 @@ func (s *Server) handleSettingsUserRoleSave(w http.ResponseWriter, r *http.Reque
 
 	user := s.currentUser(r)
 	if user == nil || user.TenantID <= 0 {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
 	userIDRaw := strings.TrimSpace(r.PathValue("userID"))
 	userID, err := strconv.ParseInt(userIDRaw, 10, 64)
 	if err != nil || userID <= 0 {
-		http.Redirect(w, r, "/app/settings/users?error="+url.QueryEscape("Ungültige Benutzer-ID"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/users?error="+url.QueryEscape("Ungültige Benutzer-ID"), http.StatusSeeOther)
 		return
 	}
 
 	role := strings.TrimSpace(r.FormValue("role"))
 	if err := s.controlStore.UpdateTenantUserRole(r.Context(), user.TenantID, userID, role); err != nil {
 		s.logger.Error("settings users update role failed", "tenant_id", user.TenantID, "user_id", userID, "error", err)
-		http.Redirect(w, r, "/app/settings/users?error="+url.QueryEscape("Rolle konnte nicht aktualisiert werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/users?error="+url.QueryEscape("Rolle konnte nicht aktualisiert werden"), http.StatusSeeOther)
 		return
 	}
 	if userID == user.UserID {
@@ -805,7 +806,7 @@ func (s *Server) handleSettingsUserRoleSave(w http.ResponseWriter, r *http.Reque
 	}
 
 	s.writeAudit(r, "tenant_user.role_update", "tenant", user.TenantID, fmt.Sprintf("user_id=%d role=%s", userID, role))
-	http.Redirect(w, r, "/app/settings/users?notice="+url.QueryEscape("Rolle aktualisiert"), http.StatusSeeOther)
+	http.Redirect(w, r, s.tenantAppBase(r)+"settings/users?notice="+url.QueryEscape("Rolle aktualisiert"), http.StatusSeeOther)
 }
 
 func (s *Server) handleSettingsUserRemove(w http.ResponseWriter, r *http.Request) {
@@ -816,29 +817,29 @@ func (s *Server) handleSettingsUserRemove(w http.ResponseWriter, r *http.Request
 
 	user := s.currentUser(r)
 	if user == nil || user.TenantID <= 0 {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
 	userIDRaw := strings.TrimSpace(r.PathValue("userID"))
 	userID, err := strconv.ParseInt(userIDRaw, 10, 64)
 	if err != nil || userID <= 0 {
-		http.Redirect(w, r, "/app/settings/users?error="+url.QueryEscape("Ungültige Benutzer-ID"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/users?error="+url.QueryEscape("Ungültige Benutzer-ID"), http.StatusSeeOther)
 		return
 	}
 	if userID == user.UserID {
-		http.Redirect(w, r, "/app/settings/users?error="+url.QueryEscape("Du kannst dich nicht selbst aus dem Tenant entfernen"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/users?error="+url.QueryEscape("Du kannst dich nicht selbst aus dem Tenant entfernen"), http.StatusSeeOther)
 		return
 	}
 
 	if err := s.controlStore.RemoveUserFromTenant(r.Context(), user.TenantID, userID); err != nil {
 		s.logger.Error("settings users remove failed", "tenant_id", user.TenantID, "user_id", userID, "error", err)
-		http.Redirect(w, r, "/app/settings/users?error="+url.QueryEscape("Benutzer konnte nicht entfernt werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/users?error="+url.QueryEscape("Benutzer konnte nicht entfernt werden"), http.StatusSeeOther)
 		return
 	}
 
 	s.writeAudit(r, "tenant_user.remove", "tenant", user.TenantID, fmt.Sprintf("user_id=%d", userID))
-	http.Redirect(w, r, "/app/settings/users?notice="+url.QueryEscape("Benutzer entfernt"), http.StatusSeeOther)
+	http.Redirect(w, r, s.tenantAppBase(r)+"settings/users?notice="+url.QueryEscape("Benutzer entfernt"), http.StatusSeeOther)
 }
 
 func (s *Server) handleSettingsLocalUserForm(w http.ResponseWriter, r *http.Request) {
@@ -849,7 +850,7 @@ func (s *Server) handleSettingsLocalUserForm(w http.ResponseWriter, r *http.Requ
 
 	user := s.currentUser(r)
 	if user == nil || user.TenantID <= 0 {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -863,9 +864,10 @@ func (s *Server) handleSettingsLocalUserForm(w http.ResponseWriter, r *http.Requ
 		Title:        "Lokales Konto · GoUp",
 		User:         user,
 		AdminTenant:  tenant,
-		FormAction:   "/app/settings/local-users/save",
-		BackURL:      "/app/settings/users",
+		FormAction:   s.tenantAppBase(r) + "settings/local-users/save",
+		BackURL:      s.tenantAppBase(r) + "settings/users",
 		SettingsMode: true,
+		AppBase:      s.tenantAppBase(r),
 		Notice:       strings.TrimSpace(r.URL.Query().Get("notice")),
 		Error:        strings.TrimSpace(r.URL.Query().Get("error")),
 	}
@@ -901,7 +903,7 @@ func (s *Server) handleSettingsLocalUserSave(w http.ResponseWriter, r *http.Requ
 
 	user := s.currentUser(r)
 	if user == nil || user.TenantID <= 0 {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -917,23 +919,23 @@ func (s *Server) handleSettingsLocalUserSave(w http.ResponseWriter, r *http.Requ
 
 	if _, err := s.controlStore.UpsertAuthProvider(r.Context(), user.TenantID, "local-primary", "local", "Local Login", "", ""); err != nil {
 		s.logger.Error("settings ensure local auth provider failed", "tenant_id", user.TenantID, "error", err)
-		http.Redirect(w, r, "/app/settings/users?error="+url.QueryEscape("Lokaler Provider konnte nicht angelegt werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/users?error="+url.QueryEscape("Lokaler Provider konnte nicht angelegt werden"), http.StatusSeeOther)
 		return
 	}
 
 	if userIDRaw == "" {
 		if strings.TrimSpace(password) == "" {
-			http.Redirect(w, r, "/app/settings/local-users/new?error="+url.QueryEscape("Passwort ist erforderlich"), http.StatusSeeOther)
+			http.Redirect(w, r, s.tenantAppBase(r)+"settings/local-users/new?error="+url.QueryEscape("Passwort ist erforderlich"), http.StatusSeeOther)
 			return
 		}
 		_, err := s.controlStore.CreateLocalUserForTenant(r.Context(), user.TenantID, loginName, password, email, displayName, role)
 		if err != nil {
 			s.logger.Error("settings create local user failed", "tenant_id", user.TenantID, "error", err)
-			http.Redirect(w, r, "/app/settings/local-users/new?error="+url.QueryEscape("Lokaler Benutzer konnte nicht erstellt werden"), http.StatusSeeOther)
+			http.Redirect(w, r, s.tenantAppBase(r)+"settings/local-users/new?error="+url.QueryEscape("Lokaler Benutzer konnte nicht erstellt werden"), http.StatusSeeOther)
 			return
 		}
 		s.writeAudit(r, "local_user.create", "tenant", user.TenantID, fmt.Sprintf("login=%s email=%s source=settings", loginName, email))
-		http.Redirect(w, r, "/app/settings/users?notice="+url.QueryEscape("Lokaler Benutzer erstellt"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/users?notice="+url.QueryEscape("Lokaler Benutzer erstellt"), http.StatusSeeOther)
 		return
 	}
 
@@ -945,7 +947,7 @@ func (s *Server) handleSettingsLocalUserSave(w http.ResponseWriter, r *http.Requ
 	_, err = s.controlStore.UpdateLocalUserForTenant(r.Context(), user.TenantID, userID, loginName, password, email, displayName, role)
 	if err != nil {
 		s.logger.Error("settings update local user failed", "tenant_id", user.TenantID, "user_id", userID, "error", err)
-		http.Redirect(w, r, "/app/settings/local-users/"+strconv.FormatInt(userID, 10)+"/edit?error="+url.QueryEscape("Lokaler Benutzer konnte nicht gespeichert werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/local-users/"+strconv.FormatInt(userID, 10)+"/edit?error="+url.QueryEscape("Lokaler Benutzer konnte nicht gespeichert werden"), http.StatusSeeOther)
 		return
 	}
 
@@ -957,7 +959,7 @@ func (s *Server) handleSettingsLocalUserSave(w http.ResponseWriter, r *http.Requ
 	}
 
 	s.writeAudit(r, "local_user.update", "tenant", user.TenantID, fmt.Sprintf("user_id=%d login=%s source=settings", userID, loginName))
-	http.Redirect(w, r, "/app/settings/users?notice="+url.QueryEscape("Lokaler Benutzer gespeichert"), http.StatusSeeOther)
+	http.Redirect(w, r, s.tenantAppBase(r)+"settings/users?notice="+url.QueryEscape("Lokaler Benutzer gespeichert"), http.StatusSeeOther)
 }
 
 func (s *Server) handleSettingsLocalUserDelete(w http.ResponseWriter, r *http.Request) {
@@ -968,27 +970,27 @@ func (s *Server) handleSettingsLocalUserDelete(w http.ResponseWriter, r *http.Re
 
 	user := s.currentUser(r)
 	if user == nil || user.TenantID <= 0 {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
 	userIDRaw := strings.TrimSpace(r.PathValue("userID"))
 	userID, err := strconv.ParseInt(userIDRaw, 10, 64)
 	if err != nil || userID <= 0 {
-		http.Redirect(w, r, "/app/settings/users?error="+url.QueryEscape("Ungültige Benutzer-ID"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/users?error="+url.QueryEscape("Ungültige Benutzer-ID"), http.StatusSeeOther)
 		return
 	}
 	if userID == user.UserID {
-		http.Redirect(w, r, "/app/settings/users?error="+url.QueryEscape("Du kannst dich nicht selbst löschen"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/users?error="+url.QueryEscape("Du kannst dich nicht selbst löschen"), http.StatusSeeOther)
 		return
 	}
 
 	if err := s.controlStore.DeleteLocalUserFromTenant(r.Context(), user.TenantID, userID); err != nil {
 		s.logger.Error("settings delete local user failed", "tenant_id", user.TenantID, "user_id", userID, "error", err)
-		http.Redirect(w, r, "/app/settings/users?error="+url.QueryEscape("Lokaler Benutzer konnte nicht entfernt werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/users?error="+url.QueryEscape("Lokaler Benutzer konnte nicht entfernt werden"), http.StatusSeeOther)
 		return
 	}
 
 	s.writeAudit(r, "local_user.delete", "tenant", user.TenantID, fmt.Sprintf("user_id=%d source=settings", userID))
-	http.Redirect(w, r, "/app/settings/users?notice="+url.QueryEscape("Lokaler Benutzer entfernt"), http.StatusSeeOther)
+	http.Redirect(w, r, s.tenantAppBase(r)+"settings/users?notice="+url.QueryEscape("Lokaler Benutzer entfernt"), http.StatusSeeOther)
 }

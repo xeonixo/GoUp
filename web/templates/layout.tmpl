@@ -10,18 +10,16 @@
 <body>
   <header class="topbar">
     <div>
-      <a class="brand" href="/app/">GoUp</a>
-      <span class="subtitle">leichtes Uptime-Monitoring</span>
+      <a class="brand" href="{{if .AppBase}}{{.AppBase}}{{else}}/{{end}}">GoUp</a>
+      <span class="subtitle">leichtes Uptime-Monitoring{{if and .User .User.TenantSlug}} · Tenant: {{if .User.TenantName}}{{.User.TenantName}}{{else}}{{.User.TenantSlug}}{{end}}{{end}}</span>
     </div>
     <nav>
       {{if .User}}
       <span class="user-pill">{{if .User.Name}}{{.User.Name}}{{else}}{{.User.Email}}{{end}}</span>
       {{if or .User.SuperAdmin (eq .User.Role "admin")}}
-      <a class="button button-secondary" href="/app/settings/users">Settings</a>
+      <a class="button button-secondary" href="{{.AppBase}}settings/users">Settings</a>
       {{end}}
       <a class="button button-secondary" href="/auth/logout">Logout</a>
-      {{else if .AuthEnabled}}
-      <a class="button" href="/auth/login">Login</a>
       {{end}}
     </nav>
   </header>
@@ -39,6 +37,30 @@
       });
 
       window.addEventListener("DOMContentLoaded", function () {
+        try {
+          var currentURL = new URL(window.location.href);
+          var changed = false;
+          if (currentURL.searchParams.has("error")) {
+            currentURL.searchParams.delete("error");
+            changed = true;
+          }
+          if (currentURL.searchParams.has("notice")) {
+            currentURL.searchParams.delete("notice");
+            changed = true;
+          }
+          if (changed) {
+            var next = currentURL.pathname;
+            var qs = currentURL.searchParams.toString();
+            if (qs) {
+              next += "?" + qs;
+            }
+            if (currentURL.hash) {
+              next += currentURL.hash;
+            }
+            history.replaceState({}, "", next);
+          }
+        } catch (_) {}
+
         try {
           if (!window.location.hash) {
             var y = parseInt(sessionStorage.getItem(scrollKey) || "0", 10);

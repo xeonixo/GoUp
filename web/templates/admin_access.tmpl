@@ -10,13 +10,13 @@
     {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
     {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
 
-    <form method="POST" action="/app/admin/access" class="stack login-form">
+    <form method="POST" action="/admin/access" class="stack login-form">
       <label for="access_key">Control-Plane Key</label>
       <input id="access_key" name="access_key" type="password" required autocomplete="off">
       <button type="submit" class="button">Admin-Bereich öffnen</button>
     </form>
 
-    <p class="muted compact">Logout aus diesem Bereich: <a href="/app/admin/access?logout=1">Control-Plane-Session beenden</a></p>
+    <p class="muted compact">Logout aus diesem Bereich: <a href="/admin/access?logout=1">Control-Plane-Session beenden</a></p>
   </article>
 </section>
 {{end}}

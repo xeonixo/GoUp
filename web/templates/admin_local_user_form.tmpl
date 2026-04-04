@@ -2,15 +2,15 @@
 <div class="admin-section">
   {{if .SettingsMode}}
   <nav class="admin-nav card">
-    <a href="/app/" class="admin-nav-link">Dashboard</a>
-    <a href="/app/settings/users" class="admin-nav-link is-active">Settings · Benutzer</a>
+    <a href="{{.AppBase}}" class="admin-nav-link">Dashboard</a>
+    <a href="{{.AppBase}}settings/users" class="admin-nav-link is-active">Settings · Benutzer</a>
   </nav>
   {{else}}
   <nav class="admin-nav card">
-    <a href="/app/admin/" class="admin-nav-link">Dashboard</a>
-    <a href="/app/admin/tenants" class="admin-nav-link">Tenants</a>
-    <a href="/app/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link">Provider</a>
-    <a href="/app/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link is-active">Lokale Benutzer</a>
+    <a href="/admin/" class="admin-nav-link">Dashboard</a>
+    <a href="/admin/tenants" class="admin-nav-link">Tenants</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link">Provider</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link is-active">Lokale Benutzer</a>
   </nav>
   {{end}}
 
@@ -52,7 +52,7 @@
 
     <div class="form-actions">
       <button type="submit" class="button">Speichern</button>
-      <a href="{{if .BackURL}}{{.BackURL}}{{else}}/app/admin/tenants/{{.AdminTenant.ID}}/local-users{{end}}" class="button button-secondary">Abbrechen</a>
+      <a href="{{if .BackURL}}{{.BackURL}}{{else}}/admin/tenants/{{.AdminTenant.ID}}/local-users{{end}}" class="button button-secondary">Abbrechen</a>
     </div>
   </form>
 </div>
