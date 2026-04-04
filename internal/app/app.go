@@ -25,7 +25,7 @@ type App struct {
 	controlStore *store.ControlPlaneStore
 	tenantStores *store.TenantStoreManager
 	server       *httpserver.Server
-	runner       *monitorrunner.Runner
+	runners      []*monitorrunner.Runner
 }
 
 func New(ctx context.Context) (*App, error) {
@@ -67,13 +67,34 @@ func New(ctx context.Context) (*App, error) {
 	if adminCookieKey == "" {
 		adminCookieKey = secretKey
 	}
-	var defaultTenant store.Tenant
-	if existingTenant, getErr := controlStore.GetTenantBySlug(ctx, "default"); getErr == nil {
-		defaultTenant = existingTenant
+	// Load all active tenants and start a runner for each one that has a database.
+	allTenants, tenantsErr := controlStore.GetAllTenants(ctx)
+	if tenantsErr != nil {
+		controlStore.Close()
+		return nil, fmt.Errorf("load tenants: %w", tenantsErr)
 	}
+
+	// Determine the "primary" tenant used for legacy single-tenant OIDC setup and
+	// as the TenantStoreManager default: prefer slug=="default", else first active.
+	var defaultTenant store.Tenant
+	for _, t := range allTenants {
+		if t.Slug == "default" && t.Active {
+			defaultTenant = t
+			break
+		}
+	}
+	if defaultTenant.ID == 0 {
+		for _, t := range allTenants {
+			if t.Active {
+				defaultTenant = t
+				break
+			}
+		}
+	}
+
 	hasGlobalOIDC := strings.TrimSpace(cfg.Auth.OIDC.IssuerURL) != "" && strings.TrimSpace(cfg.Auth.OIDC.ClientID) != "" && strings.TrimSpace(cfg.Auth.OIDC.ClientSecret) != ""
 
-	// If OIDC is enabled, ensure default provider for default tenant
+	// If OIDC is enabled, ensure default provider for primary tenant.
 	if cfg.Auth.Mode == config.AuthModeOIDC && hasGlobalOIDC && defaultTenant.ID > 0 {
 		if _, err := controlStore.EnsureDefaultOIDCProvider(ctx, defaultTenant.ID, cfg.Auth.OIDC.IssuerURL, cfg.Auth.OIDC.ClientID, cfg.Auth.OIDC.ClientSecret); err != nil {
 			controlStore.Close()
@@ -81,6 +102,7 @@ func New(ctx context.Context) (*App, error) {
 		}
 	}
 
+	// Open a store for the primary tenant (used by TenantStoreManager as default).
 	var sqliteStore *store.Store
 	if defaultTenant.ID > 0 && tenantHasAppDatabase(defaultTenant.DBPath) {
 		sqliteStore, err = store.Open(ctx, defaultTenant.DBPath)
@@ -105,28 +127,49 @@ func New(ctx context.Context) (*App, error) {
 	}
 
 	tenantStores := store.NewTenantStoreManager(controlStore, defaultTenant, sqliteStore)
-	var runner *monitorrunner.Runner
-	if sqliteStore != nil && defaultTenant.ID > 0 {
-		matrixEndpointID, err := sqliteStore.EnsureSystemNotificationEndpoint(ctx, "matrix", "user-matrix", `{}`, true)
-		if err != nil {
-			sqliteStore.Close()
-			controlStore.Close()
-			return nil, fmt.Errorf("ensure matrix endpoint: %w", err)
+
+	// Build one runner per active tenant that has a database.
+	runners := make([]*monitorrunner.Runner, 0, len(allTenants))
+	for _, t := range allTenants {
+		if !t.Active || !tenantHasAppDatabase(t.DBPath) {
+			continue
+		}
+		var ts *store.Store
+		if t.ID == defaultTenant.ID {
+			ts = sqliteStore
+		} else {
+			ts, err = store.Open(ctx, t.DBPath)
+			if err != nil {
+				logger.Warn("failed to open tenant db for runner", "tenant", t.Slug, "error", err)
+				continue
+			}
 		}
 
-		emailEndpointID, err := sqliteStore.EnsureSystemNotificationEndpoint(ctx, "email", "user-email", `{}`, true)
-		if err != nil {
-			sqliteStore.Close()
-			controlStore.Close()
-			return nil, fmt.Errorf("ensure email endpoint: %w", err)
+		matrixEndpointID, endpointErr := ts.EnsureSystemNotificationEndpoint(ctx, "matrix", "user-matrix", `{}`, true)
+		if endpointErr != nil {
+			logger.Warn("ensure matrix endpoint failed", "tenant", t.Slug, "error", endpointErr)
+			if t.ID != defaultTenant.ID {
+				ts.Close()
+			}
+			continue
+		}
+		emailEndpointID, endpointErr := ts.EnsureSystemNotificationEndpoint(ctx, "email", "user-email", `{}`, true)
+		if endpointErr != nil {
+			logger.Warn("ensure email endpoint failed", "tenant", t.Slug, "error", endpointErr)
+			if t.ID != defaultTenant.ID {
+				ts.Close()
+			}
+			continue
 		}
 
-		runner = monitorrunner.NewRunner(
+		tenant := t // capture loop variable
+		runners = append(runners, monitorrunner.NewRunner(
 			logger,
-			sqliteStore,
-			matrixnotify.NewTenantNotifier(controlStore, matrixEndpointID, defaultTenant.ID),
-			emailnotify.NewNotifier(controlStore, emailEndpointID, defaultTenant.ID, nil, cfg.Notify.EmailSubjectPrefix, cfg.BaseURL, defaultTenant.Slug),
-		)
+			ts,
+			matrixnotify.NewTenantNotifier(controlStore, matrixEndpointID, tenant.ID),
+			emailnotify.NewNotifier(controlStore, emailEndpointID, tenant.ID, nil, cfg.Notify.EmailSubjectPrefix, cfg.BaseURL, tenant.Slug),
+		))
+		logger.Info("runner initialized for tenant", "tenant", tenant.Slug)
 	}
 
 	server, err := httpserver.New(httpserver.Dependencies{
@@ -157,13 +200,13 @@ func New(ctx context.Context) (*App, error) {
 		controlStore: controlStore,
 		tenantStores: tenantStores,
 		server:       server,
-		runner:       runner,
+		runners:      runners,
 	}, nil
 }
 
 func (a *App) Run(ctx context.Context) error {
-	if a.runner != nil {
-		go a.runner.Run(ctx)
+	for _, r := range a.runners {
+		go r.Run(ctx)
 	}
 	if a.store != nil {
 		go a.runMaintenance(ctx)
