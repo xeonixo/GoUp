@@ -1,279 +1,287 @@
 # GoUp
 
-GoUp ist ein leichtgewichtiges, self-hosted Uptime-Monitoring für kleine bis mittlere Umgebungen.
+**Self-hosted Uptime-Monitoring** — ein einzelner Go-Prozess, SQLite-Datenbank, nahezug keine externen Abhängigkeiten.
 
-Ziele:
+[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://go.dev)
+[![Docker](https://img.shields.io/badge/Docker-multi--arch-2496ED?logo=docker)](https://ghcr.io/xeonixo/goup)
 
-- **ein einzelner Go-Prozess** statt verteilter Mikroservices
-- **SQLite-first** mit minimalem Betriebsaufwand
-- **Server-Side UI** ohne schweres SPA
-- **Docker-first Deployment**
+GoUp überwacht Dienste und benachrichtigt bei Statuswechseln. Es läuft als einzelner Prozess, braucht keine Datenbank-Server und ist in wenigen Minuten betriebsbereit.
 
 ---
 
-## Features (aktueller Stand)
+## Features
 
-- Multi-Tenant-fähige Web-UI
-- Monitor-Typen:
-	- `https`
-	- `tcp`
-	- `icmp`
-	- `smtp` (`tls` / `starttls`)
-	- `imap` (`tls` / `starttls`)
-- Zertifikatsauswertung inkl. Restlaufzeit
-- Incident-/Status-Tracking und Notification-Events
-- Matrix-Benachrichtigungen bei Statuswechseln
-- E-Mail-Benachrichtigungen bei Statuswechseln (via globalem SMTP)
-- Admin-Bereich für:
-	- Tenants
-	- Auth-Provider (OIDC / Local)
-	- lokale Benutzer
-	- globale SMTP-Einstellungen
-- Persistentes Audit-Log für Admin-Aktionen
-- Password-Reset für lokale Benutzer (über SMTP)
+| Bereich | Details |
+|---|---|
+| **Monitor-Typen** | HTTPS, TCP, ICMP (Ping), SMTP, IMAP, DNS, UDP, WHOIS |
+| **TLS** | Zertifikatsauswertung inkl. Restlaufzeit |
+| **Benachrichtigungen** | E-Mail (SMTP) und Matrix bei Statuswechseln |
+| **Auth** | Lokal (Username/Passwort), OIDC pro Tenant, oder deaktiviert |
+| **Multi-Tenant** | Beliebig viele isolierte Tenants, je eigene DB und Auth-Provider |
+| **Admin-UI** | Tenants, Provider, Benutzer, SMTP, Audit-Log |
+| **Control-Plane** | Eigener Admin-Zugang mit Username/Passwort + TOTP |
+| **Deployment** | Multi-Arch Docker Image (`amd64` + `arm64`) |
 
 ---
 
-## Architektur auf einen Blick
+## Schnellstart
 
-GoUp läuft als ein Dienst und bündelt:
+### Voraussetzungen
 
-- HTTP-Server + SSR Templates
-- Auth-Handling (OIDC / Local / Disabled)
-- Scheduler + Monitor-Runner
-- SQLite-Storage
-- Notification-Dispatch
+- Docker und Docker Compose
 
-### Datenhaltung
-
-Es gibt zwei SQLite-Bereiche:
-
-1. **Control Plane DB** (z. B. `controlplane.db`)
-	 - Tenants, Auth-Provider, lokale Credentials, Admin-Audit, globale SMTP-Settings
-2. **Tenant DB** (z. B. `goup.db` bzw. tenant-spezifische DB-Dateien)
-	 - Monitore, Resultate, Incidents, Notification-Events
-
-Details: [docs/architecture.md](docs/architecture.md)
-
----
-
-## Schnellstart (Docker)
-
-### 1) Konfiguration anlegen
+### 1. Konfiguration anlegen
 
 ```bash
 cp .env.example .env
 ```
 
-Für lokalen Start reicht die Standardkonfiguration ohne zusätzliche Auth-Variable.
+Minimale `.env` für den ersten Start:
 
-### 2) Starten
+```dotenv
+GOUP_ADDR=:8080
+GOUP_BASE_URL=http://localhost:8080
+GOUP_DATA_DIR=/data
+GOUP_LOG_LEVEL=info
+```
+
+### 2. Starten
 
 ```bash
 docker compose up -d
 ```
 
-Standardmäßig nutzt Compose ein vorgebautes Image (`ghcr.io/xeonixo/goup:latest`).
-Optional kannst du ein eigenes Tag verwenden:
+### 3. Admin-Setup abschließen
 
-```bash
-GOUP_IMAGE=ghcr.io/<owner>/goup:<tag> docker compose up -d
+Beim ersten Start ist kein Admin-Account vorhanden. Rufe die Setup-Seite auf:
+
+```
+http://localhost:8080/admin/setup
 ```
 
-Für lokale Entwicklung mit eigenem Build (statt Registry-Image):
+Dort legst du Benutzername und Passwort für den Control-Plane-Admin an.
+Optional kann direkt ein TOTP-Authenticator (z. B. Aegis, 1Password) eingerichtet werden.
 
-```bash
-docker compose -f docker-compose.dev.yml up -d --build
+### 4. Tenant anlegen
+
+Melde dich unter `/admin/access` an, dann:
+
+1. **Admin → Tenants → Neuer Tenant** — Slug wählen (z. B. `prod`)
+2. Optional: **Providers** — OIDC oder lokale Benutzer einrichten
+3. Dashboard aufrufen: `http://localhost:8080/prod/`
+
+> **Hinweis:** Der Tenant-Slug bestimmt die URL. Ein Tenant namens `prod` ist unter `/prod/` erreichbar.
+> Es gibt keinen erzwungenen `default`-Tenant — alle aktiven Tenants werden automatisch erkannt.
+> Nach dem Anlegen eines neuen Tenants ist ein **Neustart des Containers** nötig, damit der Monitor-Runner
+> für diesen Tenant startet.
+
+### 5. Monitore hinzufügen
+
+Im Dashboard über **„+ Monitor"** lassen sich Dienste anlegen. Alle Checks starten automatisch.
+
+### Healthcheck
+
 ```
-
-### 3) Prüfen
-
-- App: http://localhost:8080
-- Healthcheck: http://localhost:8080/healthz
-
-Stoppen:
-
-```bash
-docker compose down
-```
-
-### Multi-Arch Image selbst bauen und pushen (optional)
-
-```bash
-docker buildx build \
-	--platform linux/amd64,linux/arm64 \
-	-t ghcr.io/<owner>/goup:latest \
-	--push .
-```
-
----
-
-## Lokale Entwicklung (ohne Docker)
-
-Voraussetzungen:
-
-- Go 1.22+
-
-Start:
-
-```bash
-go run ./cmd/goup
-```
-
-Tests:
-
-```bash
-go test ./...
+http://localhost:8080/healthz
 ```
 
 ---
 
-## Konfiguration (Environment)
+## Deployment auf Linux
 
-Wichtige Variablen:
+### Benutzer und Verzeichnis vorbereiten
 
-- `GOUP_ADDR` – Bind-Adresse, z. B. `:8080`
-- `GOUP_BASE_URL` – öffentliche Basis-URL, z. B. `https://monitor.example.com`
-- `GOUP_DATA_DIR` – Datenverzeichnis
-- `GOUP_CONTROL_DB_PATH` – Control Plane DB (optional, Standard: `$GOUP_DATA_DIR/controlplane.db`)
-- `GOUP_LOG_LEVEL` – `debug|info|warn|error`
-- `GOUP_SESSION_KEY` – **Pflicht für produktiv**, min. 16 Zeichen
-- `GOUP_SSO_SECRET_KEY` – Schlüssel für verschlüsselte Provider-Secrets (stark empfohlen)
-- `GOUP_CONTROL_PLANE_ADMIN_KEY` – separater Zugriffsschlüssel für `/app/admin/*` (unabhängig von Tenant-Rollen)
+Der Container-Prozess läuft als **UID 100 / GID 101** (User `goup`, Gruppe `goup`).
 
-Auth:
+```bash
+# Gruppe und User anlegen (IDs müssen exakt passen)
+sudo groupadd --gid 101 goup
+sudo useradd --uid 100 --gid 101 --no-create-home --shell /sbin/nologin --system goup
 
-- `GOUP_AUTH_MODE` – optional; Standard ist `disabled` (`local`, `oidc` ebenfalls möglich)
+# Datenverzeichnis anlegen und Besitz setzen
+sudo mkdir -p [mountpfad]
+sudo chown -R 100:101 [mountpfad]
+```
 
-OIDC wird tenant-basiert über den Admin-Bereich konfiguriert (`Provider` je Tenant). Eine globale OIDC-Konfiguration über `.env` ist nicht erforderlich.
+> Falls GID 101 auf dem Host bereits vergeben ist, reicht `sudo chown -R 100:101 [mountpfad]` —
+> Docker prüft nur die numerischen IDs, nicht die Namen.
 
-E-Mail-Notifications:
+### docker-compose.yml anpassen
 
-- Automatisch: E-Mail-Adressen der Benutzer-Mitgliedschaften im jeweiligen Tenant
-- `GOUP_NOTIFY_EMAIL_TO` – optional zusätzliche Komma-separierte Empfänger, z. B. `ops@example.com,oncall@example.com`
-- `GOUP_NOTIFY_EMAIL_SUBJECT_PREFIX` – optionales Subject-Präfix
+```yaml
+volumes:
+  - [mountpfad]:/data
+```
 
-> Hinweis: Für gemischte Login-Methoden (Local + OIDC) pro Tenant kann `GOUP_AUTH_MODE=local` genutzt werden.
+### Image aktualisieren
 
----
-
-## Auth-Modi
-
-### `disabled`
-
-- Kein Login erforderlich
-- Gut für lokale Entwicklung
-- **Nicht** für produktive öffentliche Deployments
-
-### `oidc`
-
-- Login via OIDC
-- Tenant-spezifische Provider möglich
-- Der erste OIDC-Benutzer erhält bei automatischem Tenant-Bootstrap eine reguläre Tenant-`admin`-Mitgliedschaft
-
-### `local`
-
-- Lokale Benutzeranmeldung je Tenant
-- Login über `/{tenantSlug}` (bzw. `/{tenantSlug}/login`)
-- Optionaler Password-Reset via SMTP
-
-### Control-Plane Zugriff (strikt getrennt)
-
-- Der Bereich `/app/admin/*` nutzt einen **eigenen Access-Mechanismus** über `GOUP_CONTROL_PLANE_ADMIN_KEY`.
-- Tenant-User (auch `admin` oder global markierte Nutzer) erhalten dadurch **keinen** direkten Verwaltungszugriff auf Tenants/Provider.
-- Einstieg: `/app/admin/access` (Key eingeben), danach wird eine separate Control-Plane-Session gesetzt.
+```bash
+docker compose pull
+docker compose up -d
+```
 
 ---
 
-## Wichtige UI-Routen
+## Konfigurationsreferenz
 
-- Dashboard: `/app/`
-- Admin-Dashboard: `/app/admin/`
-- Tenants: `/app/admin/tenants`
-- Tenant Login: `/{tenantSlug}/login`
-- Health: `/healthz`
+Alle Einstellungen erfolgen über Umgebungsvariablen (`.env`-Datei oder direkt im Compose-File).
+
+### Pflicht / Basis
+
+| Variable | Standard | Beschreibung |
+|---|---|---|
+| `GOUP_ADDR` | `:8080` | Bind-Adresse |
+| `GOUP_BASE_URL` | `http://localhost:8080` | Externe Basis-URL (wichtig für CSRF, OIDC-Callback, Links in E-Mails) |
+| `GOUP_DATA_DIR` | `/data` | Datenverzeichnis für alle SQLite-Dateien |
+
+### Sicherheit
+
+| Variable | Beschreibung |
+|---|---|
+| `GOUP_SESSION_KEY` | HMAC-Schlüssel für Session-Cookies (min. 16 Zeichen). Wenn leer, wird automatisch ein Schlüssel generiert und in der DB persistiert. |
+| `GOUP_SSO_SECRET_KEY` | Verschlüsselungsschlüssel für OIDC-Client-Secrets und TOTP-Secrets in der DB. Fällt auf `GOUP_SESSION_KEY` zurück wenn leer. |
+
+> **Produktivbetrieb:** Beide Werte explizit setzen und sicher aufbewahren. Ein Verlust des Schlüssels
+> macht gespeicherte OIDC-Secrets und TOTP-Konfigurationen unbrauchbar.
+
+### Optional
+
+| Variable | Standard | Beschreibung |
+|---|---|---|
+| `GOUP_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 
 ---
 
-## Monitor-Ziel-Formate
+## Auth
 
-- `https`: vollständige URL, z. B. `https://example.com/health`
-- `tcp`: `host:port`
-- `icmp`: Hostname oder IP
-- `smtp`, `imap`: `host:port`
+Auth ist in GoUp **per Tenant** konfiguriert, nicht global. Ob ein Tenant eine Anmeldung möglich ist, hängt davon ab, ob für ihn Provider angelegt sind:
 
-TLS-Verhalten:
+| Zustand | Verhalten |
+|---|---|
+| Tenant hat **keine** Provider | kein Zugang |
+| Tenant hat **lokale Benutzer** | Login mit Username/Passwort über `/{tenantSlug}/login` |
+| Tenant hat **OIDC-Provider** | Login über den konfigurierten OIDC-Provider |
+| Tenant hat **beides** | Login-Seite zeigt beide Optionen an |
 
-- `https` nutzt TLS
-- Mail-Protokolle unterstützen `tls` und `starttls`
+Provider werden im Admin-Bereich unter **Tenants → Provider** verwaltet. Lokale Benutzer können unter **Tenants → Benutzer** angelegt werden.
+
+### Control-Plane Admin (getrennt von Tenant-Auth)
+
+Der Admin-Bereich (`/admin/*`) hat einen **eigenen** Login, unabhängig von Tenant-Benutzern:
+
+- Einrichtung beim ersten Start unter `/admin/setup`
+- Login unter `/admin/access` mit Username + Passwort (+ optionalem TOTP)
+- TOTP-Verwaltung unter `/admin/security`
 
 ---
 
-## Betriebshinweise
+## Monitor-Typen & Zielformate
 
-### ICMP in Containern
+| Typ | Zielformat | Beispiel |
+|---|---|---|
+| `https` | URL | `https://example.com/health` |
+| `http` | URL | `http://internal-service:8080/` |
+| `tcp` | `host:port` | `db.internal:5432` |
+| `icmp` | Hostname oder IP | `192.168.1.1` |
+| `smtp` | `host:port` | `mail.example.com:587` |
+| `imap` | `host:port` | `mail.example.com:993` |
+| `dns` | Hostname | `example.com` |
+| `udp` | `host:port` | `ntp.example.com:123` |
+| `whois` | Domain | `example.com` |
 
-Für ICMP braucht der Container i. d. R. `NET_RAW`.
-Das ist in der Compose-Datei bereits berücksichtigt.
+SMTP und IMAP unterstützen `tls` und `starttls`. Bei `https` wird das TLS-Zertifikat automatisch ausgewertet (Restlaufzeit, Ablaufdatum).
 
-### Reverse Proxy / CSRF / Origin-Checks
+---
 
-GoUp prüft bei schreibenden Requests `Origin`/`Referer` gegen `GOUP_BASE_URL`.
-Wenn hinter Proxy betrieben:
+## Benachrichtigungen
 
-- `GOUP_BASE_URL` auf die externe URL setzen
-- konsistente Hostnamen nutzen
+### E-Mail
 
-### Backups
+Konfiguration im Admin-Bereich unter **Settings → SMTP**. Empfänger sind automatisch alle Tenant-Benutzer
+mit aktivierten E-Mail-Benachrichtigungen. Zusätzliche feste Empfänger über `GOUP_NOTIFY_EMAIL_TO`.
 
-Mindestens sichern:
+### Matrix
 
-- Control Plane DB
-- alle Tenant-DB-Dateien im Datenverzeichnis
+Jeder Benutzer kann in seinen Profileinstellungen (`/{tenantSlug}/settings/profile`) einen
+Matrix-Homeserver, Room-ID und Access-Token hinterlegen.
 
-Empfehlung:
+---
 
-- regelmäßige Dateibackups (inkl. `-wal` / `-shm`, falls vorhanden)
-- Restore in Staging testen
+## Betrieb hinter einem Reverse Proxy
+
+GoUp prüft bei schreibenden Anfragen `Origin` / `Referer` gegen `GOUP_BASE_URL` (CSRF-Schutz).
+
+**Wichtig:**
+- `GOUP_BASE_URL` auf die **externe** URL setzen (inkl. Protokoll), z. B. `https://monitor.example.com`
+- Der Proxy muss den `Host`-Header korrekt weiterleiten
+- Für HTTPS-Betrieb werden `Secure`-Cookies und HSTS automatisch aktiviert
+
+### Nginx-Beispiel
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+}
+```
+
+---
+
+## ICMP / Ping
+
+Für ICMP-Checks benötigt der Container die Capability `NET_RAW`. Diese ist in beiden Compose-Dateien bereits gesetzt.
+
+---
+
+## Datenhaltung & Backups
+
+GoUp nutzt zwei SQLite-Datenbanken:
+
+| Datei | Inhalt |
+|---|---|
+| `controlplane.db` | Tenants, Provider, Benutzer, Admin-Account, SMTP-Config, Audit-Log |
+| `<tenant>.db` (je Tenant) | Monitore, Ergebnisse, Notification-Events |
+
+**Backup-Empfehlung:**
+- Alle `.db`-Dateien im Datenverzeichnis sichern
+- Ggf. auch `-wal` und `-shm`-Dateien einschließen (bei laufendem Betrieb)
+- Restore in einer Staging-Umgebung testen
 
 ---
 
 ## Projektstruktur
 
-- `cmd/goup` – Einstiegspunkt
-- `internal/app` – Bootstrapping / Verdrahtung
-- `internal/config` – Env-Konfiguration
-- `internal/auth` – Sessions, OIDC, Dynamic OIDC
-- `internal/httpserver` – Handler, Routen, Middleware, Admin-UI
-- `internal/monitor` – Checker + Runner
-- `internal/notify/matrix` – Matrix-Client / Notifier
-- `internal/store/sqlite` – Control- und Tenant-Store
-- `web/templates` – SSR Templates
-- `web/static` – CSS / statische Assets
-- `docs` – Architektur-Dokumentation
+```
+cmd/goup/               Einstiegspunkt
+internal/
+  app/                  Bootstrapping, Wiring
+  config/               Env-Konfiguration
+  auth/                 Sessions, OIDC, Dynamic OIDC, TOTP
+  httpserver/           HTTP-Handler, Middleware, Admin-UI
+  monitor/              Checker-Implementierungen, Runner
+  notify/email/         E-Mail-Notifier
+  notify/matrix/        Matrix-Client und Notifier
+  store/sqlite/         Control-Plane-Store, Tenant-Store, Migrations
+web/
+  templates/            Server-Side Rendered HTML Templates
+  static/               CSS, JavaScript
+docs/
+  architecture.md       Architektur-Dokumentation
+```
 
 ---
 
-## Security-Basics
+## Roadmap
 
-Für produktive Deployments:
-
-- `GOUP_AUTH_MODE=oidc` oder gezielt abgesichertes `local`
-- starke zufällige Werte für `GOUP_SESSION_KEY` und `GOUP_SSO_SECRET_KEY`
-- Betrieb hinter HTTPS-Reverse-Proxy
-- regelmäßige Updates und Backups
-
----
-
-## Roadmap (kurz)
-
-- Public Status Page (read-only)
-- feinere Rollen-/Rechteprüfung
-- Export/Import und erweiterte Betriebsfunktionen
-- zusätzliche Notification-Kanäle
+- [ ] Public Status Page (read-only, ohne Login)
+- [ ] Webhook-Benachrichtigungen
+- [ ] Feinere Rollen und Berechtigungen
+- [ ] Export / Import von Monitor-Konfigurationen
+- [ ] Weitere Monitor-Typen
 
 ---
 
-## Lizenz / Beitrag
+## Lizenz
 
-Der Quellcode ist für self-hosted Betrieb ausgelegt. Beiträge via Pull Request sind willkommen.
+MIT — self-hosted Betrieb erwünscht. Pull Requests willkommen.
