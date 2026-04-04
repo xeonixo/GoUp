@@ -199,8 +199,8 @@ func readSMTPResponse(reader *bufio.Reader) (int, string, error) {
 
 func detectNonSMTPBanner(line string) string {
 	upper := strings.ToUpper(strings.TrimSpace(line))
-	if strings.HasPrefix(upper, "* OK") || strings.Contains(upper, "IMAP4") || strings.Contains(upper, "DOVECOT") {
-		return fmt.Sprintf("target speaks IMAP/Dovecot instead of SMTP: %q (verwende bitte IMAP- oder Dovecot-Monitor)", line)
+	if strings.HasPrefix(upper, "* OK") || strings.Contains(upper, "IMAP4") {
+		return fmt.Sprintf("target speaks IMAP instead of SMTP: %q (verwende bitte einen IMAP-Monitor)", line)
 	}
 	return ""
 }

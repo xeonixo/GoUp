@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -12,6 +13,9 @@ import (
 )
 
 func (s *Server) adminActor(r *http.Request) string {
+	if s.isControlPlaneAdminRequest(r) {
+		return "control-plane-admin"
+	}
 	user := s.currentUser(r)
 	if user == nil {
 		return "anonymous"
@@ -70,9 +74,10 @@ func (s *Server) handleAdminAccess(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "admin_access", pageData{
-		Title:  "Control-Plane Zugriff · GoUp",
-		Error:  strings.TrimSpace(r.URL.Query().Get("error")),
-		Notice: strings.TrimSpace(r.URL.Query().Get("notice")),
+		Title:             "Control-Plane Zugriff · GoUp",
+		ControlPlaneAdmin: s.isControlPlaneAdminRequest(r),
+		Error:             strings.TrimSpace(r.URL.Query().Get("error")),
+		Notice:            strings.TrimSpace(r.URL.Query().Get("notice")),
 	})
 }
 
@@ -137,18 +142,19 @@ func (s *Server) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "admin_dashboard", pageData{
-		Title:            "Admin Dashboard · GoUp",
-		User:             user,
-		AdminTenants:     tenants,
-		AdminAuditEvents: auditEvents,
-		AuditAction:      auditAction,
-		AuditActor:       auditActor,
-		AuditTargetType:  auditTargetType,
-		AuditActions:     auditActions,
-		AuditTargetTypes: auditTargetTypes,
-		GlobalSMTP:       smtpSettings,
-		Notice:           strings.TrimSpace(r.URL.Query().Get("notice")),
-		Error:            strings.TrimSpace(r.URL.Query().Get("error")),
+		Title:             "Admin Dashboard · GoUp",
+		User:              user,
+		AdminTenants:      tenants,
+		ControlPlaneAdmin: true,
+		AdminAuditEvents:  auditEvents,
+		AuditAction:       auditAction,
+		AuditActor:        auditActor,
+		AuditTargetType:   auditTargetType,
+		AuditActions:      auditActions,
+		AuditTargetTypes:  auditTargetTypes,
+		GlobalSMTP:        smtpSettings,
+		Notice:            strings.TrimSpace(r.URL.Query().Get("notice")),
+		Error:             strings.TrimSpace(r.URL.Query().Get("error")),
 	})
 }
 
@@ -202,11 +208,12 @@ func (s *Server) handleAdminTenantsList(w http.ResponseWriter, r *http.Request) 
 	}
 
 	s.render(w, "admin_tenants", pageData{
-		Title:        "Tenants verwalten · GoUp",
-		User:         user,
-		AdminTenants: tenants,
-		Notice:       strings.TrimSpace(r.URL.Query().Get("notice")),
-		Error:        strings.TrimSpace(r.URL.Query().Get("error")),
+		Title:             "Tenants verwalten · GoUp",
+		User:              user,
+		ControlPlaneAdmin: true,
+		AdminTenants:      tenants,
+		Notice:            strings.TrimSpace(r.URL.Query().Get("notice")),
+		Error:             strings.TrimSpace(r.URL.Query().Get("error")),
 	})
 }
 
@@ -219,11 +226,13 @@ func (s *Server) handleAdminTenantForm(w http.ResponseWriter, r *http.Request) {
 	user := s.currentUser(r)
 	tenantIDRaw := strings.TrimSpace(r.PathValue("id"))
 	data := pageData{
-		Title:      "Tenant · GoUp",
-		User:       user,
-		FormAction: "/admin/tenants/save",
-		Notice:     strings.TrimSpace(r.URL.Query().Get("notice")),
-		Error:      strings.TrimSpace(r.URL.Query().Get("error")),
+		Title:             "Tenant · GoUp",
+		User:              user,
+		ControlPlaneAdmin: true,
+		FormAction:        "/admin/tenants/save",
+		Notice:            strings.TrimSpace(r.URL.Query().Get("notice")),
+		Error:             strings.TrimSpace(r.URL.Query().Get("error")),
+		AutoDBPath:        autoTenantDBPath(s.cfg.DataDir, "default"),
 	}
 
 	if tenantIDRaw != "" {
@@ -242,6 +251,7 @@ func (s *Server) handleAdminTenantForm(w http.ResponseWriter, r *http.Request) {
 		data.Title = fmt.Sprintf("Tenant %s bearbeiten · GoUp", tenant.Name)
 		data.AdminTenant = tenant
 		data.IsEdit = true
+		data.AutoDBPath = tenant.DBPath
 	}
 
 	s.render(w, "admin_tenant_form", data)
@@ -264,7 +274,6 @@ func (s *Server) handleAdminTenantSave(w http.ResponseWriter, r *http.Request) {
 	}
 	slug := strings.ToLower(strings.TrimSpace(r.FormValue("slug")))
 	name := strings.TrimSpace(r.FormValue("name"))
-	dbPath := strings.TrimSpace(r.FormValue("db_path"))
 	active := r.FormValue("active") == "1"
 
 	if name == "" {
@@ -277,9 +286,7 @@ func (s *Server) handleAdminTenantSave(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "slug is required for new tenants", http.StatusBadRequest)
 			return
 		}
-		if dbPath == "" {
-			dbPath = "/data/" + slug + ".db"
-		}
+		dbPath := autoTenantDBPath(s.cfg.DataDir, slug)
 
 		// Create new tenant
 		tenant, err := s.controlStore.CreateTenant(r.Context(), slug, name, dbPath)
@@ -297,15 +304,12 @@ func (s *Server) handleAdminTenantSave(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid tenant id", http.StatusBadRequest)
 			return
 		}
-		if dbPath == "" {
-			tenant, getErr := s.controlStore.GetTenantByID(r.Context(), tenantID)
-			if getErr != nil {
-				http.Error(w, "invalid tenant id", http.StatusBadRequest)
-				return
-			}
-			dbPath = tenant.DBPath
+		tenant, getErr := s.controlStore.GetTenantByID(r.Context(), tenantID)
+		if getErr != nil {
+			http.Error(w, "invalid tenant id", http.StatusBadRequest)
+			return
 		}
-		_, err = s.controlStore.UpdateTenant(r.Context(), tenantID, name, dbPath, active)
+		_, err = s.controlStore.UpdateTenant(r.Context(), tenantID, name, tenant.DBPath, active)
 		if err != nil {
 			s.logger.Error("update tenant failed", "error", err)
 			http.Redirect(w, r, "/admin/tenants/"+id+"/edit?error="+url.QueryEscape("Tenant konnte nicht gespeichert werden"), http.StatusSeeOther)
@@ -314,6 +318,21 @@ func (s *Server) handleAdminTenantSave(w http.ResponseWriter, r *http.Request) {
 		s.writeAudit(r, "tenant.update", "tenant", tenantID, fmt.Sprintf("name=%s active=%t", name, active))
 		http.Redirect(w, r, "/admin/tenants?notice="+url.QueryEscape("Tenant aktualisiert"), http.StatusSeeOther)
 	}
+}
+
+func autoTenantDBPath(dataDir string, slug string) string {
+	slug = strings.ToLower(strings.TrimSpace(slug))
+	if slug == "" {
+		slug = "tenant"
+	}
+	baseDir := strings.TrimSpace(dataDir)
+	if baseDir == "" {
+		baseDir = "./data"
+	}
+	if slug == "default" {
+		return filepath.Join(baseDir, "goup.db")
+	}
+	return filepath.Join(baseDir, slug+".db")
 }
 
 func (s *Server) handleAdminTenantDelete(w http.ResponseWriter, r *http.Request) {
@@ -389,12 +408,13 @@ func (s *Server) handleAdminProvidersList(w http.ResponseWriter, r *http.Request
 	}
 
 	s.render(w, "admin_providers", pageData{
-		Title:          fmt.Sprintf("Provider für %s · GoUp", tenant.Name),
-		User:           user,
-		AdminTenant:    tenant,
-		AdminProviders: providers,
-		Notice:         strings.TrimSpace(r.URL.Query().Get("notice")),
-		Error:          strings.TrimSpace(r.URL.Query().Get("error")),
+		Title:             fmt.Sprintf("Provider für %s · GoUp", tenant.Name),
+		User:              user,
+		ControlPlaneAdmin: true,
+		AdminTenant:       tenant,
+		AdminProviders:    providers,
+		Notice:            strings.TrimSpace(r.URL.Query().Get("notice")),
+		Error:             strings.TrimSpace(r.URL.Query().Get("error")),
 	})
 }
 
@@ -419,12 +439,13 @@ func (s *Server) handleAdminProviderForm(w http.ResponseWriter, r *http.Request)
 	}
 
 	data := pageData{
-		Title:       fmt.Sprintf("Provider für %s · GoUp", tenant.Name),
-		User:        user,
-		AdminTenant: tenant,
-		FormAction:  fmt.Sprintf("/admin/tenants/%d/providers/save", tenant.ID),
-		Notice:      strings.TrimSpace(r.URL.Query().Get("notice")),
-		Error:       strings.TrimSpace(r.URL.Query().Get("error")),
+		Title:             fmt.Sprintf("Provider für %s · GoUp", tenant.Name),
+		User:              user,
+		ControlPlaneAdmin: true,
+		AdminTenant:       tenant,
+		FormAction:        fmt.Sprintf("/admin/tenants/%d/providers/save", tenant.ID),
+		Notice:            strings.TrimSpace(r.URL.Query().Get("notice")),
+		Error:             strings.TrimSpace(r.URL.Query().Get("error")),
 	}
 
 	providerKey := strings.TrimSpace(r.PathValue("providerKey"))
@@ -550,12 +571,13 @@ func (s *Server) handleAdminLocalUsersList(w http.ResponseWriter, r *http.Reques
 	}
 
 	s.render(w, "admin_local_users", pageData{
-		Title:            fmt.Sprintf("Benutzer für %s · GoUp", tenant.Name),
-		User:             user,
-		AdminTenant:      tenant,
-		AdminTenantUsers: tenantUsers,
-		Notice:           strings.TrimSpace(r.URL.Query().Get("notice")),
-		Error:            strings.TrimSpace(r.URL.Query().Get("error")),
+		Title:             fmt.Sprintf("Benutzer für %s · GoUp", tenant.Name),
+		User:              user,
+		ControlPlaneAdmin: true,
+		AdminTenant:       tenant,
+		AdminTenantUsers:  tenantUsers,
+		Notice:            strings.TrimSpace(r.URL.Query().Get("notice")),
+		Error:             strings.TrimSpace(r.URL.Query().Get("error")),
 	})
 }
 
@@ -580,12 +602,14 @@ func (s *Server) handleAdminLocalUserForm(w http.ResponseWriter, r *http.Request
 	}
 
 	data := pageData{
-		Title:       fmt.Sprintf("Lokaler Benutzer für %s · GoUp", tenant.Name),
-		User:        user,
-		AdminTenant: tenant,
-		FormAction:  fmt.Sprintf("/admin/tenants/%d/local-users/save", tenant.ID),
-		Notice:      strings.TrimSpace(r.URL.Query().Get("notice")),
-		Error:       strings.TrimSpace(r.URL.Query().Get("error")),
+		Title:             fmt.Sprintf("Lokaler Benutzer für %s · GoUp", tenant.Name),
+		User:              user,
+		ControlPlaneAdmin: true,
+		AdminTenant:       tenant,
+		FormAction:        fmt.Sprintf("/admin/tenants/%d/local-users/save", tenant.ID),
+		Notice:            strings.TrimSpace(r.URL.Query().Get("notice")),
+		Error:             strings.TrimSpace(r.URL.Query().Get("error")),
+		AdminLocalUser:    store.LocalUser{TenantID: tenant.ID, Role: "viewer"},
 	}
 
 	userIDRaw := strings.TrimSpace(r.PathValue("userID"))
@@ -857,6 +881,39 @@ func (s *Server) handleSettingsProfileSave(w http.ResponseWriter, r *http.Reques
 	}
 
 	http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?notice="+url.QueryEscape("Profil gespeichert"), http.StatusSeeOther)
+	return
+}
+
+func (s *Server) handleSettingsProfileNotifierDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+
+	user := s.currentUser(r)
+	if user == nil || user.TenantID <= 0 {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	kind := strings.ToLower(strings.TrimSpace(r.FormValue("kind")))
+	if kind != "matrix" {
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?error="+url.QueryEscape("Unbekannter Benachrichtigungskanal"), http.StatusSeeOther)
+		return
+	}
+
+	if err := s.controlStore.DeleteUserNotificationChannel(r.Context(), user.TenantID, user.UserID, kind); err != nil {
+		s.logger.Warn("settings profile delete notifier failed", "tenant_id", user.TenantID, "user_id", user.UserID, "kind", kind, "error", err)
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?error="+url.QueryEscape("Benachrichtigungskanal konnte nicht gelöscht werden"), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?notice="+url.QueryEscape("Benachrichtigungskanal entfernt"), http.StatusSeeOther)
+	return
 }
 
 func (s *Server) handleSettingsProfilePassword(w http.ResponseWriter, r *http.Request) {

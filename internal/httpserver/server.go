@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/smtp"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -70,49 +71,52 @@ type localLoginAttempt struct {
 }
 
 type pageData struct {
-	Title            string
-	User             *auth.UserSession
-	Stats            store.DashboardStats
-	Error            string
-	Notice           string
-	FormAction       string
-	BackURL          string
-	IsEdit           bool
-	SettingsMode     bool
-	AuthEnabled      bool
-	AuthDisabled     bool
-	OIDCTenantOnly   bool
-	TrendValue       string
-	TrendLabel       string
-	TrendRanges      []trendRangeOptionView
-	Monitors         []monitorView
-	MonitorGroups    []monitorGroupView
-	AvailableGroups  []string
-	Events           []notificationEventView
-	AdminTenants     []store.Tenant
-	AdminTenant      store.Tenant
-	AdminProviders   []store.AuthProvider
-	AdminProvider    store.AuthProvider
-	AdminLocalUsers  []store.LocalUser
-	AdminTenantUsers []store.TenantUser
-	AdminLocalUser   store.LocalUser
-	ProfileUser      store.TenantUser
-	ProfileNotify    store.UserNotificationSettings
-	AdminAuditEvents []store.AuditEvent
-	AuditAction      string
-	AuditActor       string
-	AuditTargetType  string
-	AuditActions     []string
-	AuditTargetTypes []string
-	GlobalSMTP       store.GlobalSMTPSettings
-	TenantSlug       string
-	TenantName       string
-	AppBase          string
-	LoginProviders   []store.AuthProvider
-	HasLocalLogin    bool
-	HasOIDCLogin     bool
-	ResetEnabled     bool
-	ResetToken       string
+	Title             string
+	User              *auth.UserSession
+	IsAdmin           bool
+	Stats             store.DashboardStats
+	Error             string
+	Notice            string
+	FormAction        string
+	BackURL           string
+	IsEdit            bool
+	SettingsMode      bool
+	AuthEnabled       bool
+	AuthDisabled      bool
+	OIDCTenantOnly    bool
+	TrendValue        string
+	TrendLabel        string
+	TrendRanges       []trendRangeOptionView
+	Monitors          []monitorView
+	MonitorGroups     []monitorGroupView
+	AvailableGroups   []string
+	Events            []notificationEventView
+	AdminTenants      []store.Tenant
+	AdminTenant       store.Tenant
+	AdminProviders    []store.AuthProvider
+	AdminProvider     store.AuthProvider
+	AdminLocalUsers   []store.LocalUser
+	AdminTenantUsers  []store.TenantUser
+	AdminLocalUser    store.LocalUser
+	ProfileUser       store.TenantUser
+	ProfileNotify     store.UserNotificationSettings
+	AdminAuditEvents  []store.AuditEvent
+	AuditAction       string
+	AuditActor        string
+	AuditTargetType   string
+	AuditActions      []string
+	AuditTargetTypes  []string
+	GlobalSMTP        store.GlobalSMTPSettings
+	ControlPlaneAdmin bool
+	AutoDBPath        string
+	TenantSlug        string
+	TenantName        string
+	AppBase           string
+	LoginProviders    []store.AuthProvider
+	HasLocalLogin     bool
+	HasOIDCLogin      bool
+	ResetEnabled      bool
+	ResetToken        string
 }
 
 const (
@@ -326,6 +330,8 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 	mux.HandleFunc("/", s.handleRoot)
 	mux.HandleFunc("/healthz", s.handleHealthz)
+	mux.HandleFunc("/auth/login", s.handleGlobalAuthDisabled)
+	mux.HandleFunc("/auth/callback", s.handleGlobalAuthDisabled)
 	mux.HandleFunc("/auth/logout", s.handleLogout)
 
 	// Control-plane admin routes (separate access mechanism, no tenant session required)
@@ -351,6 +357,10 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("/admin/settings/smtp/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSMTPSettingsSave)))
 
 	return s.logging(s.requireSameOrigin(mux))
+}
+
+func (s *Server) handleGlobalAuthDisabled(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "tenant slug required (use /{tenant}/auth/login)", http.StatusNotFound)
 }
 
 func (s *Server) requireSameOrigin(next http.Handler) http.Handler {
@@ -492,9 +502,21 @@ func normalizeRefererOrigin(raw string) string {
 }
 
 type tenantSlugContextKey struct{}
+type tenantIDContextKey struct{}
 
 func requestWithTenantSlug(r *http.Request, slug string) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), tenantSlugContextKey{}, strings.TrimSpace(slug)))
+}
+
+func requestWithTenantID(r *http.Request, tenantID int64) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), tenantIDContextKey{}, tenantID))
+}
+
+func tenantIDFromRequest(r *http.Request) int64 {
+	if id, ok := r.Context().Value(tenantIDContextKey{}).(int64); ok {
+		return id
+	}
+	return 0
 }
 
 func tenantSlugFromRequest(r *http.Request) string {
@@ -524,7 +546,15 @@ func (s *Server) handlePrettyTenantPath(w http.ResponseWriter, r *http.Request) 
 		return false
 	}
 
+	// Validate the slug against an actual active tenant – prevents arbitrary
+	// paths like /app/ from accidentally being served as tenant app routes.
+	tenant, err := s.controlStore.GetTenantBySlug(r.Context(), slug)
+	if err != nil || !tenant.Active {
+		return false
+	}
+
 	r = requestWithTenantSlug(r, slug)
+	r = requestWithTenantID(r, tenant.ID)
 
 	switch {
 	case len(parts) == 1:
@@ -590,18 +620,19 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 func (s *Server) buildAppMux() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", s.requireAuth(http.HandlerFunc(s.handleDashboard)))
-	mux.Handle("/monitors", s.requireAuth(http.HandlerFunc(s.handleSaveMonitor)))
-	mux.Handle("/monitors/save", s.requireAuth(http.HandlerFunc(s.handleSaveMonitor)))
-	mux.Handle("/monitors/update-target", s.requireAuth(http.HandlerFunc(s.handleUpdateMonitorTarget)))
-	mux.Handle("/monitors/reorder", s.requireAuth(http.HandlerFunc(s.handleReorderMonitor)))
-	mux.Handle("/groups/save", s.requireAuth(http.HandlerFunc(s.handleSaveGroup)))
-	mux.Handle("/groups/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteGroup)))
-	mux.Handle("/groups/reorder", s.requireAuth(http.HandlerFunc(s.handleReorderGroup)))
+	mux.Handle("/monitors", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSaveMonitor))))
+	mux.Handle("/monitors/save", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSaveMonitor))))
+	mux.Handle("/monitors/update-target", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleUpdateMonitorTarget))))
+	mux.Handle("/monitors/reorder", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleReorderMonitor))))
+	mux.Handle("/groups/save", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSaveGroup))))
+	mux.Handle("/groups/delete", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleDeleteGroup))))
+	mux.Handle("/groups/reorder", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleReorderGroup))))
 	mux.Handle("/icons/search", s.requireAuth(http.HandlerFunc(s.handleSearchDashboardIcons)))
-	mux.Handle("/monitors/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteMonitor)))
-	mux.Handle("/monitors/enabled", s.requireAuth(http.HandlerFunc(s.handleSetMonitorEnabled)))
+	mux.Handle("/monitors/delete", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleDeleteMonitor))))
+	mux.Handle("/monitors/enabled", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSetMonitorEnabled))))
 	mux.Handle("/settings/profile", s.requireAuth(http.HandlerFunc(s.handleSettingsProfile)))
 	mux.Handle("/settings/profile/save", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileSave)))
+	mux.Handle("/settings/profile/notifiers/delete", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileNotifierDelete)))
 	mux.Handle("/settings/profile/password", s.requireAuth(http.HandlerFunc(s.handleSettingsProfilePassword)))
 	mux.Handle("/settings/users", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUsers)))
 	mux.Handle("/settings/local-users/new", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserForm)))
@@ -622,13 +653,21 @@ func (s *Server) handleNoTenant(w http.ResponseWriter, r *http.Request) {
 	tenants, err := s.controlStore.GetAllTenants(r.Context())
 	if err == nil {
 		active := make([]store.Tenant, 0, len(tenants))
+		ready := make([]store.Tenant, 0, len(tenants))
 		for _, t := range tenants {
 			if t.Active {
 				active = append(active, t)
+				if tenantHasAppDatabase(t.DBPath) {
+					ready = append(ready, t)
+				}
 			}
 		}
-		if len(active) == 1 {
-			http.Redirect(w, r, "/"+active[0].Slug+"/", http.StatusSeeOther)
+		if len(ready) == 1 {
+			http.Redirect(w, r, "/"+ready[0].Slug+"/", http.StatusSeeOther)
+			return
+		}
+		if len(ready) == 0 {
+			http.Redirect(w, r, "/admin/", http.StatusSeeOther)
 			return
 		}
 	}
@@ -717,7 +756,6 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		TenantSlug:   resolvedUser.TenantSlug,
 		TenantName:   resolvedUser.TenantName,
 		Role:         resolvedUser.Role,
-		SuperAdmin:   resolvedUser.SuperAdmin,
 		AuthProvider: "oidc-primary",
 		ExpiresAt:    time.Now().Add(12 * time.Hour),
 	}
@@ -788,9 +826,11 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	availableGroups := buildAvailableGroups(groupMetadata)
 	availableGroups = mergeAvailableGroups(availableGroups, monitorViews)
 
+	curUser := s.currentUser(r)
 	s.render(w, "dashboard", pageData{
 		Title:           "Dashboard · GoUp",
-		User:            s.currentUser(r),
+		User:            curUser,
+		IsAdmin:         curUser == nil || strings.EqualFold(strings.TrimSpace(curUser.Role), "admin"),
 		Stats:           stats,
 		Notice:          strings.TrimSpace(r.URL.Query().Get("notice")),
 		Error:           strings.TrimSpace(r.URL.Query().Get("error")),
@@ -1273,7 +1313,17 @@ func (s *Server) handleUpdateMonitorTarget(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.Healthcheck(r.Context()); err != nil {
+	if s.store != nil {
+		if err := s.store.Healthcheck(r.Context()); err != nil {
+			http.Error(w, "database unavailable", http.StatusServiceUnavailable)
+			return
+		}
+	} else if s.controlStore != nil {
+		if err := s.controlStore.Healthcheck(r.Context()); err != nil {
+			http.Error(w, "control plane unavailable", http.StatusServiceUnavailable)
+			return
+		}
+	} else {
 		http.Error(w, "database unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -1284,11 +1334,31 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) requireAuth(next http.Handler) http.Handler {
-	if s.cfg.Auth.Mode != config.AuthModeOIDC && s.cfg.Auth.Mode != config.AuthModeLocal {
-		return next
-	}
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Determine whether this tenant requires authentication.
+		// A tenant is protected as soon as it has at least one enabled auth
+		// provider (local user list or OIDC), regardless of the global
+		// GOUP_AUTH_MODE setting.  Tenants with no providers are public
+		// (backwards-compatible default for fresh instances).
+		needsAuth := false
+		if tenantID := tenantIDFromRequest(r); tenantID > 0 {
+			hasProviders, err := s.controlStore.TenantHasProviders(r.Context(), tenantID)
+			if err != nil {
+				s.logger.Error("check tenant providers", "tenant_id", tenantID, "error", err)
+				// Fail safe: treat as protected.
+				hasProviders = true
+			}
+			needsAuth = hasProviders
+		} else {
+			// No tenant in context – fall back to global auth mode.
+			needsAuth = s.cfg.Auth.Mode == config.AuthModeOIDC || s.cfg.Auth.Mode == config.AuthModeLocal
+		}
+
+		if !needsAuth {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		if _, err := s.sessions.Get(r); err != nil {
 			slug := tenantSlugFromRequest(r)
 			if slug != "" {
@@ -1296,25 +1366,6 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			} else {
 				http.Redirect(w, r, "/", http.StatusSeeOther)
 			}
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func (s *Server) requireSuperAdmin(next http.Handler) http.Handler {
-	if s.cfg.Auth.Mode != config.AuthModeOIDC {
-		return next
-	}
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		session, err := s.sessions.Get(r)
-		if err != nil {
-			http.Redirect(w, r, "/", http.StatusSeeOther)
-			return
-		}
-		if !session.SuperAdmin {
-			http.Error(w, "unauthorized: super admin access required", http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -1333,8 +1384,21 @@ func (s *Server) requireUserManagement(next http.Handler) http.Handler {
 			}
 			return
 		}
-		if !(session.SuperAdmin || strings.EqualFold(strings.TrimSpace(session.Role), "admin")) {
+		if !strings.EqualFold(strings.TrimSpace(session.Role), "admin") {
 			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// requireAdminWhenAuth blocks write operations for authenticated non-admin users.
+// When no session exists (auth-disabled tenant) the request is passed through.
+func (s *Server) requireAdminWhenAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		session, err := s.sessions.Get(r)
+		if err == nil && !strings.EqualFold(strings.TrimSpace(session.Role), "admin") {
+			http.Error(w, "forbidden: admin role required", http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -1354,6 +1418,17 @@ func (s *Server) requireControlPlaneAdmin(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) isControlPlaneAdminRequest(r *http.Request) bool {
+	if r == nil || !strings.HasPrefix(r.URL.Path, "/admin") {
+		return false
+	}
+	key := strings.TrimSpace(s.cfg.ControlPlaneAdminKey)
+	if key == "" {
+		return false
+	}
+	return s.hasControlPlaneAdminCookie(r, key)
 }
 
 func (s *Server) hasControlPlaneAdminCookie(r *http.Request, key string) bool {
@@ -1493,6 +1568,18 @@ func (s *Server) appStore(r *http.Request) (*store.Store, error) {
 		return s.store, nil
 	}
 	return s.tenantStores.StoreForTenant(r.Context(), currentUser.TenantID)
+}
+
+func tenantHasAppDatabase(path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
 }
 
 func (s *Server) render(w http.ResponseWriter, name string, data pageData) {
@@ -2326,7 +2413,6 @@ func monitorGroupingTokens(value string) []string {
 		"icmp":       {},
 		"smtp":       {},
 		"imap":       {},
-		"dovecot":    {},
 		"tls":        {},
 		"starttls":   {},
 		"monitor":    {},
@@ -2383,8 +2469,6 @@ func monitorKindLabel(kind monitor.Kind) string {
 		return "SMTP"
 	case monitor.KindIMAP:
 		return "IMAP"
-	case monitor.KindDovecot:
-		return "Dovecot"
 	default:
 		return strings.ToUpper(string(kind))
 	}
@@ -2589,8 +2673,6 @@ func defaultTLSMode(kind monitor.Kind) monitor.TLSMode {
 	switch kind {
 	case monitor.KindHTTPS, monitor.KindIMAP:
 		return monitor.TLSModeTLS
-	case monitor.KindDovecot:
-		return monitor.TLSModeTLS
 	case monitor.KindSMTP:
 		return monitor.TLSModeSTARTTLS
 	default:
@@ -2609,7 +2691,7 @@ func normalizeTLSMode(kind monitor.Kind, requested monitor.TLSMode) monitor.TLSM
 			return requested
 		}
 		return monitor.TLSModeSTARTTLS
-	case monitor.KindIMAP, monitor.KindDovecot:
+	case monitor.KindIMAP:
 		if requested == monitor.TLSModeTLS || requested == monitor.TLSModeSTARTTLS {
 			return requested
 		}
@@ -2637,7 +2719,7 @@ func monitorTLSModeLabel(item monitor.Monitor) string {
 	switch item.Kind {
 	case monitor.KindHTTPS:
 		return "TLS"
-	case monitor.KindSMTP, monitor.KindIMAP, monitor.KindDovecot:
+	case monitor.KindSMTP, monitor.KindIMAP:
 		if item.TLSMode == monitor.TLSModeSTARTTLS {
 			return "STARTTLS"
 		}
@@ -3049,7 +3131,6 @@ func (s *Server) handleTenantAuthCallback(w http.ResponseWriter, r *http.Request
 		TenantSlug:   resolvedUser.TenantSlug,
 		TenantName:   resolvedUser.TenantName,
 		Role:         resolvedUser.Role,
-		SuperAdmin:   resolvedUser.SuperAdmin,
 		AuthProvider: provider.ProviderKey,
 		ExpiresAt:    time.Now().Add(12 * time.Hour),
 	}
@@ -3141,7 +3222,6 @@ func (s *Server) handleTenantLocalLogin(w http.ResponseWriter, r *http.Request) 
 		TenantSlug:   resolvedUser.TenantSlug,
 		TenantName:   resolvedUser.TenantName,
 		Role:         resolvedUser.Role,
-		SuperAdmin:   resolvedUser.SuperAdmin,
 		AuthProvider: "local",
 		ExpiresAt:    time.Now().Add(12 * time.Hour),
 	}

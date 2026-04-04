@@ -47,12 +47,11 @@ func NewRunner(logger *slog.Logger, store Store, notifiers ...Notifier) *Runner 
 		notifiers: notifiers,
 		interval:  5 * time.Second,
 		checkers: map[Kind]Checker{
-			KindHTTPS:   HTTPSChecker{},
-			KindTCP:     TCPChecker{},
-			KindICMP:    ICMPChecker{},
-			KindSMTP:    SMTPChecker{},
-			KindIMAP:    IMAPChecker{},
-			KindDovecot: DovecotChecker{},
+			KindHTTPS: HTTPSChecker{},
+			KindTCP:   TCPChecker{},
+			KindICMP:  ICMPChecker{},
+			KindSMTP:  SMTPChecker{},
+			KindIMAP:  IMAPChecker{},
 		},
 	}
 }

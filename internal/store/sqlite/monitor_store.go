@@ -440,6 +440,12 @@ WHERE hour_bucket >= ?
 ORDER BY hour_bucket ASC, monitor_id ASC
 `, since.UTC())
 	if err != nil {
+		if isMalformedSQLiteError(err) {
+			if recreateErr := s.recreateMonitorHourlyRollupsTable(ctx); recreateErr != nil {
+				return nil, fmt.Errorf("list monitor hourly rollups: %w (repair failed: %v)", err, recreateErr)
+			}
+			return []MonitorHourlyRollup{}, nil
+		}
 		return nil, fmt.Errorf("list monitor hourly rollups: %w", err)
 	}
 	defer rows.Close()
@@ -460,11 +466,23 @@ ORDER BY hour_bucket ASC, monitor_id ASC
 			&item.FirstCheckedAt,
 			&item.LastCheckedAt,
 		); err != nil {
+			if isMalformedSQLiteError(err) {
+				if recreateErr := s.recreateMonitorHourlyRollupsTable(ctx); recreateErr != nil {
+					return nil, fmt.Errorf("scan monitor hourly rollup: %w (repair failed: %v)", err, recreateErr)
+				}
+				return []MonitorHourlyRollup{}, nil
+			}
 			return nil, fmt.Errorf("scan monitor hourly rollup: %w", err)
 		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
+		if isMalformedSQLiteError(err) {
+			if recreateErr := s.recreateMonitorHourlyRollupsTable(ctx); recreateErr != nil {
+				return nil, fmt.Errorf("iterate monitor hourly rollups: %w (repair failed: %v)", err, recreateErr)
+			}
+			return []MonitorHourlyRollup{}, nil
+		}
 		return nil, fmt.Errorf("iterate monitor hourly rollups: %w", err)
 	}
 
@@ -1070,7 +1088,7 @@ func validateMonitorKindSettings(kind monitor.Kind, target string, tlsMode monit
 		if tlsMode != "" && tlsMode != monitor.TLSModeNone {
 			return errors.New("icmp monitors do not support tls mode")
 		}
-	case monitor.KindSMTP, monitor.KindIMAP, monitor.KindDovecot:
+	case monitor.KindSMTP, monitor.KindIMAP:
 		if _, _, err := net.SplitHostPort(strings.TrimSpace(target)); err != nil {
 			return errors.New("target must be a valid host:port for mail monitors")
 		}

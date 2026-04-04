@@ -20,7 +20,6 @@ type Config struct {
 	Addr                 string
 	BaseURL              string
 	DataDir              string
-	DBPath               string
 	ControlPlaneDBPath   string
 	LogLevel             string
 	SessionKey           string
@@ -52,7 +51,6 @@ func Load() (Config, error) {
 		Addr:                 envOrDefault("GOUP_ADDR", ":8080"),
 		BaseURL:              strings.TrimRight(envOrDefault("GOUP_BASE_URL", "http://localhost:8080"), "/"),
 		DataDir:              envOrDefault("GOUP_DATA_DIR", "./data"),
-		DBPath:               os.Getenv("GOUP_DB_PATH"),
 		ControlPlaneDBPath:   os.Getenv("GOUP_CONTROL_DB_PATH"),
 		LogLevel:             envOrDefault("GOUP_LOG_LEVEL", "info"),
 		SessionKey:           os.Getenv("GOUP_SESSION_KEY"),
@@ -73,9 +71,6 @@ func Load() (Config, error) {
 		},
 	}
 
-	if cfg.DBPath == "" {
-		cfg.DBPath = filepath.Join(cfg.DataDir, "goup.db")
-	}
 	if cfg.ControlPlaneDBPath == "" {
 		cfg.ControlPlaneDBPath = filepath.Join(cfg.DataDir, "controlplane.db")
 	}

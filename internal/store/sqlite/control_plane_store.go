@@ -40,7 +40,6 @@ type ResolvedUser struct {
 	UserID       int64
 	Email        string
 	DisplayName  string
-	SuperAdmin   bool
 	TenantID     int64
 	TenantSlug   string
 	TenantName   string
@@ -68,7 +67,6 @@ type LocalUser struct {
 	Email       string
 	DisplayName string
 	Role        string
-	SuperAdmin  bool
 	LastLoginAt *time.Time
 }
 
@@ -79,18 +77,17 @@ type TenantUser struct {
 	Email               string
 	DisplayName         string
 	Role                string
-	SuperAdmin          bool
 	LastLoginAt         *time.Time
 	HasLocalCredentials bool
 	HasOIDCIdentity     bool
 }
 
 type UserNotificationSettings struct {
-	EmailEnabled       bool
-	MatrixEnabled      bool
-	MatrixHomeserver   string
-	MatrixRoomID       string
-	MatrixAccessToken  string
+	EmailEnabled        bool
+	MatrixEnabled       bool
+	MatrixHomeserver    string
+	MatrixRoomID        string
+	MatrixAccessToken   string
 	HasLocalCredentials bool
 }
 
@@ -167,23 +164,6 @@ func (s *ControlPlaneStore) ConfigureSecretKey(key string) error {
 	derived := sha256.Sum256([]byte(key))
 	s.secretKey = derived[:]
 	return nil
-}
-
-func (s *ControlPlaneStore) EnsureDefaultTenant(ctx context.Context, name, slug, dbPath string) (Tenant, error) {
-	now := time.Now().UTC()
-	_, err := s.db.ExecContext(ctx, `
-INSERT INTO tenants (slug, name, db_path, active, created_at, updated_at)
-VALUES (?, ?, ?, 1, ?, ?)
-ON CONFLICT(slug) DO UPDATE SET
-	name = excluded.name,
-	db_path = excluded.db_path,
-	active = 1,
-	updated_at = excluded.updated_at
-`, slug, name, dbPath, now, now)
-	if err != nil {
-		return Tenant{}, fmt.Errorf("ensure default tenant: %w", err)
-	}
-	return s.GetTenantBySlug(ctx, slug)
 }
 
 // EnsureDefaultOIDCProvider ensures the default OIDC provider exists for the default tenant
@@ -271,23 +251,10 @@ WHERE provider_key = ? AND provider_subject = ?
 			return ResolvedUser{}, fmt.Errorf("update oidc identity: %w", err)
 		}
 	case sql.ErrNoRows:
-		isSuperAdmin := 0
-		var superAdminCount int
-		if err := tx.QueryRowContext(ctx, `
-SELECT COUNT(*)
-FROM users
-WHERE is_super_admin = 1
-`).Scan(&superAdminCount); err != nil {
-			return ResolvedUser{}, fmt.Errorf("count super admins: %w", err)
-		}
-		if superAdminCount == 0 {
-			isSuperAdmin = 1
-		}
-
 		result, err := tx.ExecContext(ctx, `
-INSERT INTO users (email, display_name, is_super_admin, created_at, updated_at, last_login_at)
-VALUES (?, ?, ?, ?, ?, ?)
-`, email, displayName, isSuperAdmin, now, now, now)
+INSERT INTO users (email, display_name, created_at, updated_at, last_login_at)
+VALUES (?, ?, ?, ?, ?)
+`, email, displayName, now, now, now)
 		if err != nil {
 			return ResolvedUser{}, fmt.Errorf("insert user from oidc identity: %w", err)
 		}
@@ -403,7 +370,7 @@ func (s *ControlPlaneStore) resolveUserByID(ctx context.Context, userID int64) (
 
 func (s *ControlPlaneStore) ListLocalUsersByTenant(ctx context.Context, tenantID int64) ([]LocalUser, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT u.id, tm.tenant_id, lc.login_name, u.email, u.display_name, tm.role, u.is_super_admin, u.last_login_at
+SELECT u.id, tm.tenant_id, lc.login_name, u.email, u.display_name, tm.role, u.last_login_at
 FROM tenant_memberships tm
 JOIN users u ON u.id = tm.user_id
 JOIN local_credentials lc ON lc.user_id = u.id
@@ -432,7 +399,7 @@ ORDER BY lc.login_name ASC
 
 func (s *ControlPlaneStore) GetLocalUserByID(ctx context.Context, tenantID, userID int64) (LocalUser, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT u.id, tm.tenant_id, lc.login_name, u.email, u.display_name, tm.role, u.is_super_admin, u.last_login_at
+SELECT u.id, tm.tenant_id, lc.login_name, u.email, u.display_name, tm.role, u.last_login_at
 FROM tenant_memberships tm
 JOIN users u ON u.id = tm.user_id
 JOIN local_credentials lc ON lc.user_id = u.id
@@ -456,7 +423,6 @@ SELECT
 	u.email,
 	u.display_name,
 	tm.role,
-	u.is_super_admin,
 	u.last_login_at,
 	CASE WHEN lc.user_id IS NULL THEN 0 ELSE 1 END AS has_local_credentials,
 	CASE WHEN EXISTS (SELECT 1 FROM user_identities ui WHERE ui.user_id = u.id) THEN 1 ELSE 0 END AS has_oidc_identity
@@ -511,8 +477,8 @@ func (s *ControlPlaneStore) CreateLocalUserForTenant(ctx context.Context, tenant
 
 	now := time.Now().UTC()
 	result, err := tx.ExecContext(ctx, `
-INSERT INTO users (email, display_name, is_super_admin, created_at, updated_at, last_login_at)
-VALUES (?, ?, 0, ?, ?, NULL)
+INSERT INTO users (email, display_name, created_at, updated_at, last_login_at)
+VALUES (?, ?, ?, ?, NULL)
 `, email, displayName, now, now)
 	if err != nil {
 		return LocalUser{}, fmt.Errorf("insert local user: %w", err)
@@ -724,7 +690,7 @@ func (s *ControlPlaneStore) FindLocalUserByEmail(ctx context.Context, tenantID i
 	}
 
 	row := s.db.QueryRowContext(ctx, `
-SELECT u.id, tm.tenant_id, lc.login_name, u.email, u.display_name, tm.role, u.is_super_admin, u.last_login_at
+SELECT u.id, tm.tenant_id, lc.login_name, u.email, u.display_name, tm.role, u.last_login_at
 FROM tenant_memberships tm
 JOIN users u ON u.id = tm.user_id
 JOIN local_credentials lc ON lc.user_id = u.id
@@ -780,12 +746,10 @@ WHERE user_id = ?
 
 func scanLocalUser(scanner interface{ Scan(dest ...any) error }) (LocalUser, error) {
 	var item LocalUser
-	var superAdmin int
 	var lastLogin sql.NullTime
-	if err := scanner.Scan(&item.UserID, &item.TenantID, &item.LoginName, &item.Email, &item.DisplayName, &item.Role, &superAdmin, &lastLogin); err != nil {
+	if err := scanner.Scan(&item.UserID, &item.TenantID, &item.LoginName, &item.Email, &item.DisplayName, &item.Role, &lastLogin); err != nil {
 		return LocalUser{}, fmt.Errorf("scan local user: %w", err)
 	}
-	item.SuperAdmin = superAdmin == 1
 	if lastLogin.Valid {
 		value := lastLogin.Time
 		item.LastLoginAt = &value
@@ -795,14 +759,12 @@ func scanLocalUser(scanner interface{ Scan(dest ...any) error }) (LocalUser, err
 
 func scanTenantUser(scanner interface{ Scan(dest ...any) error }) (TenantUser, error) {
 	var item TenantUser
-	var superAdmin int
 	var hasLocalCredentials int
 	var hasOIDCIdentity int
 	var lastLogin sql.NullTime
-	if err := scanner.Scan(&item.UserID, &item.TenantID, &item.LoginName, &item.Email, &item.DisplayName, &item.Role, &superAdmin, &lastLogin, &hasLocalCredentials, &hasOIDCIdentity); err != nil {
+	if err := scanner.Scan(&item.UserID, &item.TenantID, &item.LoginName, &item.Email, &item.DisplayName, &item.Role, &lastLogin, &hasLocalCredentials, &hasOIDCIdentity); err != nil {
 		return TenantUser{}, fmt.Errorf("scan tenant user: %w", err)
 	}
-	item.SuperAdmin = superAdmin == 1
 	item.HasLocalCredentials = hasLocalCredentials == 1
 	item.HasOIDCIdentity = hasOIDCIdentity == 1
 	if lastLogin.Valid {
@@ -813,6 +775,26 @@ func scanTenantUser(scanner interface{ Scan(dest ...any) error }) (TenantUser, e
 }
 
 // GetAuthProvidersByTenant returns all enabled auth providers for a specific tenant
+// TenantHasProviders reports whether the tenant requires authentication.
+// A tenant is considered protected when it has at least one enabled
+// auth_providers row OR at least one user membership (legacy safety-net for
+// data created before the auth_providers table was introduced).
+// Used by the auth middleware to decide whether a request must be
+// authenticated regardless of the global GOUP_AUTH_MODE setting.
+func (s *ControlPlaneStore) TenantHasProviders(ctx context.Context, tenantID int64) (bool, error) {
+	var protected bool
+	err := s.db.QueryRowContext(ctx, `
+SELECT EXISTS(
+    SELECT 1 FROM auth_providers    WHERE tenant_id = ? AND enabled = 1
+    UNION ALL
+    SELECT 1 FROM tenant_memberships WHERE tenant_id = ?          LIMIT 1
+)`, tenantID, tenantID).Scan(&protected)
+	if err != nil {
+		return false, fmt.Errorf("check tenant protection: %w", err)
+	}
+	return protected, nil
+}
+
 func (s *ControlPlaneStore) GetAuthProvidersByTenant(ctx context.Context, tenantID int64) ([]AuthProvider, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, tenant_id, provider_key, kind, display_name, issuer_url, client_id, enabled, created_at, updated_at
@@ -956,16 +938,14 @@ WHERE tenant_id = ? AND provider_key = ?
 
 func loadResolvedUserTx(ctx context.Context, tx *sql.Tx, userID int64) (ResolvedUser, error) {
 	var resolved ResolvedUser
-	var superAdmin int
 	err := tx.QueryRowContext(ctx, `
-SELECT id, email, display_name, is_super_admin
+SELECT id, email, display_name
 FROM users
 WHERE id = ?
-`, userID).Scan(&resolved.UserID, &resolved.Email, &resolved.DisplayName, &superAdmin)
+`, userID).Scan(&resolved.UserID, &resolved.Email, &resolved.DisplayName)
 	if err != nil {
 		return ResolvedUser{}, fmt.Errorf("load resolved user: %w", err)
 	}
-	resolved.SuperAdmin = superAdmin == 1
 
 	err = tx.QueryRowContext(ctx, `
 SELECT t.id, t.slug, t.name, t.db_path, tm.role
@@ -1000,7 +980,6 @@ CREATE TABLE IF NOT EXISTS users (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	email TEXT NOT NULL DEFAULT '',
 	display_name TEXT NOT NULL DEFAULT '',
-	is_super_admin INTEGER NOT NULL DEFAULT 0,
 	created_at DATETIME NOT NULL,
 	updated_at DATETIME NOT NULL,
 	last_login_at DATETIME
@@ -1091,6 +1070,9 @@ func (s *ControlPlaneStore) initSchema(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, controlPlaneSchema); err != nil {
 		return fmt.Errorf("initialize control-plane schema: %w", err)
 	}
+	if err := s.ensureUsersSuperAdminColumnRemoved(ctx); err != nil {
+		return err
+	}
 	if err := s.ensureTenantMembershipNotificationColumn(ctx); err != nil {
 		return err
 	}
@@ -1100,12 +1082,41 @@ func (s *ControlPlaneStore) initSchema(ctx context.Context) error {
 	return nil
 }
 
+func (s *ControlPlaneStore) ensureUsersSuperAdminColumnRemoved(ctx context.Context) error {
+	hasColumn, err := s.tableHasColumn(ctx, "users", "is_super_admin")
+	if err != nil {
+		return fmt.Errorf("inspect users columns: %w", err)
+	}
+	if !hasColumn {
+		return nil
+	}
+
+	if _, err := s.db.ExecContext(ctx, `ALTER TABLE users DROP COLUMN is_super_admin`); err != nil {
+		return fmt.Errorf("drop users is_super_admin column: %w", err)
+	}
+	return nil
+}
+
 func (s *ControlPlaneStore) ensureTenantMembershipNotificationColumn(ctx context.Context) error {
-	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(tenant_memberships)`)
+	hasColumn, err := s.tableHasColumn(ctx, "tenant_memberships", "notifications_email_enabled")
 	if err != nil {
 		return fmt.Errorf("inspect tenant_memberships columns: %w", err)
 	}
-	defer rows.Close()
+	if hasColumn {
+		return nil
+	}
+
+	if _, err := s.db.ExecContext(ctx, `ALTER TABLE tenant_memberships ADD COLUMN notifications_email_enabled INTEGER NOT NULL DEFAULT 1`); err != nil {
+		return fmt.Errorf("add tenant_memberships notifications_email_enabled column: %w", err)
+	}
+	return nil
+}
+
+func (s *ControlPlaneStore) tableHasColumn(ctx context.Context, tableName, columnName string) (bool, error) {
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`PRAGMA table_info(%s)`, tableName))
+	if err != nil {
+		return false, err
+	}
 
 	hasColumn := false
 	for rows.Next() {
@@ -1116,25 +1127,21 @@ func (s *ControlPlaneStore) ensureTenantMembershipNotificationColumn(ctx context
 		var defaultValue sql.NullString
 		var pk int
 		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
-			return fmt.Errorf("scan tenant_memberships column: %w", err)
+			rows.Close()
+			return false, fmt.Errorf("scan %s column: %w", tableName, err)
 		}
-		if name == "notifications_email_enabled" {
+		if name == columnName {
 			hasColumn = true
-			break
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterate tenant_memberships columns: %w", err)
+		rows.Close()
+		return false, fmt.Errorf("iterate %s columns: %w", tableName, err)
 	}
-
-	if hasColumn {
-		return nil
+	if err := rows.Close(); err != nil {
+		return false, fmt.Errorf("close %s columns: %w", tableName, err)
 	}
-
-	if _, err := s.db.ExecContext(ctx, `ALTER TABLE tenant_memberships ADD COLUMN notifications_email_enabled INTEGER NOT NULL DEFAULT 1`); err != nil {
-		return fmt.Errorf("add tenant_memberships notifications_email_enabled column: %w", err)
-	}
-	return nil
+	return hasColumn, nil
 }
 
 func (s *ControlPlaneStore) ensureUserNotificationChannelsTable(ctx context.Context) error {
@@ -1817,7 +1824,6 @@ SELECT
 	u.email,
 	u.display_name,
 	tm.role,
-	u.is_super_admin,
 	u.last_login_at,
 	CASE WHEN lc.user_id IS NULL THEN 0 ELSE 1 END AS has_local_credentials,
 	CASE WHEN EXISTS (SELECT 1 FROM user_identities ui WHERE ui.user_id = u.id) THEN 1 ELSE 0 END AS has_oidc_identity
@@ -1971,6 +1977,32 @@ ON CONFLICT(tenant_id, user_id, kind) DO UPDATE SET
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit save user notification settings: %w", err)
+	}
+	return nil
+}
+
+func (s *ControlPlaneStore) DeleteUserNotificationChannel(ctx context.Context, tenantID, userID int64, kind string) error {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	if tenantID <= 0 || userID <= 0 {
+		return fmt.Errorf("tenant id and user id are required")
+	}
+	if kind == "" {
+		return fmt.Errorf("notification kind is required")
+	}
+
+	result, err := s.db.ExecContext(ctx, `
+DELETE FROM user_notification_channels
+WHERE tenant_id = ? AND user_id = ? AND kind = ?
+`, tenantID, userID, kind)
+	if err != nil {
+		return fmt.Errorf("delete user notification channel: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete user notification channel rows affected: %w", err)
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
 	}
 	return nil
 }

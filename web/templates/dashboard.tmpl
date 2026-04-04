@@ -5,7 +5,7 @@
   <a href="{{$.AppBase}}?trend={{.Value}}" class="button button-small {{if not .Selected}}button-secondary{{end}}" {{if .Selected}}aria-current="page"{{end}}>{{.Label}}</a>
   {{end}}
   </div>
-  <button class="button" type="button" id="open-create-monitor">+ Monitor</button>
+  {{if .IsAdmin}}<button class="button" type="button" id="open-create-monitor">+ Monitor</button>{{end}}
 </div>
 {{end}}
 
@@ -32,6 +32,7 @@
   </article>
 </section>
 
+{{if .IsAdmin}}
 <dialog id="monitor-modal" class="monitor-modal">
   <form method="post" action="{{$.AppBase}}monitors/save" class="stack form-grid" id="monitor-form">
     <input type="hidden" name="id" id="monitor-id">
@@ -45,7 +46,6 @@
         <option value="icmp">ICMP</option>
         <option value="smtp">SMTP</option>
         <option value="imap">IMAP</option>
-        <option value="dovecot">Dovecot</option>
       </select>
     </label>
 
@@ -110,7 +110,9 @@
     </div>
   </form>
 </dialog>
+{{end}}
 
+{{if .IsAdmin}}
 <dialog id="group-modal" class="monitor-modal group-modal">
   <form method="post" action="{{$.AppBase}}groups/save" class="stack" id="group-form">
     <input type="hidden" name="group" id="group-name-field">
@@ -153,6 +155,7 @@
     </div>
   </form>
 </dialog>
+{{end}}
 
 <dialog id="trend-detail-modal" class="monitor-modal trend-detail-modal">
   <div class="stack">
@@ -220,7 +223,7 @@
       <div class="service-group-list">
         {{range .Services}}
         {{$serviceTitle := .Title}}
-        <details class="service-cluster" {{if .Open}}open{{end}} draggable="true" data-group="{{.Title}}">
+        <details class="service-cluster" {{if .Open}}open{{end}} {{if $.IsAdmin}}draggable="true"{{end}} data-group="{{.Title}}">
           <summary class="service-cluster-header">
             <div class="service-summary">
               <div class="service-summary-top">
@@ -235,6 +238,7 @@
                 <div class="service-summary-right">
                   <span class="service-count" aria-label="{{len .Monitors}} Monitore">{{len .Monitors}}</span>
                   <span class="status-pill {{.StatusClass}}">{{.StatusLabel}}</span>
+                  {{if $.IsAdmin}}
                   <details class="action-menu" onclick="event.stopPropagation();">
                   <summary class="action-menu-trigger" aria-label="Aktionen für Gruppe {{.Title}}" onclick="event.stopPropagation();">⋯</summary>
                   <div class="action-menu-list" onclick="event.stopPropagation();">
@@ -250,6 +254,7 @@
                     </form>
                   </div>
                 </details>
+                  {{end}}
                 </div>
               </div>
               {{if .TrendPoints}}
@@ -279,7 +284,7 @@
           </summary>
           <div class="monitor-grid">
       {{range .Monitors}}
-      <article class="card monitor-card {{.StatusClass}}" draggable="true" data-monitor-id="{{.ID}}" data-group="{{$serviceTitle}}">
+      <article class="card monitor-card {{.StatusClass}}" {{if $.IsAdmin}}draggable="true"{{end}} data-monitor-id="{{.ID}}" data-group="{{$serviceTitle}}">
         <div class="monitor-card-header">
           <div>
               <h5>{{.Name}}</h5>
@@ -287,6 +292,7 @@
           </div>
           <div class="monitor-header-right">
             <span class="status-pill {{.StatusClass}}">{{.StatusLabel}}</span>
+            {{if $.IsAdmin}}
             <details class="action-menu" onclick="event.stopPropagation();">
               <summary class="action-menu-trigger" aria-label="Aktionen für Monitor {{.Name}}" onclick="event.stopPropagation();">⋯</summary>
               <div class="action-menu-list" onclick="event.stopPropagation();">
@@ -317,6 +323,7 @@
                 </form>
               </div>
             </details>
+            {{end}}
           </div>
         </div>
 
@@ -673,7 +680,7 @@
     const applyKindRules = () => {
       const kind = kindField.value;
       const isHTTPS = kind === 'https';
-      const isMail = kind === 'smtp' || kind === 'imap' || kind === 'dovecot';
+      const isMail = kind === 'smtp' || kind === 'imap';
 
       tlsModeRow.hidden = !isMail;
       expectedStatusRow.hidden = !isHTTPS;
@@ -915,6 +922,7 @@
       button.addEventListener('click', () => openTrendDetail(button));
     });
 
+    {{if .IsAdmin}}
     let draggedGroup = null;
     document.querySelectorAll('.service-cluster').forEach((cluster) => {
       cluster.addEventListener('dragstart', (event) => {
@@ -998,6 +1006,7 @@
         });
       });
     });
+    {{end}}
   })();
 </script>
 {{end}}

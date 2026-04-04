@@ -52,25 +52,27 @@ func New(ctx context.Context) (*App, error) {
 		controlStore.Close()
 		return nil, fmt.Errorf("configure control-plane secret key: %w", err)
 	}
-	defaultTenant, err := controlStore.EnsureDefaultTenant(ctx, "Default", "default", cfg.DBPath)
-	if err != nil {
-		controlStore.Close()
-		return nil, fmt.Errorf("ensure default tenant: %w", err)
+	var defaultTenant store.Tenant
+	if existingTenant, getErr := controlStore.GetTenantBySlug(ctx, "default"); getErr == nil {
+		defaultTenant = existingTenant
 	}
 	hasGlobalOIDC := strings.TrimSpace(cfg.Auth.OIDC.IssuerURL) != "" && strings.TrimSpace(cfg.Auth.OIDC.ClientID) != "" && strings.TrimSpace(cfg.Auth.OIDC.ClientSecret) != ""
 
 	// If OIDC is enabled, ensure default provider for default tenant
-	if cfg.Auth.Mode == config.AuthModeOIDC && hasGlobalOIDC {
+	if cfg.Auth.Mode == config.AuthModeOIDC && hasGlobalOIDC && defaultTenant.ID > 0 {
 		if _, err := controlStore.EnsureDefaultOIDCProvider(ctx, defaultTenant.ID, cfg.Auth.OIDC.IssuerURL, cfg.Auth.OIDC.ClientID, cfg.Auth.OIDC.ClientSecret); err != nil {
 			controlStore.Close()
 			return nil, fmt.Errorf("ensure default oidc provider: %w", err)
 		}
 	}
 
-	sqliteStore, err := store.Open(ctx, defaultTenant.DBPath)
-	if err != nil {
-		controlStore.Close()
-		return nil, err
+	var sqliteStore *store.Store
+	if defaultTenant.ID > 0 && tenantHasAppDatabase(defaultTenant.DBPath) {
+		sqliteStore, err = store.Open(ctx, defaultTenant.DBPath)
+		if err != nil {
+			controlStore.Close()
+			return nil, err
+		}
 	}
 
 	sessions := auth.NewSessionManager([]byte(cfg.SessionKey), cfg.SecureCookies())
@@ -79,33 +81,38 @@ func New(ctx context.Context) (*App, error) {
 	if cfg.Auth.Mode == config.AuthModeOIDC && hasGlobalOIDC {
 		oidcManager, err = auth.NewOIDCManager(ctx, cfg)
 		if err != nil {
-			sqliteStore.Close()
+			if sqliteStore != nil {
+				sqliteStore.Close()
+			}
 			controlStore.Close()
 			return nil, fmt.Errorf("initialize oidc: %w", err)
 		}
 	}
 
-	matrixEndpointID, err := sqliteStore.EnsureSystemNotificationEndpoint(ctx, "matrix", "user-matrix", `{}`, true)
-	if err != nil {
-		sqliteStore.Close()
-		controlStore.Close()
-		return nil, fmt.Errorf("ensure matrix endpoint: %w", err)
-	}
-
-	emailEndpointID, err := sqliteStore.EnsureSystemNotificationEndpoint(ctx, "email", "user-email", `{}`, true)
-	if err != nil {
-		sqliteStore.Close()
-		controlStore.Close()
-		return nil, fmt.Errorf("ensure email endpoint: %w", err)
-	}
-
 	tenantStores := store.NewTenantStoreManager(controlStore, defaultTenant, sqliteStore)
-	runner := monitorrunner.NewRunner(
-		logger,
-		sqliteStore,
-		matrixnotify.NewTenantNotifier(controlStore, matrixEndpointID, defaultTenant.ID),
-		emailnotify.NewNotifier(controlStore, emailEndpointID, defaultTenant.ID, nil, cfg.Notify.EmailSubjectPrefix),
-	)
+	var runner *monitorrunner.Runner
+	if sqliteStore != nil && defaultTenant.ID > 0 {
+		matrixEndpointID, err := sqliteStore.EnsureSystemNotificationEndpoint(ctx, "matrix", "user-matrix", `{}`, true)
+		if err != nil {
+			sqliteStore.Close()
+			controlStore.Close()
+			return nil, fmt.Errorf("ensure matrix endpoint: %w", err)
+		}
+
+		emailEndpointID, err := sqliteStore.EnsureSystemNotificationEndpoint(ctx, "email", "user-email", `{}`, true)
+		if err != nil {
+			sqliteStore.Close()
+			controlStore.Close()
+			return nil, fmt.Errorf("ensure email endpoint: %w", err)
+		}
+
+		runner = monitorrunner.NewRunner(
+			logger,
+			sqliteStore,
+			matrixnotify.NewTenantNotifier(controlStore, matrixEndpointID, defaultTenant.ID),
+			emailnotify.NewNotifier(controlStore, emailEndpointID, defaultTenant.ID, nil, cfg.Notify.EmailSubjectPrefix),
+		)
+	}
 
 	server, err := httpserver.New(httpserver.Dependencies{
 		Config:        cfg,
@@ -118,12 +125,14 @@ func New(ctx context.Context) (*App, error) {
 		OIDC:          oidcManager,
 	})
 	if err != nil {
-		sqliteStore.Close()
+		if sqliteStore != nil {
+			sqliteStore.Close()
+		}
 		controlStore.Close()
 		return nil, err
 	}
 
-	logger.Info("initialized application", "db_path", filepath.Clean(cfg.DBPath), "control_db_path", filepath.Clean(cfg.ControlPlaneDBPath), "auth_mode", cfg.Auth.Mode)
+	logger.Info("initialized application", "control_db_path", filepath.Clean(cfg.ControlPlaneDBPath), "auth_mode", cfg.Auth.Mode)
 
 	return &App{
 		config:       cfg,
@@ -214,4 +223,16 @@ func parseLogLevel(value string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+func tenantHasAppDatabase(path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
 }

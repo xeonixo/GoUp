@@ -20,7 +20,6 @@ Ziele:
 	- `icmp`
 	- `smtp` (`tls` / `starttls`)
 	- `imap` (`tls` / `starttls`)
-	- `dovecot`
 - Zertifikatsauswertung inkl. Restlaufzeit
 - Incident-/Status-Tracking und Notification-Events
 - Matrix-Benachrichtigungen bei Statuswechseln
@@ -66,7 +65,7 @@ Details: [docs/architecture.md](docs/architecture.md)
 cp .env.example .env
 ```
 
-Für lokalen Start reicht standardmäßig `GOUP_AUTH_MODE=disabled`.
+Für lokalen Start reicht die Standardkonfiguration ohne zusätzliche Auth-Variable.
 
 ### 2) Starten
 
@@ -114,7 +113,6 @@ Wichtige Variablen:
 - `GOUP_ADDR` – Bind-Adresse, z. B. `:8080`
 - `GOUP_BASE_URL` – öffentliche Basis-URL, z. B. `https://monitor.example.com`
 - `GOUP_DATA_DIR` – Datenverzeichnis
-- `GOUP_DB_PATH` – Default Tenant DB
 - `GOUP_CONTROL_DB_PATH` – Control Plane DB (optional, Standard: `$GOUP_DATA_DIR/controlplane.db`)
 - `GOUP_LOG_LEVEL` – `debug|info|warn|error`
 - `GOUP_SESSION_KEY` – **Pflicht für produktiv**, min. 16 Zeichen
@@ -123,7 +121,7 @@ Wichtige Variablen:
 
 Auth:
 
-- `GOUP_AUTH_MODE` – `disabled`, `local`, `oidc`
+- `GOUP_AUTH_MODE` – optional; Standard ist `disabled` (`local`, `oidc` ebenfalls möglich)
 
 OIDC wird tenant-basiert über den Admin-Bereich konfiguriert (`Provider` je Tenant). Eine globale OIDC-Konfiguration über `.env` ist nicht erforderlich.
 
@@ -149,8 +147,7 @@ E-Mail-Notifications:
 
 - Login via OIDC
 - Tenant-spezifische Provider möglich
-- Bootstrap-Mechanismus: Der **erste erfolgreiche OIDC-Login** wird automatisch als `Super-Admin` angelegt (wenn noch kein Super-Admin existiert)
-- Weitere OIDC-Benutzer werden nicht automatisch zu Super-Admins
+- Der erste OIDC-Benutzer erhält bei automatischem Tenant-Bootstrap eine reguläre Tenant-`admin`-Mitgliedschaft
 
 ### `local`
 
@@ -181,7 +178,7 @@ E-Mail-Notifications:
 - `https`: vollständige URL, z. B. `https://example.com/health`
 - `tcp`: `host:port`
 - `icmp`: Hostname oder IP
-- `smtp`, `imap`, `dovecot`: `host:port`
+- `smtp`, `imap`: `host:port`
 
 TLS-Verhalten:
 

@@ -11,14 +11,21 @@
   <header class="topbar">
     <div class="topbar-main">
       <a class="brand" href="{{if .AppBase}}{{.AppBase}}{{else}}/{{end}}">GoUp</a>
-      {{if and .User .User.TenantSlug}}
+      {{if .ControlPlaneAdmin}}
+      <span class="subtitle">Control Plane</span>
+      {{else if and .User .User.TenantSlug}}
       <span class="subtitle">Tenant: {{if .User.TenantName}}{{.User.TenantName}}{{else}}{{.User.TenantSlug}}{{end}}</span>
       {{end}}
-      <span class="subtitle" id="client-timezone-info" hidden></span>
     </div>
     {{block "topbar_actions" .}}{{end}}
     <nav class="topbar-nav">
-      {{if .User}}
+      {{if .ControlPlaneAdmin}}
+      <span class="user-pill">Admin Access</span>
+      <a class="button button-secondary topbar-icon-link" href="/admin/access?logout=1" aria-label="Control-Plane Logout" title="Control-Plane Logout">
+        <span aria-hidden="true">⎋</span>
+        <span class="sr-only">Control-Plane Logout</span>
+      </a>
+      {{else if .User}}
       <span class="user-pill">{{if .User.Name}}{{.User.Name}}{{else}}{{.User.Email}}{{end}}</span>
       <a class="button button-secondary topbar-icon-link" href="{{.AppBase}}settings/profile" aria-label="Settings" title="Settings">
         <span aria-hidden="true">⚙️</span>
@@ -89,14 +96,7 @@
           el.title = raw;
         }
 
-        var timezoneInfo = document.getElementById("client-timezone-info");
-        if (timezoneInfo) {
-          var timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-          if (timezone) {
-            timezoneInfo.textContent = "TZ: " + timezone;
-            timezoneInfo.hidden = false;
-          }
-        }
+
       });
     })();
   </script>

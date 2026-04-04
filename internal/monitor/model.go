@@ -9,12 +9,11 @@ type TLSMode string
 type Status string
 
 const (
-	KindHTTPS   Kind = "https"
-	KindTCP     Kind = "tcp"
-	KindICMP    Kind = "icmp"
-	KindSMTP    Kind = "smtp"
-	KindIMAP    Kind = "imap"
-	KindDovecot Kind = "dovecot"
+	KindHTTPS Kind = "https"
+	KindTCP   Kind = "tcp"
+	KindICMP  Kind = "icmp"
+	KindSMTP  Kind = "smtp"
+	KindIMAP  Kind = "imap"
 )
 
 const (

@@ -22,7 +22,6 @@ type UserSession struct {
 	TenantSlug   string    `json:"tenant_slug,omitempty"`
 	TenantName   string    `json:"tenant_name,omitempty"`
 	Role         string    `json:"role,omitempty"`
-	SuperAdmin   bool      `json:"super_admin,omitempty"`
 	AuthProvider string    `json:"auth_provider,omitempty"`
 	ExpiresAt    time.Time `json:"exp"`
 }

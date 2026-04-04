@@ -24,12 +24,31 @@ func NewTenantStoreManager(control *ControlPlaneStore, defaultTenant Tenant, def
 }
 
 func (m *TenantStoreManager) StoreForTenant(ctx context.Context, tenantID int64) (*Store, error) {
-	if tenantID <= 0 || tenantID == m.defaultTenantID {
+	if tenantID <= 0 {
 		return m.defaultStore, nil
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if tenantID == m.defaultTenantID {
+		if m.defaultStore != nil {
+			return m.defaultStore, nil
+		}
+		tenant, err := m.control.GetTenantByID(ctx, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		if !tenant.Active {
+			return nil, fmt.Errorf("tenant %q is inactive", tenant.Slug)
+		}
+		store, err := Open(ctx, tenant.DBPath)
+		if err != nil {
+			return nil, err
+		}
+		m.defaultStore = store
+		return store, nil
+	}
 
 	if store, ok := m.stores[tenantID]; ok {
 		return store, nil

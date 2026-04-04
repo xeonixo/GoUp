@@ -1298,6 +1298,64 @@ li + li {
   background: rgba(154, 167, 196, 0.1);
 }
 
+.settings-grid {
+  max-width: 920px;
+}
+
+.settings-card {
+  max-width: none;
+}
+
+.settings-card-header,
+.settings-channel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.settings-add-menu {
+  margin-left: 0;
+}
+
+.settings-channel-list {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.settings-channel-card {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(73, 91, 134, 0.28);
+  background: rgba(11, 16, 32, 0.36);
+}
+
+.settings-empty-state {
+  padding: 1rem;
+  border-radius: 14px;
+  border: 1px dashed rgba(154, 167, 196, 0.25);
+  background: rgba(11, 16, 32, 0.22);
+}
+
+.settings-inline-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.action-menu-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.action-menu-item:disabled:hover {
+  background: transparent;
+}
+
 @media (max-width: 860px) {
   .admin-nav {
     display: grid;

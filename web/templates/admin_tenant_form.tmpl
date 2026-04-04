@@ -27,8 +27,15 @@
     </div>
 
     <div class="form-group">
-      <label for="db_path">Datenbankpfad *</label>
-      <input type="text" id="db_path" name="db_path" value="{{.AdminTenant.DBPath}}" {{if .IsEdit}}required{{end}} placeholder="z.B. /data/goup.db, /data/tenant_a.db">
+      <label>Datenbank</label>
+      <div class="notice">
+        {{if .IsEdit}}
+        {{.AdminTenant.DBPath}}
+        {{else}}
+        Wird automatisch erzeugt: {{.AutoDBPath}}
+        {{end}}
+      </div>
+      <p class="muted compact">Der Pfad wird automatisch aus Tenant-Slug und `GOUP_DATA_DIR` abgeleitet.</p>
     </div>
 
     <div class="form-group">

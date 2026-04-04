@@ -30,7 +30,6 @@
         <th>Name</th>
         <th>E-Mail</th>
         <th>Rolle</th>
-        <th>Super-Admin</th>
         <th>Letzter Login</th>
         <th>Aktionen</th>
       </tr>
@@ -48,13 +47,6 @@
         <td>{{.DisplayName}}</td>
         <td>{{.Email}}</td>
         <td><span class="status-badge">{{.Role}}</span></td>
-        <td>
-          {{if .SuperAdmin}}
-          <span class="status-badge status-badge-success">Ja</span>
-          {{else}}
-          <span class="status-badge status-badge-muted">Nein</span>
-          {{end}}
-        </td>
         <td>{{if .LastLoginAt}}<span class="js-local-datetime" data-utc="{{.LastLoginAt.Format "2006-01-02T15:04:05Z07:00"}}">{{.LastLoginAt}}</span>{{else}}—{{end}}</td>
         <td class="admin-actions-inline">
           {{if .HasLocalCredentials}}
@@ -68,7 +60,7 @@
       {{end}}
       {{else}}
       <tr>
-        <td colspan="8" class="muted">Keine Benutzer vorhanden.</td>
+        <td colspan="7" class="muted">Keine Benutzer vorhanden.</td>
       </tr>
       {{end}}
     </tbody>

@@ -21,7 +21,6 @@ EXPOSE 8080
 VOLUME ["/data"]
 ENV GOUP_ADDR=:8080 \
     GOUP_DATA_DIR=/data \
-    GOUP_DB_PATH=/data/goup.db \
     GOUP_BASE_URL=http://localhost:8080 \
     GOUP_AUTH_MODE=disabled \
     GOUP_SESSION_KEY=change-me-32-bytes-or-more

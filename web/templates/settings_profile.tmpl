@@ -1,9 +1,10 @@
 {{define "content"}}
+{{$hasMatrix := or .ProfileNotify.MatrixEnabled .ProfileNotify.MatrixHomeserver .ProfileNotify.MatrixRoomID}}
 <div class="admin-section">
   <nav class="admin-nav card">
     <a href="{{$.AppBase}}" class="admin-nav-link">Dashboard</a>
     <a href="{{$.AppBase}}settings/profile" class="admin-nav-link is-active">Settings · Profil</a>
-    {{if or $.User.SuperAdmin (eq $.User.Role "admin")}}
+    {{if eq $.User.Role "admin"}}
     <a href="{{$.AppBase}}settings/users" class="admin-nav-link">Settings · Benutzer</a>
     {{end}}
   </nav>
@@ -19,45 +20,96 @@
     </div>
   </div>
 
-  <form method="POST" action="{{$.AppBase}}settings/profile/save" class="card stack admin-form">
-    <h2>Profil</h2>
-    <div class="form-group">
-      <label for="display_name">Anzeigename</label>
-      <input id="display_name" name="display_name" type="text" value="{{.ProfileUser.DisplayName}}" required>
-    </div>
-    <div class="form-group">
-      <label for="email">E-Mail</label>
-      <input id="email" name="email" type="email" value="{{.ProfileUser.Email}}">
-    </div>
-
-    <h3>Benachrichtigungen</h3>
-    <label class="checkbox-row">
-      <input type="checkbox" name="email_enabled" {{if .ProfileNotify.EmailEnabled}}checked{{end}}>
-      <span>E-Mail-Benachrichtigungen aktiv (Opt-out)</span>
-    </label>
-
-    <div class="inline-grid">
-      <div class="form-group">
-        <label for="matrix_homeserver_url">Matrix Homeserver URL</label>
-        <input id="matrix_homeserver_url" name="matrix_homeserver_url" type="url" value="{{.ProfileNotify.MatrixHomeserver}}" placeholder="https://matrix.example.com">
+  <form method="POST" action="{{$.AppBase}}settings/profile/save" class="stack settings-grid">
+    <section class="card stack admin-form settings-card">
+      <div class="settings-card-header">
+        <div>
+          <h2>Profil</h2>
+          <p class="muted compact">Deine Basisdaten für diesen Tenant.</p>
+        </div>
       </div>
       <div class="form-group">
-        <label for="matrix_room_id">Matrix Room ID</label>
-        <input id="matrix_room_id" name="matrix_room_id" type="text" value="{{.ProfileNotify.MatrixRoomID}}" placeholder="!room:id">
+        <label for="display_name">Anzeigename</label>
+        <input id="display_name" name="display_name" type="text" value="{{.ProfileUser.DisplayName}}" required>
       </div>
-    </div>
-    <div class="form-group">
-      <label for="matrix_access_token">Matrix Access Token</label>
-      <input id="matrix_access_token" name="matrix_access_token" type="password" placeholder="leer lassen, um vorhandenen Token beizubehalten">
-    </div>
-    <label class="checkbox-row">
-      <input type="checkbox" name="matrix_enabled" {{if .ProfileNotify.MatrixEnabled}}checked{{end}}>
-      <span>Matrix-Benachrichtigungen aktiv</span>
-    </label>
+      <div class="form-group">
+        <label for="email">E-Mail</label>
+        <input id="email" name="email" type="email" value="{{.ProfileUser.Email}}">
+      </div>
+    </section>
 
-    <div class="form-actions">
-      <button type="submit" class="button">Speichern</button>
-    </div>
+    <section class="card stack admin-form settings-card">
+      <div class="settings-card-header">
+        <div>
+          <h2>Benachrichtigungen</h2>
+          <p class="muted compact">E-Mail ist eingebaut. Zusätzliche Kanäle kannst du pro Benutzer ergänzen oder entfernen.</p>
+        </div>
+        <details class="action-menu settings-add-menu">
+          <summary class="action-menu-trigger" aria-label="Benachrichtigungskanal hinzufügen">＋</summary>
+          <div class="action-menu-list">
+            <button class="action-menu-item" type="button" data-add-notifier="matrix" {{if $hasMatrix}}disabled{{end}}>Matrix hinzufügen</button>
+          </div>
+        </details>
+      </div>
+
+      <section class="settings-channel-card">
+        <div class="settings-channel-header">
+          <div>
+            <h3>E-Mail</h3>
+            <p class="muted compact">Wird über den globalen SMTP-Server zugestellt.</p>
+          </div>
+          <span class="status-badge {{if .ProfileNotify.EmailEnabled}}status-badge-success{{else}}status-badge-muted{{end}}">{{if .ProfileNotify.EmailEnabled}}AKTIV{{else}}AUS{{end}}</span>
+        </div>
+        <label class="checkbox-row">
+          <input type="checkbox" name="email_enabled" {{if .ProfileNotify.EmailEnabled}}checked{{end}}>
+          <span>E-Mail-Benachrichtigungen aktiv</span>
+        </label>
+      </section>
+
+      <div class="settings-channel-list">
+        <section class="settings-channel-card" id="matrix-channel-card" {{if not $hasMatrix}}hidden{{end}}>
+          <div class="settings-channel-header">
+            <div>
+              <h3>Matrix</h3>
+              <p class="muted compact">Direkte Zustellung an deinen persönlichen Raum oder Channel.</p>
+            </div>
+            <div class="settings-inline-actions">
+              <span class="status-badge {{if .ProfileNotify.MatrixEnabled}}status-badge-success{{else}}status-badge-muted{{end}}">{{if .ProfileNotify.MatrixEnabled}}AKTIV{{else}}ENTWURF{{end}}</span>
+              <form method="POST" action="{{$.AppBase}}settings/profile/notifiers/delete" class="inline-form" onsubmit="return confirm('Matrix-Kanal wirklich entfernen?');">
+                <input type="hidden" name="kind" value="matrix">
+                <button type="submit" class="button button-secondary button-small">Entfernen</button>
+              </form>
+            </div>
+          </div>
+          <div class="inline-grid">
+            <div class="form-group">
+              <label for="matrix_homeserver_url">Homeserver URL</label>
+              <input id="matrix_homeserver_url" name="matrix_homeserver_url" type="url" value="{{.ProfileNotify.MatrixHomeserver}}" placeholder="https://matrix.example.com">
+            </div>
+            <div class="form-group">
+              <label for="matrix_room_id">Room ID</label>
+              <input id="matrix_room_id" name="matrix_room_id" type="text" value="{{.ProfileNotify.MatrixRoomID}}" placeholder="!room:id">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="matrix_access_token">Access Token</label>
+            <input id="matrix_access_token" name="matrix_access_token" type="password" placeholder="leer lassen, um vorhandenen Token beizubehalten">
+          </div>
+          <label class="checkbox-row">
+            <input type="checkbox" name="matrix_enabled" {{if .ProfileNotify.MatrixEnabled}}checked{{end}}>
+            <span>Matrix-Benachrichtigungen aktiv</span>
+          </label>
+        </section>
+
+        <section class="settings-empty-state" id="notifier-empty-state" {{if $hasMatrix}}hidden{{end}}>
+          <p class="muted">Noch keine zusätzlichen Benachrichtigungskanäle konfiguriert.</p>
+        </section>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="button">Speichern</button>
+      </div>
+    </section>
   </form>
 
   {{if .ProfileNotify.HasLocalCredentials}}
@@ -85,4 +137,38 @@
   </div>
   {{end}}
 </div>
+
+<script>
+  (() => {
+    const matrixCard = document.getElementById('matrix-channel-card');
+    const emptyState = document.getElementById('notifier-empty-state');
+    const addButtons = Array.from(document.querySelectorAll('[data-add-notifier]'));
+
+    const syncNotifierState = () => {
+      const hasMatrix = matrixCard && !matrixCard.hidden;
+      if (emptyState) emptyState.hidden = hasMatrix;
+      addButtons.forEach((button) => {
+        if (!(button instanceof HTMLButtonElement)) return;
+        if (button.dataset.addNotifier === 'matrix') {
+          button.disabled = hasMatrix;
+        }
+      });
+    };
+
+    addButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        if (button.dataset.addNotifier === 'matrix' && matrixCard) {
+          matrixCard.hidden = false;
+          const firstField = matrixCard.querySelector('input');
+          if (firstField instanceof HTMLInputElement) firstField.focus();
+          syncNotifierState();
+        }
+        const menu = button.closest('.action-menu');
+        if (menu) menu.removeAttribute('open');
+      });
+    });
+
+    syncNotifierState();
+  })();
+</script>
 {{end}}
