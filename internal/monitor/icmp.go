@@ -18,15 +18,59 @@ import (
 
 type ICMPChecker struct{}
 
+type icmpAddressFamily int
+
+const (
+	icmpAddressFamilyAuto icmpAddressFamily = iota
+	icmpAddressFamilyIPv4
+	icmpAddressFamilyIPv6
+)
+
 func (c ICMPChecker) Check(ctx context.Context, item Monitor) Result {
 	startedAt := time.Now()
+	checkedAt := startedAt.UTC()
 	result := Result{
 		MonitorID: item.ID,
-		CheckedAt: startedAt.UTC(),
+		CheckedAt: checkedAt,
 		Status:    StatusDown,
 	}
 
-	targets, err := resolveICMPTargets(ctx, item.Target)
+	family := icmpAddressFamilyFromTLSMode(item.TLSMode)
+	if family == icmpAddressFamilyAuto && !isLiteralICMPTarget(item.Target) {
+		v4Attempt := c.checkResolvedTargets(ctx, item, checkedAt, icmpAddressFamilyIPv4)
+		v6Attempt := c.checkResolvedTargets(ctx, item, checkedAt, icmpAddressFamilyIPv6)
+
+		v4Label := "IPv4 down"
+		if v4Attempt.Status == StatusUp {
+			v4Label = "IPv4 " + formatICMPLatency(v4Attempt.Latency)
+		}
+		v6Label := "IPv6 down"
+		if v6Attempt.Status == StatusUp {
+			v6Label = "IPv6 " + formatICMPLatency(v6Attempt.Latency)
+		}
+
+		switch {
+		case v4Attempt.Status == StatusUp && v6Attempt.Status == StatusUp:
+			result.Status = StatusUp
+			result.Latency = (v4Attempt.Latency + v6Attempt.Latency) / 2
+			result.Message = "ICMP dual stack ok · " + v4Label + " · " + v6Label
+		case v4Attempt.Status == StatusUp || v6Attempt.Status == StatusUp:
+			result.Status = StatusDegraded
+			if v4Attempt.Status == StatusUp {
+				result.Latency = v4Attempt.Latency
+			} else {
+				result.Latency = v6Attempt.Latency
+			}
+			result.Message = "ICMP dual stack degraded · " + v4Label + " · " + v6Label
+		default:
+			result.Status = StatusDown
+			result.Latency = time.Since(startedAt)
+			result.Message = "ICMP dual stack failed · " + v4Label + " · " + v6Label
+		}
+		return result
+	}
+
+	targets, err := resolveICMPTargets(ctx, item.Target, family)
 	if err != nil {
 		result.Message = fmt.Sprintf("icmp resolve failed: %v", err)
 		return result
@@ -34,7 +78,7 @@ func (c ICMPChecker) Check(ctx context.Context, item Monitor) Result {
 
 	var failures []string
 	for _, target := range targets {
-		attempt := c.checkTarget(ctx, item, startedAt, target)
+		attempt := c.checkTarget(ctx, item, checkedAt, target)
 		if attempt.Status == StatusUp {
 			return attempt
 		}
@@ -52,10 +96,28 @@ func (c ICMPChecker) Check(ctx context.Context, item Monitor) Result {
 	return result
 }
 
-func (c ICMPChecker) checkTarget(ctx context.Context, item Monitor, startedAt time.Time, target resolvedICMPTarget) Result {
+func (c ICMPChecker) checkResolvedTargets(ctx context.Context, item Monitor, checkedAt time.Time, family icmpAddressFamily) Result {
+	result := Result{MonitorID: item.ID, CheckedAt: checkedAt, Status: StatusDown}
+	targets, err := resolveICMPTargets(ctx, item.Target, family)
+	if err != nil {
+		result.Message = fmt.Sprintf("icmp resolve failed: %v", err)
+		return result
+	}
+	for _, target := range targets {
+		attempt := c.checkTarget(ctx, item, checkedAt, target)
+		if attempt.Status == StatusUp {
+			return attempt
+		}
+		result = attempt
+	}
+	return result
+}
+
+func (c ICMPChecker) checkTarget(ctx context.Context, item Monitor, checkedAt time.Time, target resolvedICMPTarget) Result {
+	attemptStartedAt := time.Now()
 	result := Result{
 		MonitorID: item.ID,
-		CheckedAt: startedAt.UTC(),
+		CheckedAt: checkedAt,
 		Status:    StatusDown,
 	}
 
@@ -83,6 +145,7 @@ func (c ICMPChecker) checkTarget(ctx context.Context, item Monitor, startedAt ti
 	}
 
 	if _, err := conn.WriteTo(payload, &net.IPAddr{IP: target.ip}); err != nil {
+		result.Latency = time.Since(attemptStartedAt)
 		result.Message = formatICMPError("icmp send failed", err)
 		return result
 	}
@@ -90,7 +153,7 @@ func (c ICMPChecker) checkTarget(ctx context.Context, item Monitor, startedAt ti
 	buffer := make([]byte, 1500)
 	for {
 		n, peer, err := conn.ReadFrom(buffer)
-		result.Latency = time.Since(startedAt)
+		result.Latency = time.Since(attemptStartedAt)
 		if err != nil {
 			result.Message = formatICMPError("icmp read failed", err)
 			return result
@@ -119,7 +182,7 @@ func (c ICMPChecker) checkTarget(ctx context.Context, item Monitor, startedAt ti
 		switch reply.Type {
 		case target.protocol.replyType:
 			result.Status = StatusUp
-			result.Message = fmt.Sprintf("ICMP echo ok from %s in %d ms", target.ip.String(), result.Latency.Milliseconds())
+			result.Message = fmt.Sprintf("ICMP echo ok from %s in %s", target.ip.String(), formatICMPLatency(result.Latency))
 			return result
 		default:
 			result.Message = fmt.Sprintf("unexpected icmp reply type %v", reply.Type)
@@ -140,10 +203,33 @@ type resolvedICMPTarget struct {
 	replyProtocol int
 }
 
-func resolveICMPTargets(ctx context.Context, target string) ([]resolvedICMPTarget, error) {
+func resolveICMPTargets(ctx context.Context, target string, family icmpAddressFamily) ([]resolvedICMPTarget, error) {
 	host, err := normalizeICMPTarget(target)
 	if err != nil {
 		return nil, err
+	}
+
+	if ip := net.ParseIP(host); ip != nil {
+		if ip4 := ip.To4(); ip4 != nil {
+			if family == icmpAddressFamilyIPv6 {
+				return nil, errors.New("icmp family is IPv6 but target is IPv4")
+			}
+			return []resolvedICMPTarget{{
+				ip:            ip4,
+				network:       "ip4:icmp",
+				protocol:      icmpProtocol{requestType: ipv4.ICMPTypeEcho, replyType: ipv4.ICMPTypeEchoReply},
+				replyProtocol: 1,
+			}}, nil
+		}
+		if family == icmpAddressFamilyIPv4 {
+			return nil, errors.New("icmp family is IPv4 but target is IPv6")
+		}
+		return []resolvedICMPTarget{{
+			ip:            ip,
+			network:       "ip6:ipv6-icmp",
+			protocol:      icmpProtocol{requestType: ipv6.ICMPTypeEchoRequest, replyType: ipv6.ICMPTypeEchoReply},
+			replyProtocol: 58,
+		}}, nil
 	}
 
 	resolver := net.DefaultResolver
@@ -175,6 +261,19 @@ func resolveICMPTargets(ctx context.Context, target string) ([]resolvedICMPTarge
 			protocol:      icmpProtocol{requestType: ipv6.ICMPTypeEchoRequest, replyType: ipv6.ICMPTypeEchoReply},
 			replyProtocol: 58,
 		})
+	}
+
+	if family == icmpAddressFamilyIPv4 {
+		if len(v4) == 0 {
+			return nil, errors.New("no IPv4 addresses found")
+		}
+		return v4, nil
+	}
+	if family == icmpAddressFamilyIPv6 {
+		if len(v6) == 0 {
+			return nil, errors.New("no IPv6 addresses found")
+		}
+		return v6, nil
 	}
 
 	targets := append(v4, v6...)
@@ -210,12 +309,46 @@ func normalizeICMPTarget(raw string) (string, error) {
 		return "", errors.New("target is required")
 	}
 
-	ip := net.ParseIP(target)
-	if ip == nil {
-		return "", fmt.Errorf("icmp target must be a literal IPv4 or IPv6 address: %s", target)
+	if ip := net.ParseIP(target); ip != nil {
+		return ip.String(), nil
 	}
 
-	return ip.String(), nil
+	if strings.ContainsAny(target, " /\\@") {
+		return "", fmt.Errorf("icmp target must be a valid host or IPv4/IPv6 address: %s", target)
+	}
+
+	return target, nil
+}
+
+func icmpAddressFamilyFromTLSMode(mode TLSMode) icmpAddressFamily {
+	switch mode {
+	case TLSModeTLS:
+		return icmpAddressFamilyIPv4
+	case TLSModeSTARTTLS:
+		return icmpAddressFamilyIPv6
+	default:
+		return icmpAddressFamilyAuto
+	}
+}
+
+func isLiteralICMPTarget(target string) bool {
+	value := strings.TrimSpace(target)
+	value = strings.Trim(value, "[]")
+	if value == "" {
+		return false
+	}
+	return net.ParseIP(value) != nil
+}
+
+func formatICMPLatency(duration time.Duration) string {
+	if duration <= 0 {
+		return "<1 ms"
+	}
+	ms := duration.Milliseconds()
+	if ms <= 0 {
+		return "<1 ms"
+	}
+	return fmt.Sprintf("%d ms", ms)
 }
 
 func formatICMPError(prefix string, err error) string {

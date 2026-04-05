@@ -752,6 +752,7 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/monitors/delete", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleDeleteMonitor))))
 	mux.Handle("/monitors/enabled", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSetMonitorEnabled))))
 	mux.Handle("/monitors/check-now", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleCheckMonitorNow))))
+	mux.Handle("/monitors/latency-history", s.requireAuth(http.HandlerFunc(s.handleMonitorLatencyHistory)))
 	mux.Handle("/settings/profile", s.requireAuth(http.HandlerFunc(s.handleSettingsProfile)))
 	mux.Handle("/settings/profile/save", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileSave)))
 	mux.Handle("/settings/profile/notifiers/delete", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileNotifierDelete)))
@@ -2005,6 +2006,20 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 	if kind == monitor.KindHTTPS {
 		target = normalizeHTTPMonitorTarget(target, tlsMode)
 	}
+	if kind == monitor.KindICMP {
+		if !isLiteralIPAddress(target) && target != "" {
+			switch strings.ToLower(strings.TrimSpace(r.FormValue("icmp_family"))) {
+			case "ipv6":
+				tlsMode = monitor.TLSModeSTARTTLS
+			case "dual":
+				tlsMode = monitor.TLSModeNone
+			default:
+				tlsMode = monitor.TLSModeTLS
+			}
+		} else {
+			tlsMode = monitor.TLSModeNone
+		}
+	}
 
 	params := store.CreateMonitorParams{
 		Name:               strings.TrimSpace(r.FormValue("name")),
@@ -2219,6 +2234,94 @@ func (s *Server) handleCheckMonitorNow(w http.ResponseWriter, r *http.Request) {
 		CheckedAt: result.CheckedAt.UTC().Format(time.RFC3339),
 		Status:    string(result.Status),
 		Message:   strings.TrimSpace(result.Message),
+	})
+}
+
+func (s *Server) handleMonitorLatencyHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	appStore, err := s.appStore(r)
+	if err != nil {
+		http.Error(w, "unable to resolve tenant", http.StatusInternalServerError)
+		return
+	}
+
+	monitorID, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("monitor_id")), 10, 64)
+	if err != nil || monitorID <= 0 {
+		http.Error(w, "invalid monitor id", http.StatusBadRequest)
+		return
+	}
+
+	rangeValue := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("range")))
+	if rangeValue == "" {
+		rangeValue = "1h"
+	}
+
+	now := time.Now().UTC()
+	since := now.Add(-time.Hour)
+	limit := 480
+	switch rangeValue {
+	case "6h":
+		since = now.Add(-6 * time.Hour)
+		limit = 2400
+	case "24h":
+		since = now.Add(-24 * time.Hour)
+		limit = 6000
+	case "7d":
+		since = now.Add(-7 * 24 * time.Hour)
+		limit = 24000
+	default:
+		rangeValue = "1h"
+	}
+
+	points, err := appStore.ListMonitorLatencyHistory(r.Context(), monitorID, since, limit)
+	if err != nil {
+		http.Error(w, "unable to load latency history", http.StatusInternalServerError)
+		return
+	}
+
+	type latencyPointPayload struct {
+		CheckedAt string `json:"checked_at"`
+		LatencyMS int    `json:"latency_ms"`
+		Status    string `json:"status"`
+	}
+	responsePoints := make([]latencyPointPayload, 0, len(points))
+	latencySum := 0
+	latencyCount := 0
+	for _, point := range points {
+		responsePoints = append(responsePoints, latencyPointPayload{
+			CheckedAt: point.CheckedAt.UTC().Format(time.RFC3339),
+			LatencyMS: point.LatencyMS,
+			Status:    strings.TrimSpace(point.Status),
+		})
+		if point.LatencyMS > 0 {
+			latencySum += point.LatencyMS
+			latencyCount++
+		}
+	}
+
+	averageMS := 0
+	if latencyCount > 0 {
+		averageMS = int(float64(latencySum)/float64(latencyCount) + 0.5)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(struct {
+		OK        bool                  `json:"ok"`
+		MonitorID int64                 `json:"monitor_id"`
+		Range     string                `json:"range"`
+		AverageMS int                   `json:"average_ms"`
+		Points    []latencyPointPayload `json:"points"`
+	}{
+		OK:        true,
+		MonitorID: monitorID,
+		Range:     rangeValue,
+		AverageMS: averageMS,
+		Points:    responsePoints,
 	})
 }
 
@@ -3108,6 +3211,11 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 			view.StatusSummary = item.LastResult.Message
 			view.LastMessage = item.LastResult.Message
 			view.LastLatency = item.LastResult.Latency.String()
+			if item.Monitor.Kind == monitor.KindICMP {
+				if dualLatency := icmpDualStackLatencyLabel(item.LastResult.Message); dualLatency != "" {
+					view.LastLatency = dualLatency
+				}
+			}
 			if item.LastResult.HTTPStatusCode != nil {
 				view.HTTPStatusCode = strconv.Itoa(*item.LastResult.HTTPStatusCode)
 			}
@@ -3127,6 +3235,18 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 		views = append(views, view)
 	}
 	return views
+}
+
+func icmpDualStackLatencyLabel(message string) string {
+	trimmed := strings.TrimSpace(message)
+	if !strings.HasPrefix(trimmed, "ICMP dual stack") {
+		return ""
+	}
+	parts := strings.Split(trimmed, " · ")
+	if len(parts) < 3 {
+		return ""
+	}
+	return strings.Join(parts[1:], " · ")
 }
 
 func buildAvailableGroups(items []store.MonitorGroup) []string {
@@ -4194,11 +4314,14 @@ func normalizeTLSMode(kind monitor.Kind, requested monitor.TLSMode) monitor.TLSM
 			return requested
 		}
 		return monitor.TLSModeTLS
-	case monitor.KindTCP, monitor.KindICMP:
-		if kind == monitor.KindTCP {
-			if requested == monitor.TLSModeNone || requested == monitor.TLSModeTLS || requested == monitor.TLSModeSTARTTLS {
-				return requested
-			}
+	case monitor.KindTCP:
+		if requested == monitor.TLSModeNone || requested == monitor.TLSModeTLS || requested == monitor.TLSModeSTARTTLS {
+			return requested
+		}
+		return monitor.TLSModeNone
+	case monitor.KindICMP:
+		if requested == monitor.TLSModeNone || requested == monitor.TLSModeTLS || requested == monitor.TLSModeSTARTTLS {
+			return requested
 		}
 		return monitor.TLSModeNone
 	case monitor.KindSMTP:
@@ -4250,6 +4373,20 @@ func monitorTLSModeLabel(item monitor.Monitor) string {
 		default:
 			return ""
 		}
+	case monitor.KindICMP:
+		switch item.TLSMode {
+		case monitor.TLSModeTLS:
+			return "IPv4"
+		case monitor.TLSModeSTARTTLS:
+			return "IPv6"
+		case monitor.TLSModeNone:
+			if !isLiteralIPAddress(item.Target) {
+				return "Dual Stack"
+			}
+			return ""
+		default:
+			return ""
+		}
 	default:
 		return ""
 	}
@@ -4270,6 +4407,15 @@ func normalizeHTTPMonitorTarget(raw string, mode monitor.TLSMode) string {
 		return "http://" + target
 	}
 	return "https://" + target
+}
+
+func isLiteralIPAddress(raw string) bool {
+	target := strings.TrimSpace(raw)
+	target = strings.Trim(target, "[]")
+	if target == "" {
+		return false
+	}
+	return net.ParseIP(target) != nil
 }
 
 func monitorHTTPKindLabel(mode monitor.TLSMode) string {

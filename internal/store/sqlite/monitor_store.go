@@ -1150,17 +1150,25 @@ func validateMonitorKindSettings(kind monitor.Kind, target string, tlsMode monit
 	case monitor.KindICMP:
 		icmpTarget := strings.TrimSpace(target)
 		icmpTarget = strings.Trim(icmpTarget, "[]")
+		if strings.Contains(icmpTarget, "://") {
+			return errors.New("icmp target must be a plain host or IP address")
+		}
 		if _, _, err := net.SplitHostPort(icmpTarget); err == nil {
 			return errors.New("icmp target must not include a port")
 		}
 		if parsed := net.ParseIP(icmpTarget); parsed == nil {
-			return errors.New("target must be a valid IPv4 or IPv6 address for ICMP monitors")
+			if icmpTarget == "" || strings.ContainsAny(icmpTarget, " /\\@") {
+				return errors.New("target must be a valid IPv4/IPv6 address or hostname for ICMP monitors")
+			}
+			if tlsMode != monitor.TLSModeNone && tlsMode != monitor.TLSModeTLS && tlsMode != monitor.TLSModeSTARTTLS {
+				return errors.New("for ICMP hostnames please choose IPv4, IPv6 or Dual Stack")
+			}
 		}
 		if expectedStatusCode != nil {
 			return errors.New("expected HTTP status is only valid for HTTPS monitors")
 		}
-		if tlsMode != "" && tlsMode != monitor.TLSModeNone {
-			return errors.New("icmp monitors do not support tls mode")
+		if tlsMode != "" && tlsMode != monitor.TLSModeNone && tlsMode != monitor.TLSModeTLS && tlsMode != monitor.TLSModeSTARTTLS {
+			return errors.New("icmp monitors support auto, IPv4 or IPv6 address family")
 		}
 	case monitor.KindSMTP, monitor.KindIMAP:
 		if _, _, err := net.SplitHostPort(strings.TrimSpace(target)); err != nil {

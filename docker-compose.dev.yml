@@ -12,4 +12,14 @@ services:
       - NET_RAW
     volumes:
       - ./data:/data
+    networks:
+      - goup_net
     restart: unless-stopped
+
+networks:
+  goup_net:
+    driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: fd98:5d2b:9a7c::/64
