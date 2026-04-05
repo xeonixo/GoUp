@@ -312,13 +312,23 @@
           </summary>
           <div class="monitor-grid">
       {{range .Monitors}}
-      <article class="card monitor-card {{.StatusClass}}" {{if $.IsAdmin}}draggable="true"{{end}} data-monitor-id="{{.ID}}" data-group="{{$serviceTitle}}">
+      <article class="card monitor-card {{.StatusClass}}" {{if $.IsAdmin}}draggable="true"{{end}} data-monitor-id="{{.ID}}" data-group="{{$serviceTitle}}" data-interval-seconds="{{.IntervalSeconds}}" data-last-check="{{.LastCheckedAtRaw}}">
         <div class="monitor-card-header">
           <div>
               <h5>{{.Name}}</h5>
             <p class="muted compact">{{.Kind}}{{if .TLSMode}} / {{.TLSMode}}{{end}} · alle {{.Interval}} · Timeout {{.Timeout}}</p>
           </div>
           <div class="monitor-header-right">
+            {{if $.IsAdmin}}
+            <button
+              class="monitor-cycle-indicator monitor-cycle-trigger"
+              type="button"
+              data-check-monitor-id="{{.ID}}"
+              aria-label="Monitor {{.Name}} jetzt prüfen"
+              title="Monitor jetzt prüfen"></button>
+            {{else}}
+            <span class="monitor-cycle-indicator" aria-hidden="true"></span>
+            {{end}}
             <span class="status-pill {{.StatusClass}}">{{.StatusLabel}}</span>
             {{if $.IsAdmin}}
             <details class="action-menu">
@@ -398,7 +408,7 @@
             {{end}}
             <div class="monitor-metric">
               <span class="muted">Letzter Lauf</span>
-              <strong>{{if .LastCheckedAtRaw}}<time class="client-time" datetime="{{.LastCheckedAtRaw}}" data-format="datetime">{{.LastCheckedAt}}</time>{{else}}—{{end}}</strong>
+              <strong>{{if .LastCheckedAtRaw}}<time class="client-time" datetime="{{.LastCheckedAtRaw}}" data-format="relative-age">{{.LastCheckedAt}}</time>{{else}}—{{end}}</strong>
             </div>
             {{if eq .KindValue "https" "tcp" "smtp" "imap"}}
             <div class="monitor-metric">

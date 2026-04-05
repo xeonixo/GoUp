@@ -837,6 +837,66 @@ button {
   gap: 0.55rem;
 }
 
+.monitor-cycle-indicator {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 50%;
+  border: 2px solid rgba(154, 167, 196, 0.4);
+  border-top-color: rgba(154, 167, 196, 0.92);
+  opacity: 0.35;
+  flex-shrink: 0;
+}
+
+button.monitor-cycle-indicator {
+  padding: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+button.monitor-cycle-indicator:disabled {
+  cursor: wait;
+}
+
+.monitor-cycle-indicator.is-active {
+  opacity: 1;
+  animation: monitor-cycle-spin 0.8s linear infinite;
+}
+
+.monitor-card.status-UP .monitor-cycle-indicator {
+  border-color: rgba(103, 219, 169, 0.35);
+  border-top-color: rgba(103, 219, 169, 1);
+}
+
+.monitor-card.status-DEGRADED .monitor-cycle-indicator {
+  border-color: rgba(255, 184, 102, 0.35);
+  border-top-color: rgba(255, 184, 102, 1);
+}
+
+.monitor-card.status-DOWN .monitor-cycle-indicator {
+  border-color: rgba(255, 110, 128, 0.35);
+  border-top-color: rgba(255, 110, 128, 1);
+}
+
+.monitor-card.status-UNKNOWN .monitor-cycle-indicator,
+.monitor-card.status-PAUSED .monitor-cycle-indicator {
+  border-color: rgba(154, 167, 196, 0.3);
+  border-top-color: rgba(154, 167, 196, 0.75);
+}
+
+@keyframes monitor-cycle-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .monitor-cycle-indicator.is-active {
+    animation: none;
+  }
+}
+
 .monitor-summary-trend {
   border: 1px solid rgba(37, 48, 78, 0.56);
   background: rgba(8, 12, 24, 0.34);

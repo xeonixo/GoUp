@@ -751,6 +751,7 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/icons/render", s.requireAuth(http.HandlerFunc(s.handleRenderIcon)))
 	mux.Handle("/monitors/delete", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleDeleteMonitor))))
 	mux.Handle("/monitors/enabled", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSetMonitorEnabled))))
+	mux.Handle("/monitors/check-now", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleCheckMonitorNow))))
 	mux.Handle("/settings/profile", s.requireAuth(http.HandlerFunc(s.handleSettingsProfile)))
 	mux.Handle("/settings/profile/save", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileSave)))
 	mux.Handle("/settings/profile/notifiers/delete", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileNotifierDelete)))
@@ -2122,6 +2123,103 @@ func (s *Server) handleSetMonitorEnabled(w http.ResponseWriter, r *http.Request)
 		message = "Monitor aktiviert"
 	}
 	http.Redirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape(message), http.StatusSeeOther)
+}
+
+func checkerForMonitorKind(kind monitor.Kind) (monitor.Checker, bool) {
+	switch kind {
+	case monitor.KindHTTPS:
+		return monitor.HTTPSChecker{}, true
+	case monitor.KindTCP:
+		return monitor.TCPChecker{}, true
+	case monitor.KindICMP:
+		return monitor.ICMPChecker{}, true
+	case monitor.KindSMTP:
+		return monitor.SMTPChecker{}, true
+	case monitor.KindIMAP:
+		return monitor.IMAPChecker{}, true
+	case monitor.KindDNS:
+		return monitor.DNSChecker{}, true
+	case monitor.KindUDP:
+		return monitor.UDPChecker{}, true
+	case monitor.KindWhois:
+		return monitor.WhoisChecker{}, true
+	default:
+		return nil, false
+	}
+}
+
+func (s *Server) handleCheckMonitorNow(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	appStore, err := s.appStore(r)
+	if err != nil {
+		http.Error(w, "unable to resolve tenant", http.StatusInternalServerError)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form payload", http.StatusBadRequest)
+		return
+	}
+
+	id, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("id")), 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid monitor id", http.StatusBadRequest)
+		return
+	}
+
+	snapshots, err := appStore.ListMonitorSnapshots(r.Context())
+	if err != nil {
+		http.Error(w, "unable to load monitor", http.StatusInternalServerError)
+		return
+	}
+
+	var selected *monitor.Snapshot
+	for i := range snapshots {
+		if snapshots[i].Monitor.ID == id {
+			selected = &snapshots[i]
+			break
+		}
+	}
+	if selected == nil {
+		http.Error(w, "monitor not found", http.StatusNotFound)
+		return
+	}
+
+	checker, ok := checkerForMonitorKind(selected.Monitor.Kind)
+	if !ok {
+		http.Error(w, "monitor kind is not supported", http.StatusBadRequest)
+		return
+	}
+
+	runCtx, cancel := context.WithTimeout(r.Context(), selected.Monitor.Timeout+2*time.Second)
+	result := checker.Check(runCtx, selected.Monitor)
+	cancel()
+
+	if err := appStore.SaveMonitorResult(r.Context(), result); err != nil {
+		http.Error(w, "unable to store check result", http.StatusInternalServerError)
+		return
+	}
+	if err := appStore.RecordMonitorState(r.Context(), selected.Monitor.ID, result.Status, result.Message, result.CheckedAt); err != nil {
+		http.Error(w, "unable to store monitor state", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(struct {
+		OK        bool   `json:"ok"`
+		CheckedAt string `json:"checked_at"`
+		Status    string `json:"status"`
+		Message   string `json:"message"`
+	}{
+		OK:        true,
+		CheckedAt: result.CheckedAt.UTC().Format(time.RFC3339),
+		Status:    string(result.Status),
+		Message:   strings.TrimSpace(result.Message),
+	})
 }
 
 func (s *Server) handleUpdateMonitorTarget(w http.ResponseWriter, r *http.Request) {

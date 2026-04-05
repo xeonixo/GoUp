@@ -21,6 +21,8 @@ GoUp überwacht Dienste und benachrichtigt bei Statuswechseln. Es läuft als ein
 | **Auth** | Lokal (Username/Passwort), OIDC pro Tenant, oder deaktiviert |
 | **Multi-Tenant** | Beliebig viele isolierte Tenants, je eigene DB und Auth-Provider |
 | **Admin-UI** | Tenants, Provider, Benutzer, SMTP, Audit-Log |
+| **Dashboard-Zeitformat** | „Last updated“ clientseitig als kompakte Dauer (z. B. `10 sec.`, `1 min. 25 sec.`, `1 h 45 min.`, `1 d 14 h 45 min.`), sprachabhängig nach Browser-Locale |
+| **One-shot Check (Admin)** | Klickbarer Zyklus-Kreis neben dem Status stößt einen einmaligen Sofort-Check an; regulärer Intervall bleibt unverändert |
 | **Control-Plane** | Eigener Admin-Zugang mit Username/Passwort + TOTP |
 | **Deployment** | Multi-Arch Docker Image (`amd64` + `arm64`) |
 
@@ -103,6 +105,27 @@ Melde dich unter `/admin/access` an, dann:
 ### 7. Monitore hinzufügen
 
 Im Dashboard über **„+ Monitor"** lassen sich Dienste anlegen. Alle Checks starten automatisch.
+
+### 8. Dashboard: Relative Zeiten & Sofort-Check
+
+GoUp formatiert Zeitangaben im Dashboard für den Browser lokal und kompakt:
+
+- Letzter Lauf wird als Dauer statt als starre Uhrzeit dargestellt
+- Beispiele: `10 sec.`, `1 min. 25 sec.`, `1 h 45 min.`, `1 d 14 h 45 min.`
+- Ausgabe ist an die Browser-Sprache angepasst (z. B. de/en/fr/es)
+
+Zusätzlich zeigt jeder Monitor links neben dem Status einen kleinen Zyklus-Kreis:
+
+- Der Kreis rotiert rund um den erwarteten Prüfzeitpunkt (Intervall-basiert)
+- **Admin-Hinweis:** Für Benutzer mit Admin-Rechten ist der Kreis klickbar
+- Klick auf den Kreis startet genau **einen** Sofort-Check
+- Danach greift automatisch wieder der normale Intervall (kein dauerhafter Moduswechsel)
+- Während der Ausführung wird ein laufender Check visuell angezeigt
+
+Hinweis zur Berechtigung:
+
+- In Tenants mit aktivierter Authentifizierung können nur Admins den Sofort-Check auslösen
+- Ohne Admin-Rechte bleibt der Kreis rein informativ
 
 ### Healthcheck
 

@@ -147,6 +147,7 @@
     let liveLastReloadAt = 0;
     let livePendingParts = new Set();
     let livePendingBoardGroups = new Set();
+    const manualCheckInFlight = new Set();
     const liveSnapshotHashes = {
       stats: '',
       board: '',
@@ -353,6 +354,24 @@
       });
       document.body.appendChild(form);
       form.submit();
+    };
+
+    const postForm = async (action, fields) => {
+      const payload = new URLSearchParams();
+      Object.entries(fields).forEach(([key, value]) => {
+        if (value === null || value === undefined) {
+          return;
+        }
+        payload.set(key, String(value));
+      });
+      return fetch(action, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          Accept: 'application/json'
+        },
+        body: payload.toString()
+      });
     };
 
     const updateGroupIconPreview = () => {
@@ -924,6 +943,54 @@
         button.addEventListener('click', () => openTrendDetail(button));
       });
 
+      document.querySelectorAll('.monitor-cycle-trigger').forEach((button) => {
+        if (button.dataset.boundCycleTrigger === '1') {
+          return;
+        }
+        button.dataset.boundCycleTrigger = '1';
+        button.addEventListener('click', async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (!(button instanceof HTMLButtonElement)) {
+            return;
+          }
+          const monitorID = Number.parseInt(button.dataset.checkMonitorId || '', 10);
+          if (!Number.isFinite(monitorID) || monitorID <= 0) {
+            return;
+          }
+          if (manualCheckInFlight.has(monitorID)) {
+            return;
+          }
+
+          manualCheckInFlight.add(monitorID);
+          button.classList.add('is-active');
+          button.disabled = true;
+          button.title = cycleLabels.checking;
+
+          try {
+            const response = await postForm(`${appBase}monitors/check-now`, { id: monitorID });
+            if (!response.ok) {
+              throw new Error(`manual check failed with HTTP ${response.status}`);
+            }
+            const payload = await response.json().catch(() => ({}));
+            if (!payload || payload.ok !== true) {
+              throw new Error('manual check response invalid');
+            }
+
+            livePendingParts.add('stats');
+            livePendingParts.add('board');
+            livePendingParts.add('state_events');
+            scheduleLiveReload();
+          } catch (error) {
+            console.error('manual monitor check failed', error);
+          } finally {
+            manualCheckInFlight.delete(monitorID);
+            button.disabled = false;
+            updateMonitorCycleIndicators(document);
+          }
+        });
+      });
+
       if (isAdmin) {
         document.querySelectorAll('.service-cluster').forEach((cluster) => {
           if (cluster.dataset.boundGroupDrag === '1') {
@@ -1045,6 +1112,128 @@
       month: new Intl.DateTimeFormat(undefined, { month: 'short', year: 'numeric' })
     };
 
+    const languageTag = ((navigator.languages && navigator.languages[0]) || navigator.language || 'en').toLowerCase();
+    const durationUnits = (() => {
+      if (languageTag.startsWith('de')) {
+        return { day: 'T', hour: 'Std.', minute: 'Min.', second: 'Sek.' };
+      }
+      if (languageTag.startsWith('fr')) {
+        return { day: 'j', hour: 'h', minute: 'min', second: 's' };
+      }
+      if (languageTag.startsWith('es')) {
+        return { day: 'd', hour: 'h', minute: 'min', second: 's' };
+      }
+      return { day: 'd', hour: 'h', minute: 'min.', second: 'sec.' };
+    })();
+    const cycleLabels = (() => {
+      if (languageTag.startsWith('de')) {
+        return { checking: 'Prüfung läuft …', nextIn: 'Nächste Prüfung in' };
+      }
+      if (languageTag.startsWith('fr')) {
+        return { checking: 'Vérification en cours…', nextIn: 'Prochaine vérification dans' };
+      }
+      if (languageTag.startsWith('es')) {
+        return { checking: 'Comprobación en curso…', nextIn: 'Próxima comprobación en' };
+      }
+      return { checking: 'Checking…', nextIn: 'Next check in' };
+    })();
+
+    const formatDurationCompact = (totalSeconds) => {
+      const safeSeconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+      if (safeSeconds < 60) {
+        return `${safeSeconds} ${durationUnits.second}`;
+      }
+
+      const minutes = Math.floor(safeSeconds / 60);
+      const seconds = safeSeconds % 60;
+      if (safeSeconds < 3600) {
+        if (seconds > 0) {
+          return `${minutes} ${durationUnits.minute} ${seconds} ${durationUnits.second}`;
+        }
+        return `${minutes} ${durationUnits.minute}`;
+      }
+
+      const hours = Math.floor(minutes / 60);
+      const remMinutes = minutes % 60;
+      if (safeSeconds < 86400) {
+        if (remMinutes > 0) {
+          return `${hours} ${durationUnits.hour} ${remMinutes} ${durationUnits.minute}`;
+        }
+        return `${hours} ${durationUnits.hour}`;
+      }
+
+      const days = Math.floor(hours / 24);
+      const remHours = hours % 24;
+      if (remMinutes > 0) {
+        return `${days} ${durationUnits.day} ${remHours} ${durationUnits.hour} ${remMinutes} ${durationUnits.minute}`;
+      }
+      if (remHours > 0) {
+        return `${days} ${durationUnits.day} ${remHours} ${durationUnits.hour}`;
+      }
+      return `${days} ${durationUnits.day}`;
+    };
+
+    const formatElapsedCompact = (date) => {
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+        return '—';
+      }
+
+      const elapsedSeconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+      return formatDurationCompact(elapsedSeconds);
+    };
+
+    const updateMonitorCycleIndicators = (root = document) => {
+      root.querySelectorAll('.monitor-card').forEach((card) => {
+        const indicator = card.querySelector('.monitor-cycle-indicator');
+        if (!(indicator instanceof HTMLElement)) {
+          return;
+        }
+
+        const monitorID = Number.parseInt(card.dataset.monitorId || '', 10);
+        if (Number.isFinite(monitorID) && manualCheckInFlight.has(monitorID)) {
+          indicator.classList.add('is-active');
+          indicator.title = cycleLabels.checking;
+          return;
+        }
+
+        const intervalSeconds = Number.parseInt(card.dataset.intervalSeconds || '', 10);
+        const rawLastCheck = card.dataset.lastCheck || '';
+        const lastCheckDate = new Date(rawLastCheck);
+        const paused = card.classList.contains('status-PAUSED');
+        const hasInterval = Number.isFinite(intervalSeconds) && intervalSeconds > 0;
+        const hasLastCheck = !Number.isNaN(lastCheckDate.getTime());
+
+        if (indicator instanceof HTMLButtonElement) {
+          indicator.disabled = paused || !hasInterval;
+        }
+
+        if (paused || !hasInterval) {
+          indicator.classList.remove('is-active');
+          indicator.removeAttribute('title');
+          return;
+        }
+
+        if (!hasLastCheck) {
+          indicator.classList.remove('is-active');
+          indicator.title = `${cycleLabels.nextIn} ${formatDurationCompact(intervalSeconds)}`;
+          return;
+        }
+
+        const elapsedSeconds = Math.max(0, Math.floor((Date.now() - lastCheckDate.getTime()) / 1000));
+        const checkWindowSeconds = Math.min(8, Math.max(2, Math.floor(intervalSeconds * 0.15)));
+        const isChecking = elapsedSeconds >= intervalSeconds && elapsedSeconds <= (intervalSeconds + checkWindowSeconds);
+        indicator.classList.toggle('is-active', isChecking);
+
+        if (isChecking) {
+          indicator.title = cycleLabels.checking;
+          return;
+        }
+
+        const secondsUntilNext = Math.max(0, intervalSeconds - elapsedSeconds);
+        indicator.title = `${cycleLabels.nextIn} ${formatDurationCompact(secondsUntilNext)}`;
+      });
+    };
+
     const formatClientTimes = (root = document) => {
       root.querySelectorAll('.client-time').forEach((element) => {
         const value = element.getAttribute('datetime');
@@ -1056,6 +1245,11 @@
           return;
         }
         const format = element.dataset.format || 'datetime';
+        if (format === 'relative-age') {
+          element.textContent = formatElapsedCompact(date);
+          element.title = formatters.datetime.format(date);
+          return;
+        }
         const formatter = formatters[format] || formatters.datetime;
         element.textContent = formatter.format(date);
         element.title = date.toLocaleString();
@@ -1506,9 +1700,14 @@
     reformatLiveContent = () => {
       formatClientTimes(document);
       formatTrendBars(document);
+      updateMonitorCycleIndicators(document);
     };
 
     reformatLiveContent();
+    window.setInterval(() => {
+      formatClientTimes(document);
+      updateMonitorCycleIndicators(document);
+    }, 1000);
 
     const formatDateValue = (value, format = 'datetime') => {
       if (!value) {
@@ -1543,7 +1742,14 @@
       trendDetailSubtitle.textContent = `${trigger.dataset.monitorKind || ''} · ${trigger.dataset.lastMessage || 'Keine Detailmeldung'}`;
       trendDetailStatus.textContent = trigger.dataset.status || 'UNKNOWN';
       trendDetailUptime.textContent = trigger.dataset.uptime || '—';
-      trendDetailLastCheck.textContent = formatDateValue(trigger.dataset.lastCheck, 'datetime');
+      const lastCheckDate = new Date(trigger.dataset.lastCheck || '');
+      if (Number.isNaN(lastCheckDate.getTime())) {
+        trendDetailLastCheck.textContent = '—';
+        trendDetailLastCheck.removeAttribute('title');
+      } else {
+        trendDetailLastCheck.textContent = formatElapsedCompact(lastCheckDate);
+        trendDetailLastCheck.setAttribute('title', formatters.datetime.format(lastCheckDate));
+      }
       trendDetailTarget.textContent = trigger.dataset.target || '—';
       trendDetailRangeTitle.textContent = `Verlauf ${trigger.dataset.trendLabel || ''}`.trim();
 
