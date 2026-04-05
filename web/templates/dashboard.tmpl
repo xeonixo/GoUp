@@ -1,5 +1,9 @@
 {{define "topbar_actions"}}
 <div class="topbar-dashboard-actions">
+  <div class="live-connection-indicator is-connecting" id="live-ws-indicator" role="status" aria-live="polite" aria-label="Live-Verbindung wird aufgebaut" title="Live-Verbindung wird aufgebaut">
+    <span class="live-connection-dot" aria-hidden="true"></span>
+    <span class="live-connection-text">Live</span>
+  </div>
   <div class="trend-range-toggle topbar-trend-range" role="tablist" aria-label="Trend-Zeitraum">
   {{range .TrendRanges}}
   <a href="{{$.AppBase}}?trend={{.Value}}" class="button button-small {{if not .Selected}}button-secondary{{end}}" {{if .Selected}}aria-current="page"{{end}}>{{.Label}}</a>

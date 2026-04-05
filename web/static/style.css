@@ -87,10 +87,71 @@ h3 {
   gap: 0.2rem;
 }
 
+.topbar-main .live-connection-indicator {
+  margin-left: 0.5rem;
+}
+
 .topbar-dashboard-actions {
   display: flex;
   align-items: center;
   gap: 0.7rem;
+}
+
+.live-connection-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.36rem 0.62rem;
+  border-radius: 999px;
+  border: 1px solid rgba(154, 167, 196, 0.28);
+  background: rgba(24, 35, 61, 0.82);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.live-connection-dot {
+  width: 0.52rem;
+  height: 0.52rem;
+  border-radius: 50%;
+  background: rgba(154, 167, 196, 0.9);
+  box-shadow: 0 0 0 2px rgba(154, 167, 196, 0.15);
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.live-connection-indicator.is-connected {
+  color: #cbf7dc;
+  border-color: rgba(134, 239, 172, 0.45);
+  background: rgba(22, 57, 43, 0.65);
+}
+
+.live-connection-indicator.is-connected .live-connection-dot {
+  background: var(--success);
+  box-shadow: 0 0 0 2px rgba(134, 239, 172, 0.25);
+}
+
+.live-connection-indicator.is-connecting {
+  color: #f5e7b4;
+  border-color: rgba(252, 211, 77, 0.38);
+  background: rgba(71, 52, 16, 0.5);
+}
+
+.live-connection-indicator.is-connecting .live-connection-dot {
+  background: var(--warning);
+  box-shadow: 0 0 0 2px rgba(252, 211, 77, 0.25);
+}
+
+.live-connection-indicator.is-disconnected {
+  color: #f7c8cf;
+  border-color: rgba(253, 164, 175, 0.45);
+  background: rgba(73, 27, 36, 0.52);
+}
+
+.live-connection-indicator.is-disconnected .live-connection-dot {
+  background: var(--danger);
+  box-shadow: 0 0 0 2px rgba(253, 164, 175, 0.25);
 }
 
 .topbar-nav {
@@ -1422,6 +1483,20 @@ li + li {
     align-items: stretch;
     gap: 0.6rem;
     width: 100%;
+  }
+
+  .topbar-collapsible .live-connection-indicator {
+    align-self: flex-start;
+  }
+
+  .topbar-main .live-connection-indicator {
+    margin-left: 0.38rem;
+    padding: 0.3rem 0.46rem;
+    gap: 0.35rem;
+  }
+
+  .topbar-main .live-connection-text {
+    font-size: 0.72rem;
   }
 
   .topbar-collapsible .topbar-trend-range {

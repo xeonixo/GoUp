@@ -71,6 +71,8 @@
     const stateEventsExport = document.getElementById('state-events-export');
     const stateEventsFilterStatus = document.getElementById('state-events-filter-status');
     const stateEventsEmptyRow = document.getElementById('state-events-empty-row');
+    const liveConnectionIndicator = document.getElementById('live-ws-indicator');
+    const topbarMain = document.querySelector('.topbar-main');
     const dashboardStateScope = `${appBase || '/'}:${dashboardStateOwner}:${window.location.pathname}`;
     const dashboardStateScrollKey = `goup.dashboard.scrollY:${dashboardStateScope}`;
     const dashboardStateGroupsKey = `goup.dashboard.openGroups:${dashboardStateScope}`;
@@ -159,6 +161,31 @@
     let rebindDynamicHandlers = () => {};
     let reformatLiveContent = () => {};
 
+    const setLiveConnectionState = (state) => {
+      if (!(liveConnectionIndicator instanceof HTMLElement)) {
+        return;
+      }
+      liveConnectionIndicator.classList.remove('is-connected', 'is-connecting', 'is-disconnected');
+
+      let label = 'Live-Verbindung getrennt';
+      if (state === 'connected') {
+        liveConnectionIndicator.classList.add('is-connected');
+        label = 'Live-Verbindung aktiv';
+      } else if (state === 'connecting') {
+        liveConnectionIndicator.classList.add('is-connecting');
+        label = 'Live-Verbindung wird aufgebaut';
+      } else {
+        liveConnectionIndicator.classList.add('is-disconnected');
+      }
+
+      liveConnectionIndicator.setAttribute('aria-label', label);
+      liveConnectionIndicator.setAttribute('title', label);
+    };
+
+    if (liveConnectionIndicator instanceof HTMLElement && topbarMain instanceof HTMLElement) {
+      topbarMain.appendChild(liveConnectionIndicator);
+    }
+
     const hasOpenDialog = () => Array.from(document.querySelectorAll('dialog')).some((dialogElement) => dialogElement.open);
 
     const scheduleLiveReload = () => {
@@ -228,19 +255,23 @@
 
     const connectLiveUpdates = () => {
       if (!liveUpdatesEnabled || typeof window.WebSocket !== 'function') {
+        setLiveConnectionState('disconnected');
         return;
       }
+      setLiveConnectionState('connecting');
       const wsURL = new URL(`${appBase}live?trend=${encodeURIComponent(currentTrend)}`, window.location.href);
       wsURL.protocol = wsURL.protocol === 'https:' ? 'wss:' : 'ws:';
 
       try {
         liveSocket = new window.WebSocket(wsURL.toString());
       } catch (_) {
+        setLiveConnectionState('disconnected');
         queueLiveReconnect();
         return;
       }
 
       liveSocket.addEventListener('open', () => {
+        setLiveConnectionState('connected');
         liveReconnectDelayMS = 1000;
       });
 
@@ -271,6 +302,7 @@
       });
 
       liveSocket.addEventListener('error', () => {
+        setLiveConnectionState('disconnected');
         try {
           liveSocket?.close();
         } catch (_) {
@@ -278,6 +310,7 @@
       });
 
       liveSocket.addEventListener('close', () => {
+        setLiveConnectionState('disconnected');
         liveSocket = null;
         liveSnapshotInFlight = false;
         queueLiveReconnect();
@@ -286,6 +319,7 @@
 
     window.addEventListener('beforeunload', () => {
       liveUpdatesEnabled = false;
+      setLiveConnectionState('disconnected');
       if (liveReconnectTimer !== null) {
         window.clearTimeout(liveReconnectTimer);
         liveReconnectTimer = null;
