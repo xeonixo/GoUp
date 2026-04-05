@@ -52,6 +52,8 @@ Wichtig: Das Container-Image enthält **Server und Agent**. Standardmäßig star
 
 Falls versehentlich doch `.../node/bootstrap` eingetragen wird, normalisiert der Agent das jetzt automatisch auf die Basis-URL.
 
+Für ICMP-Monitore benötigt der Container zusätzlich `NET_RAW` (Compose: `cap_add: [NET_RAW]`).
+
 ## Monitor-Zuweisung
 
 Wenn mindestens eine Remote-Node existiert, erscheint im Monitor-Dialog ein Feld **Ausführung**:

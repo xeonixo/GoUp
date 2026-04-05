@@ -25,7 +25,8 @@ WORKDIR /app
 COPY --from=build /out/goup /usr/local/bin/goup
 COPY --from=build /out/remote-node /usr/local/bin/remote-node
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN setcap cap_net_raw=+ep /usr/local/bin/goup
+RUN setcap cap_net_raw=+ep /usr/local/bin/goup \
+    && setcap cap_net_raw=+ep /usr/local/bin/remote-node
 RUN chmod +x /usr/local/bin/entrypoint.sh
 USER goup
 EXPOSE 8080
