@@ -432,7 +432,7 @@
           groupIconPreview.src = groupIconUploadPreviewURL;
         }
         if (groupIconSelection) {
-          groupIconSelection.textContent = `Ausgewählt: eigenes Upload-Icon (${uploadFile.name})`;
+          groupIconSelection.textContent = 'Ausgewählt: eigenes Upload-Icon';
         }
         return;
       }
