@@ -81,7 +81,7 @@ type reportResult struct {
 
 func LoadConfigFromEnv() (Config, error) {
 	cfg := Config{
-		ControlPlaneURL:    strings.TrimRight(strings.TrimSpace(os.Getenv("REMOTE_NODE_CONTROL_PLANE_URL")), "/"),
+		ControlPlaneURL:    normalizeControlPlaneURL(os.Getenv("REMOTE_NODE_CONTROL_PLANE_URL")),
 		NodeID:             strings.TrimSpace(os.Getenv("REMOTE_NODE_ID")),
 		BootstrapKey:       strings.TrimSpace(os.Getenv("REMOTE_NODE_BOOTSTRAP_KEY")),
 		InitialPollSeconds: 20,
@@ -95,6 +95,17 @@ func LoadConfigFromEnv() (Config, error) {
 		}
 	}
 	return cfg, nil
+}
+
+func normalizeControlPlaneURL(raw string) string {
+	value := strings.TrimRight(strings.TrimSpace(raw), "/")
+	for _, suffix := range []string{"/node/bootstrap", "/node/poll", "/node/report"} {
+		if strings.HasSuffix(value, suffix) {
+			value = strings.TrimSuffix(value, suffix)
+			break
+		}
+	}
+	return value
 }
 
 func New(cfg Config, logger *slog.Logger) *Agent {
@@ -141,7 +152,7 @@ func (a *Agent) Run(ctx context.Context) error {
 func (a *Agent) bootstrap(ctx context.Context) error {
 	request := bootstrapRequest{NodeID: a.cfg.NodeID, BootstrapKey: a.cfg.BootstrapKey}
 	var response bootstrapResponse
-	if err := a.postJSON(ctx, a.cfg.ControlPlaneURL+"/node/bootstrap", "", request, &response); err != nil {
+	if err := a.postJSON(ctx, a.nodeEndpointURL("/node/bootstrap"), "", request, &response); err != nil {
 		return err
 	}
 	if !response.OK || strings.TrimSpace(response.AccessToken) == "" {
@@ -158,7 +169,7 @@ func (a *Agent) bootstrap(ctx context.Context) error {
 func (a *Agent) poll(ctx context.Context) ([]assignedMonitorSpec, error) {
 	request := map[string]any{"agent_version": "remote-node/0.1"}
 	var response pollResponse
-	if err := a.postJSON(ctx, a.cfg.ControlPlaneURL+"/node/poll", a.accessToken, request, &response); err != nil {
+	if err := a.postJSON(ctx, a.nodeEndpointURL("/node/poll"), a.accessToken, request, &response); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "401") {
 			if bootErr := a.bootstrap(ctx); bootErr != nil {
 				return nil, bootErr
@@ -181,10 +192,14 @@ func (a *Agent) report(ctx context.Context, results []reportResult) error {
 	}
 	request := reportRequest{Results: results}
 	var response map[string]any
-	if err := a.postJSON(ctx, a.cfg.ControlPlaneURL+"/node/report", a.accessToken, request, &response); err != nil {
+	if err := a.postJSON(ctx, a.nodeEndpointURL("/node/report"), a.accessToken, request, &response); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (a *Agent) nodeEndpointURL(path string) string {
+	return a.cfg.ControlPlaneURL + path
 }
 
 func (a *Agent) runChecks(ctx context.Context, assigned []assignedMonitorSpec) []reportResult {

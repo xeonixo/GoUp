@@ -81,8 +81,8 @@ func (s *Server) handleCreateRemoteNode(w http.ResponseWriter, r *http.Request) 
 		http.Redirect(w, r, redirectBase+"?error="+url.QueryEscape("Remote-Node konnte nicht erstellt werden"), http.StatusSeeOther)
 		return
 	}
-	bootstrapURL := strings.TrimRight(strings.TrimSpace(s.cfg.BaseURL), "/") + "/node/bootstrap"
-	notice := fmt.Sprintf("Remote-Node erstellt. REMOTE_NODE_ID=%s  REMOTE_NODE_BOOTSTRAP_KEY=%s  REMOTE_NODE_CONTROL_PLANE_URL=%s", node.NodeID, bootstrapKey, bootstrapURL)
+	controlPlaneURL := strings.TrimRight(strings.TrimSpace(s.cfg.BaseURL), "/")
+	notice := fmt.Sprintf("Remote-Node erstellt. REMOTE_NODE_ID=%s  REMOTE_NODE_BOOTSTRAP_KEY=%s  REMOTE_NODE_CONTROL_PLANE_URL=%s", node.NodeID, bootstrapKey, controlPlaneURL)
 	http.Redirect(w, r, redirectBase+"?notice="+url.QueryEscape(notice), http.StatusSeeOther)
 }
 
@@ -135,8 +135,8 @@ func (s *Server) handleRotateRemoteNodeBootstrapKey(w http.ResponseWriter, r *ht
 		http.Redirect(w, r, redirectBase+"?error="+url.QueryEscape("Bootstrap-Key konnte nicht rotiert werden"), http.StatusSeeOther)
 		return
 	}
-	bootstrapURL := strings.TrimRight(strings.TrimSpace(s.cfg.BaseURL), "/") + "/node/bootstrap"
-	notice := fmt.Sprintf("Bootstrap-Key rotiert. REMOTE_NODE_ID=%s  REMOTE_NODE_BOOTSTRAP_KEY=%s  REMOTE_NODE_CONTROL_PLANE_URL=%s", nodeID, bootstrapKey, bootstrapURL)
+	controlPlaneURL := strings.TrimRight(strings.TrimSpace(s.cfg.BaseURL), "/")
+	notice := fmt.Sprintf("Bootstrap-Key rotiert. REMOTE_NODE_ID=%s  REMOTE_NODE_BOOTSTRAP_KEY=%s  REMOTE_NODE_CONTROL_PLANE_URL=%s", nodeID, bootstrapKey, controlPlaneURL)
 	http.Redirect(w, r, redirectBase+"?notice="+url.QueryEscape(notice), http.StatusSeeOther)
 }
 
@@ -215,8 +215,8 @@ func (s *Server) handleAdminCreateRemoteNode(w http.ResponseWriter, r *http.Requ
 		http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/remote-nodes?error=%s", tenantID, url.QueryEscape("Remote-Node konnte nicht erstellt werden")), http.StatusSeeOther)
 		return
 	}
-	bootstrapURL := strings.TrimRight(strings.TrimSpace(s.cfg.BaseURL), "/") + "/node/bootstrap"
-	notice := fmt.Sprintf("Remote-Node erstellt. REMOTE_NODE_ID=%s  REMOTE_NODE_BOOTSTRAP_KEY=%s  REMOTE_NODE_CONTROL_PLANE_URL=%s", node.NodeID, bootstrapKey, bootstrapURL)
+	controlPlaneURL := strings.TrimRight(strings.TrimSpace(s.cfg.BaseURL), "/")
+	notice := fmt.Sprintf("Remote-Node erstellt. REMOTE_NODE_ID=%s  REMOTE_NODE_BOOTSTRAP_KEY=%s  REMOTE_NODE_CONTROL_PLANE_URL=%s", node.NodeID, bootstrapKey, controlPlaneURL)
 	s.writeAudit(r, "remote_node.create", "tenant", tenantID, fmt.Sprintf("node_id=%s name=%s", node.NodeID, node.Name))
 	http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/remote-nodes?notice=%s", tenantID, url.QueryEscape(notice)), http.StatusSeeOther)
 }
@@ -279,8 +279,8 @@ func (s *Server) handleAdminRotateRemoteNodeBootstrapKey(w http.ResponseWriter, 
 		http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/remote-nodes?error=%s", tenantID, url.QueryEscape("Bootstrap-Key konnte nicht rotiert werden")), http.StatusSeeOther)
 		return
 	}
-	bootstrapURL := strings.TrimRight(strings.TrimSpace(s.cfg.BaseURL), "/") + "/node/bootstrap"
-	notice := fmt.Sprintf("Bootstrap-Key rotiert. REMOTE_NODE_ID=%s  REMOTE_NODE_BOOTSTRAP_KEY=%s  REMOTE_NODE_CONTROL_PLANE_URL=%s", nodeID, bootstrapKey, bootstrapURL)
+	controlPlaneURL := strings.TrimRight(strings.TrimSpace(s.cfg.BaseURL), "/")
+	notice := fmt.Sprintf("Bootstrap-Key rotiert. REMOTE_NODE_ID=%s  REMOTE_NODE_BOOTSTRAP_KEY=%s  REMOTE_NODE_CONTROL_PLANE_URL=%s", nodeID, bootstrapKey, controlPlaneURL)
 	s.writeAudit(r, "remote_node.bootstrap.rotate", "tenant", tenantID, fmt.Sprintf("node_id=%s", nodeID))
 	http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/remote-nodes?notice=%s", tenantID, url.QueryEscape(notice)), http.StatusSeeOther)
 }

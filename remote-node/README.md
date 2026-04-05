@@ -37,7 +37,7 @@ Aktuell ist TLS Pflicht, mTLS ist als optionaler nächster Schritt vorgesehen.
 2. Aus der Notice kopieren:
    - `REMOTE_NODE_ID`
    - `REMOTE_NODE_BOOTSTRAP_KEY`
-   - Bootstrap-URL (`.../node/bootstrap`)
+   - `REMOTE_NODE_CONTROL_PLANE_URL` als Basis-URL der GoUp-Instanz (`https://example.com`, nicht `.../node/bootstrap`)
 3. Agent-Container mit Env starten.
 
 Beispiel-Variablen:
@@ -49,6 +49,8 @@ Beispiel-Variablen:
 - `REMOTE_NODE_POLL_SECONDS=20`
 
 Wichtig: Das Container-Image enthält **Server und Agent**. Standardmäßig startet es den normalen GoUp-Server. Für eine Remote-Node muss daher `GOUP_MODE=remote-node` gesetzt sein.
+
+Falls versehentlich doch `.../node/bootstrap` eingetragen wird, normalisiert der Agent das jetzt automatisch auf die Basis-URL.
 
 ## Monitor-Zuweisung
 
