@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"io/fs"
 	"log/slog"
 	"mime"
@@ -23,6 +24,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -67,11 +69,17 @@ type Server struct {
 	handler             http.Handler
 	iconIndexMu         sync.RWMutex
 	iconIndex           []dashboardIconEntry
-	iconIndexFetchedAt  time.Time
+	iconAssetMu         sync.RWMutex
+	iconAssets          map[string]dashboardIconAsset
 	localLoginMu        sync.Mutex
 	localLoginAttempts  map[string]localLoginAttempt
 	adminAccessMu       sync.Mutex
 	adminAccessAttempts map[string]localLoginAttempt
+}
+
+type dashboardIconAsset struct {
+	Payload     []byte
+	ContentType string
 }
 
 type localLoginAttempt struct {
@@ -192,12 +200,18 @@ type dashboardIconEntry struct {
 	Slug       string
 	Label      string
 	SearchText string
+	Value      string
+	Source     string
+	Preferred  bool
 }
 
 type dashboardIconSearchResult struct {
-	Slug  string `json:"slug"`
-	Label string `json:"label"`
-	URL   string `json:"url"`
+	Value     string `json:"value"`
+	Slug      string `json:"slug"`
+	Label     string `json:"label"`
+	URL       string `json:"url"`
+	Source    string `json:"source"`
+	Preferred bool   `json:"preferred"`
 }
 
 type trendPointView struct {
@@ -293,8 +307,9 @@ var supportedTrendRanges = []trendRange{
 const (
 	dashboardIconsBaseURL     = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons"
 	dashboardIconsMetadataURL = "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/refs/heads/main/metadata.json"
-	dashboardIconCacheTTL     = 6 * time.Hour
 	dashboardIconSearchLimit  = 24
+	groupIconUploadPrefix     = "upload:"
+	groupIconUploadMaxBytes   = 2 << 20
 )
 
 var dashboardLiveUpgrader = websocket.Upgrader{
@@ -324,6 +339,7 @@ func New(deps Dependencies) (*Server, error) {
 		oidc:                deps.OIDC,
 		dynamicOIDC:         auth.NewDynamicOIDCManager(),
 		templates:           templates,
+		iconAssets:          make(map[string]dashboardIconAsset),
 		localLoginAttempts:  make(map[string]localLoginAttempt),
 		adminAccessAttempts: make(map[string]localLoginAttempt),
 	}
@@ -732,6 +748,7 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/groups/delete", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleDeleteGroup))))
 	mux.Handle("/groups/reorder", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleReorderGroup))))
 	mux.Handle("/icons/search", s.requireAuth(http.HandlerFunc(s.handleSearchDashboardIcons)))
+	mux.Handle("/icons/render", s.requireAuth(http.HandlerFunc(s.handleRenderIcon)))
 	mux.Handle("/monitors/delete", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleDeleteMonitor))))
 	mux.Handle("/monitors/enabled", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSetMonitorEnabled))))
 	mux.Handle("/settings/profile", s.requireAuth(http.HandlerFunc(s.handleSettingsProfile)))
@@ -907,7 +924,12 @@ func (s *Server) handleSearchDashboardIcons(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	results, err := s.searchDashboardIcons(r.Context(), strings.TrimSpace(r.URL.Query().Get("q")), dashboardIconSearchLimit)
+	appStore, err := s.appStore(r)
+	if err != nil {
+		http.Error(w, "unable to resolve tenant", http.StatusInternalServerError)
+		return
+	}
+	results, err := s.searchDashboardIcons(r.Context(), s.tenantSlugForRequest(r), appStore, s.tenantAppBase(r), strings.TrimSpace(r.URL.Query().Get("q")), dashboardIconSearchLimit)
 	if err != nil {
 		http.Error(w, "unable to search dashboard icons", http.StatusBadGateway)
 		return
@@ -919,6 +941,44 @@ func (s *Server) handleSearchDashboardIcons(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "unable to encode dashboard icons", http.StatusInternalServerError)
 		return
 	}
+}
+
+func (s *Server) handleRenderIcon(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ref := normalizeGroupIconReference(strings.TrimSpace(r.URL.Query().Get("ref")))
+	if ref == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	var (
+		payload     []byte
+		contentType string
+		err         error
+	)
+	switch kind, value := splitGroupIconReference(ref); kind {
+	case groupIconSourceUpload:
+		payload, contentType, err = s.loadUploadedIcon(r, value)
+	default:
+		payload, contentType, err = s.loadDashboardIconAsset(r.Context(), s.tenantSlugForRequest(r), value)
+	}
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	_, _ = w.Write(payload)
 }
 
 type dashboardLiveSnapshotResponse struct {
@@ -1039,7 +1099,7 @@ func (s *Server) loadDashboardPageData(r *http.Request, appStore *store.Store, t
 		TrendLabel:      selectedTrend.Label,
 		TrendRanges:     buildTrendRangeOptions(selectedTrend),
 		Monitors:        monitorViews,
-		MonitorGroups:   buildMonitorGroups(monitorViews, groupMetadata),
+		MonitorGroups:   buildMonitorGroups(s.tenantAppBase(r), monitorViews, groupMetadata),
 		AvailableGroups: availableGroups,
 		Events:          buildNotificationEventViews(events),
 		StateEvents:     buildMonitorStateEventViews(stateEvents),
@@ -1775,7 +1835,8 @@ func (s *Server) handleSaveGroup(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, groupIconUploadMaxBytes+(1<<20))
+	if err := r.ParseMultipartForm(groupIconUploadMaxBytes + (256 << 10)); err != nil && err != http.ErrNotMultipart {
 		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Formular konnte nicht gelesen werden"), http.StatusSeeOther)
 		return
 	}
@@ -1784,8 +1845,19 @@ func (s *Server) handleSaveGroup(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Ungültige Gruppe"), http.StatusSeeOther)
 		return
 	}
-	iconSlug := normalizeDashboardIconSlug(strings.TrimSpace(r.FormValue("icon_slug")))
-	if err := appStore.UpdateMonitorGroupIcon(r.Context(), groupName, iconSlug); err != nil {
+	iconRef := normalizeGroupIconReference(strings.TrimSpace(r.FormValue("icon_slug")))
+	uploadedIconRef, err := s.storeUploadedGroupIcon(r, groupName)
+	if err != nil {
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", err.Error()), http.StatusSeeOther)
+		return
+	}
+	if uploadedIconRef != "" {
+		iconRef = uploadedIconRef
+	} else if err := s.persistSelectedDashboardIcon(r.Context(), s.tenantSlugForRequest(r), iconRef); err != nil {
+		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", err.Error()), http.StatusSeeOther)
+		return
+	}
+	if err := appStore.UpdateMonitorGroupIcon(r.Context(), groupName, iconRef); err != nil {
 		if err == sql.ErrNoRows {
 			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Gruppe wurde nicht gefunden"), http.StatusSeeOther)
 			return
@@ -2395,6 +2467,239 @@ func (s *Server) appStore(r *http.Request) (*store.Store, error) {
 	return s.tenantStores.StoreForTenant(r.Context(), currentUser.TenantID)
 }
 
+func (s *Server) tenantSlugForRequest(r *http.Request) string {
+	if slug := strings.TrimSpace(tenantSlugFromRequest(r)); slug != "" {
+		return slug
+	}
+	if currentUser := s.currentUser(r); currentUser != nil && strings.TrimSpace(currentUser.TenantSlug) != "" {
+		return strings.TrimSpace(currentUser.TenantSlug)
+	}
+	if slug := strings.TrimSpace(s.defaultTenant.Slug); slug != "" {
+		return slug
+	}
+	return "default"
+}
+
+func (s *Server) uploadedIconsDir(tenantSlug string) string {
+	tenantSlug = normalizeDashboardIconSlug(tenantSlug)
+	if tenantSlug == "" {
+		tenantSlug = "default"
+	}
+	return filepath.Join(s.cfg.DataDir, "icons", tenantSlug)
+}
+
+func (s *Server) persistedDashboardIconsDir(tenantSlug string) string {
+	return filepath.Join(s.uploadedIconsDir(tenantSlug), "dashboard")
+}
+
+func (s *Server) storeUploadedGroupIcon(r *http.Request, groupName string) (string, error) {
+	file, header, err := r.FormFile("icon_upload")
+	if err != nil {
+		if err == http.ErrMissingFile {
+			return "", nil
+		}
+		return "", fmt.Errorf("Icon-Upload konnte nicht gelesen werden")
+	}
+	defer file.Close()
+
+	payload, err := io.ReadAll(io.LimitReader(file, groupIconUploadMaxBytes+1))
+	if err != nil {
+		return "", fmt.Errorf("Icon-Upload konnte nicht gelesen werden")
+	}
+	if len(payload) == 0 {
+		return "", nil
+	}
+	if len(payload) > groupIconUploadMaxBytes {
+		return "", fmt.Errorf("Icon-Upload ist zu groß (max. 2 MB)")
+	}
+
+	contentType := http.DetectContentType(payload)
+	ext, ok := detectUploadedIconExtension(contentType, header.Filename)
+	if !ok {
+		return "", fmt.Errorf("Nur SVG, PNG, WEBP, JPEG oder ICO werden als Gruppen-Icon unterstützt")
+	}
+
+	hashBytes := sha256.Sum256(payload)
+	hash := hex.EncodeToString(hashBytes[:])
+	baseName := sanitizeUploadedIconBaseName(header.Filename)
+	if baseName == "" {
+		baseName = normalizeDashboardIconSlug(groupName)
+	}
+	if baseName == "" {
+		baseName = "custom-icon"
+	}
+
+	dir := s.uploadedIconsDir(s.tenantSlugForRequest(r))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("Upload-Verzeichnis konnte nicht vorbereitet werden")
+	}
+	if existing := findUploadedIconByHash(dir, hash); existing != "" {
+		return groupIconUploadPrefix + existing, nil
+	}
+
+	fileName := hash + "-" + baseName + ext
+	if err := os.WriteFile(filepath.Join(dir, fileName), payload, 0o644); err != nil {
+		return "", fmt.Errorf("Icon-Upload konnte nicht gespeichert werden")
+	}
+	return groupIconUploadPrefix + fileName, nil
+}
+
+func (s *Server) loadUploadedIcon(r *http.Request, fileName string) ([]byte, string, error) {
+	fileName = sanitizeUploadedIconName(fileName)
+	if fileName == "" {
+		return nil, "", os.ErrNotExist
+	}
+	payload, err := os.ReadFile(filepath.Join(s.uploadedIconsDir(s.tenantSlugForRequest(r)), fileName))
+	if err != nil {
+		return nil, "", err
+	}
+	contentType := mime.TypeByExtension(filepath.Ext(fileName))
+	if contentType == "" {
+		contentType = http.DetectContentType(payload)
+	}
+	return payload, contentType, nil
+}
+
+func (s *Server) persistSelectedDashboardIcon(ctx context.Context, tenantSlug string, ref string) error {
+	kind, slug := splitGroupIconReference(ref)
+	if kind != groupIconSourceDashboard || slug == "" {
+		return nil
+	}
+	known, err := s.dashboardIconExists(ctx, slug)
+	if err != nil {
+		return fmt.Errorf("Dashboard-Icon konnte nicht geprüft werden")
+	}
+	if !known {
+		return nil
+	}
+	payload, _, err := s.loadDashboardIconAsset(ctx, tenantSlug, slug)
+	if err != nil {
+		return fmt.Errorf("Dashboard-Icon konnte nicht lokal gespeichert werden")
+	}
+	dir := s.persistedDashboardIconsDir(tenantSlug)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("Dashboard-Icon-Verzeichnis konnte nicht vorbereitet werden")
+	}
+	if err := os.WriteFile(filepath.Join(dir, slug+".svg"), payload, 0o644); err != nil {
+		return fmt.Errorf("Dashboard-Icon konnte nicht lokal gespeichert werden")
+	}
+	return nil
+}
+
+func (s *Server) dashboardIconExists(ctx context.Context, slug string) (bool, error) {
+	slug = normalizeDashboardIconSlug(slug)
+	if slug == "" {
+		return false, nil
+	}
+	entries, err := s.loadDashboardIconIndex(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, entry := range entries {
+		if entry.Source == groupIconSourceDashboard && entry.Slug == slug {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *Server) loadPersistedDashboardIcon(tenantSlug string, slug string) ([]byte, string, error) {
+	slug = normalizeDashboardIconSlug(slug)
+	if slug == "" {
+		return nil, "", os.ErrNotExist
+	}
+	payload, err := os.ReadFile(filepath.Join(s.persistedDashboardIconsDir(tenantSlug), slug+".svg"))
+	if err != nil {
+		return nil, "", err
+	}
+	contentType := mime.TypeByExtension(".svg")
+	if contentType == "" {
+		contentType = http.DetectContentType(payload)
+	}
+	return payload, contentType, nil
+}
+
+func sanitizeUploadedIconName(name string) string {
+	name = filepath.Base(strings.TrimSpace(name))
+	if name == "." || name == "" || strings.Contains(name, string(filepath.Separator)) {
+		return ""
+	}
+	return name
+}
+
+func sanitizeUploadedIconBaseName(name string) string {
+	name = sanitizeUploadedIconName(name)
+	if name == "" {
+		return ""
+	}
+	base := strings.TrimSuffix(name, filepath.Ext(name))
+	base = normalizeDashboardIconSlug(base)
+	if base == "" {
+		return ""
+	}
+	return base
+}
+
+func detectUploadedIconExtension(contentType string, originalName string) (string, bool) {
+	contentType = strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	switch contentType {
+	case "image/svg+xml":
+		return ".svg", true
+	case "image/png":
+		return ".png", true
+	case "image/webp":
+		return ".webp", true
+	case "image/jpeg":
+		return ".jpg", true
+	case "image/x-icon", "image/vnd.microsoft.icon":
+		return ".ico", true
+	}
+	ext := strings.ToLower(filepath.Ext(strings.TrimSpace(originalName)))
+	switch ext {
+	case ".svg", ".png", ".webp", ".jpg", ".jpeg", ".ico":
+		if ext == ".jpeg" {
+			return ".jpg", true
+		}
+		return ext, true
+	default:
+		return "", false
+	}
+}
+
+func findUploadedIconByHash(dir string, hash string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	prefix := hash + "-"
+	for _, item := range entries {
+		if item.IsDir() {
+			continue
+		}
+		name := sanitizeUploadedIconName(item.Name())
+		if strings.HasPrefix(name, prefix) {
+			return name
+		}
+	}
+	return ""
+}
+
+func formatUploadedIconLabel(fileName string) string {
+	name := sanitizeUploadedIconName(fileName)
+	if name == "" {
+		return "Eigenes Icon"
+	}
+	base := strings.TrimSuffix(name, filepath.Ext(name))
+	if len(base) > 65 && base[64] == '-' {
+		base = base[65:]
+	}
+	label := formatDashboardIconLabel(base)
+	if label == "" {
+		return "Eigenes Icon"
+	}
+	return label
+}
+
 func tenantHasAppDatabase(path string) bool {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -2444,12 +2749,12 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		// Disable browser features not needed
 		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
-		// Content Security Policy: allow own origin + CDN for dashboard icons
+		// Content Security Policy: only same-origin assets, including locally served icon cache/uploads
 		h.Set("Content-Security-Policy",
 			"default-src 'self'; "+
 				"script-src 'self'; "+
 				"style-src 'self'; "+
-				"img-src 'self' https://cdn.jsdelivr.net data:; "+
+				"img-src 'self' data:; "+
 				"font-src 'self'; "+
 				"connect-src 'self'; "+
 				"frame-ancestors 'none'; "+
@@ -2762,16 +3067,16 @@ func mergeAvailableGroups(existing []string, monitors []monitorView) []string {
 	return groups
 }
 
-func buildMonitorGroups(monitors []monitorView, metadata []store.MonitorGroup) []monitorGroupView {
+func buildMonitorGroups(appBase string, monitors []monitorView, metadata []store.MonitorGroup) []monitorGroupView {
 	groupSortOrder := make(map[string]int, len(metadata))
 	groupIcons := make(map[string]string, len(metadata))
 	for idx, item := range metadata {
 		name := strings.TrimSpace(item.Name)
 		groupSortOrder[name] = idx
-		groupIcons[name] = normalizeDashboardIconSlug(item.IconSlug)
+		groupIcons[name] = normalizeGroupIconReference(item.IconSlug)
 	}
 
-	services := buildMonitorServiceGroups(monitors, groupSortOrder, groupIcons, len(metadata))
+	services := buildMonitorServiceGroups(appBase, monitors, groupSortOrder, groupIcons, len(metadata))
 	serviceHint := "Keine Dienstgruppen"
 	if len(services) == 1 {
 		serviceHint = "1 Dienstgruppe"
@@ -2793,8 +3098,8 @@ func buildMonitorGroups(monitors []monitorView, metadata []store.MonitorGroup) [
 	}
 }
 
-func buildMonitorStatusGroup(title string, subtitle string, emptyText string, accentClass string, monitors []monitorView, groupSortOrder map[string]int, groupIcons map[string]string, totalGroups int) monitorGroupView {
-	services := buildMonitorServiceGroups(monitors, groupSortOrder, groupIcons, totalGroups)
+func buildMonitorStatusGroup(title string, subtitle string, emptyText string, accentClass string, monitors []monitorView, groupSortOrder map[string]int, groupIcons map[string]string, totalGroups int, appBase string) monitorGroupView {
+	services := buildMonitorServiceGroups(appBase, monitors, groupSortOrder, groupIcons, totalGroups)
 	serviceHint := "Einzelne Dienste"
 	if len(services) > 1 {
 		serviceHint = strconv.Itoa(len(services)) + " Dienstgruppen"
@@ -2814,7 +3119,7 @@ func buildMonitorStatusGroup(title string, subtitle string, emptyText string, ac
 	}
 }
 
-func buildMonitorServiceGroups(monitors []monitorView, groupSortOrder map[string]int, groupIcons map[string]string, totalGroups int) []monitorServiceGroupView {
+func buildMonitorServiceGroups(appBase string, monitors []monitorView, groupSortOrder map[string]int, groupIcons map[string]string, totalGroups int) []monitorServiceGroupView {
 	if len(monitors) == 0 && len(groupSortOrder) == 0 {
 		return nil
 	}
@@ -2882,7 +3187,7 @@ func buildMonitorServiceGroups(monitors []monitorView, groupSortOrder map[string
 		if knownIndex, ok := groupSortOrder[label]; ok {
 			orderIndex = knownIndex
 		}
-		iconSlug := effectiveDashboardIconSlug(label, groupIcons[label])
+		iconRef := effectiveGroupIconReference(label, groupIcons[label])
 		services = append(services, monitorServiceGroupView{
 			Title:       label,
 			Subtitle:    subtitle,
@@ -2892,8 +3197,8 @@ func buildMonitorServiceGroups(monitors []monitorView, groupSortOrder map[string
 			TrendLabel:  trendLabel,
 			UptimeLabel: uptimeLabel,
 			TrendPoints: aggregatePoints,
-			IconSlug:    iconSlug,
-			IconURL:     dashboardIconURL(iconSlug),
+			IconSlug:    iconRef,
+			IconURL:     localIconURL(appBase, iconRef),
 			Monitors:    items,
 			Open:        false,
 			CanMoveUp:   orderIndex > 0,
@@ -3071,40 +3376,77 @@ func effectiveMonitorGroup(group string, name string, target string) string {
 	return "Sonstige"
 }
 
-func dashboardIconURL(slug string) string {
-	slug = normalizeDashboardIconSlug(slug)
-	if slug == "" {
-		return ""
-	}
-	return dashboardIconsBaseURL + "/svg/" + slug + ".svg"
-}
-
 func normalizeDashboardIconSlug(slug string) string {
 	slug = strings.ToLower(strings.TrimSpace(slug))
 	slug = strings.ReplaceAll(slug, " ", "-")
 	return slug
 }
 
-func effectiveDashboardIconSlug(groupName string, storedSlug string) string {
-	storedSlug = normalizeDashboardIconSlug(storedSlug)
-	if storedSlug != "" {
-		return storedSlug
+const (
+	groupIconSourceDashboard = "dashboard"
+	groupIconSourceUpload    = "upload"
+)
+
+func normalizeGroupIconReference(ref string) string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return ""
+	}
+	if strings.HasPrefix(strings.ToLower(ref), groupIconUploadPrefix) {
+		name := sanitizeUploadedIconName(strings.TrimSpace(ref[len(groupIconUploadPrefix):]))
+		if name == "" {
+			return ""
+		}
+		return groupIconUploadPrefix + name
+	}
+	return normalizeDashboardIconSlug(ref)
+}
+
+func splitGroupIconReference(ref string) (kind string, value string) {
+	ref = normalizeGroupIconReference(ref)
+	if strings.HasPrefix(ref, groupIconUploadPrefix) {
+		return groupIconSourceUpload, strings.TrimSpace(ref[len(groupIconUploadPrefix):])
+	}
+	return groupIconSourceDashboard, normalizeDashboardIconSlug(ref)
+}
+
+func effectiveGroupIconReference(groupName string, storedRef string) string {
+	storedRef = normalizeGroupIconReference(storedRef)
+	if storedRef != "" {
+		return storedRef
 	}
 	return normalizeDashboardIconSlug(groupName)
 }
 
-func (s *Server) searchDashboardIcons(ctx context.Context, query string, limit int) ([]dashboardIconSearchResult, error) {
-	entries, err := s.loadDashboardIconIndex(ctx)
+func localIconURL(appBase string, ref string) string {
+	ref = normalizeGroupIconReference(ref)
+	if ref == "" {
+		return ""
+	}
+	base := strings.TrimSpace(appBase)
+	if base == "" {
+		base = "/"
+	}
+	if !strings.HasSuffix(base, "/") {
+		base += "/"
+	}
+	return base + "icons/render?ref=" + url.QueryEscape(ref)
+}
+
+func (s *Server) searchDashboardIcons(ctx context.Context, tenantSlug string, appStore *store.Store, appBase string, query string, limit int) ([]dashboardIconSearchResult, error) {
+	remoteEntries, err := s.loadDashboardIconIndex(ctx)
 	if err != nil {
 		return nil, err
 	}
+	entries := s.mergeIconEntries(s.loadRecycledIconEntries(ctx, tenantSlug, appStore), remoteEntries)
 	if limit <= 0 {
 		limit = dashboardIconSearchLimit
 	}
 	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
 	type scoredIcon struct {
-		entry dashboardIconEntry
-		score int
+		entry     dashboardIconEntry
+		score     int
+		preferred bool
 	}
 	scored := make([]scoredIcon, 0, len(entries))
 	for _, entry := range entries {
@@ -3125,11 +3467,17 @@ func (s *Server) searchDashboardIcons(ctx context.Context, query string, limit i
 		default:
 			continue
 		}
-		scored = append(scored, scoredIcon{entry: entry, score: score})
+		scored = append(scored, scoredIcon{entry: entry, score: score, preferred: entry.Preferred})
 	}
 	sort.Slice(scored, func(i, j int) bool {
 		if scored[i].score != scored[j].score {
 			return scored[i].score < scored[j].score
+		}
+		if scored[i].preferred != scored[j].preferred {
+			return scored[i].preferred
+		}
+		if scored[i].entry.Source != scored[j].entry.Source {
+			return scored[i].entry.Source < scored[j].entry.Source
 		}
 		return scored[i].entry.Slug < scored[j].entry.Slug
 	})
@@ -3139,9 +3487,12 @@ func (s *Server) searchDashboardIcons(ctx context.Context, query string, limit i
 	results := make([]dashboardIconSearchResult, 0, len(scored))
 	for _, item := range scored {
 		results = append(results, dashboardIconSearchResult{
-			Slug:  item.entry.Slug,
-			Label: item.entry.Label,
-			URL:   dashboardIconURL(item.entry.Slug),
+			Value:     item.entry.Value,
+			Slug:      item.entry.Slug,
+			Label:     item.entry.Label,
+			URL:       localIconURL(appBase, item.entry.Value),
+			Source:    item.entry.Source,
+			Preferred: item.entry.Preferred,
 		})
 	}
 	return results, nil
@@ -3149,17 +3500,16 @@ func (s *Server) searchDashboardIcons(ctx context.Context, query string, limit i
 
 func (s *Server) loadDashboardIconIndex(ctx context.Context) ([]dashboardIconEntry, error) {
 	s.iconIndexMu.RLock()
-	if len(s.iconIndex) > 0 && time.Since(s.iconIndexFetchedAt) < dashboardIconCacheTTL {
+	if len(s.iconIndex) > 0 {
 		cached := append([]dashboardIconEntry(nil), s.iconIndex...)
 		s.iconIndexMu.RUnlock()
 		return cached, nil
 	}
-	stale := append([]dashboardIconEntry(nil), s.iconIndex...)
 	s.iconIndexMu.RUnlock()
 
 	s.iconIndexMu.Lock()
 	defer s.iconIndexMu.Unlock()
-	if len(s.iconIndex) > 0 && time.Since(s.iconIndexFetchedAt) < dashboardIconCacheTTL {
+	if len(s.iconIndex) > 0 {
 		return append([]dashboardIconEntry(nil), s.iconIndex...), nil
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, dashboardIconsMetadataURL, nil)
@@ -3168,23 +3518,14 @@ func (s *Server) loadDashboardIconIndex(ctx context.Context) ([]dashboardIconEnt
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		if len(stale) > 0 {
-			return stale, nil
-		}
 		return nil, fmt.Errorf("fetch dashboard icons metadata: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		if len(stale) > 0 {
-			return stale, nil
-		}
 		return nil, fmt.Errorf("dashboard icons metadata returned %s", resp.Status)
 	}
 	metadata := make(map[string]dashboardIconMetadata)
 	if err := json.NewDecoder(resp.Body).Decode(&metadata); err != nil {
-		if len(stale) > 0 {
-			return stale, nil
-		}
 		return nil, fmt.Errorf("decode dashboard icons metadata: %w", err)
 	}
 	entries := make([]dashboardIconEntry, 0, len(metadata))
@@ -3197,14 +3538,174 @@ func (s *Server) loadDashboardIconIndex(ctx context.Context) ([]dashboardIconEnt
 			Slug:       normalizedSlug,
 			Label:      formatDashboardIconLabel(normalizedSlug),
 			SearchText: buildDashboardIconSearchText(normalizedSlug, meta),
+			Value:      normalizedSlug,
+			Source:     groupIconSourceDashboard,
 		})
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Slug < entries[j].Slug
 	})
 	s.iconIndex = entries
-	s.iconIndexFetchedAt = time.Now()
 	return append([]dashboardIconEntry(nil), entries...), nil
+}
+
+func (s *Server) mergeIconEntries(priority []dashboardIconEntry, fallback []dashboardIconEntry) []dashboardIconEntry {
+	merged := make([]dashboardIconEntry, 0, len(priority)+len(fallback))
+	seen := make(map[string]struct{}, len(priority)+len(fallback))
+	for _, entry := range append(append([]dashboardIconEntry(nil), priority...), fallback...) {
+		value := normalizeGroupIconReference(entry.Value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		entry.Value = value
+		entry.Slug = strings.TrimSpace(entry.Slug)
+		if entry.Slug == "" {
+			_, entry.Slug = splitGroupIconReference(value)
+		}
+		seen[value] = struct{}{}
+		merged = append(merged, entry)
+	}
+	return merged
+}
+
+func (s *Server) loadRecycledIconEntries(ctx context.Context, tenantSlug string, appStore *store.Store) []dashboardIconEntry {
+	metadata, err := appStore.ListMonitorGroupMetadata(ctx)
+	if err != nil {
+		return s.loadUploadedIconEntries(tenantSlug, nil)
+	}
+
+	usedRefs := make(map[string][]string, len(metadata))
+	entries := make([]dashboardIconEntry, 0, len(metadata))
+	for _, item := range metadata {
+		ref := normalizeGroupIconReference(item.IconSlug)
+		if ref == "" {
+			continue
+		}
+		usedRefs[ref] = append(usedRefs[ref], strings.TrimSpace(item.Name))
+	}
+	for ref, groupNames := range usedRefs {
+		kind, value := splitGroupIconReference(ref)
+		label := formatDashboardIconLabel(value)
+		searchParts := []string{strings.ToLower(label), strings.ToLower(value)}
+		if kind == groupIconSourceUpload {
+			label = formatUploadedIconLabel(value)
+			searchParts = append(searchParts, strings.ToLower(strings.TrimSuffix(value, filepath.Ext(value))), "upload", "custom")
+		}
+		for _, groupName := range groupNames {
+			if trimmed := strings.ToLower(strings.TrimSpace(groupName)); trimmed != "" {
+				searchParts = append(searchParts, trimmed)
+			}
+		}
+		entries = append(entries, dashboardIconEntry{
+			Slug:       value,
+			Label:      label,
+			SearchText: strings.Join(searchParts, " "),
+			Value:      ref,
+			Source:     kind,
+			Preferred:  true,
+		})
+	}
+	return s.mergeIconEntries(entries, s.loadUploadedIconEntries(tenantSlug, usedRefs))
+}
+
+func (s *Server) loadUploadedIconEntries(tenantSlug string, usedRefs map[string][]string) []dashboardIconEntry {
+	dir := s.uploadedIconsDir(tenantSlug)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	results := make([]dashboardIconEntry, 0, len(entries))
+	for _, item := range entries {
+		if item.IsDir() {
+			continue
+		}
+		name := sanitizeUploadedIconName(item.Name())
+		if name == "" {
+			continue
+		}
+		ref := groupIconUploadPrefix + name
+		label := formatUploadedIconLabel(name)
+		searchParts := []string{strings.ToLower(label), strings.ToLower(strings.TrimSuffix(name, filepath.Ext(name))), "upload", "custom"}
+		preferred := false
+		if usedRefs != nil {
+			if groups := usedRefs[ref]; len(groups) > 0 {
+				preferred = true
+				for _, groupName := range groups {
+					if trimmed := strings.ToLower(strings.TrimSpace(groupName)); trimmed != "" {
+						searchParts = append(searchParts, trimmed)
+					}
+				}
+			}
+		}
+		results = append(results, dashboardIconEntry{
+			Slug:       strings.TrimSuffix(name, filepath.Ext(name)),
+			Label:      label,
+			SearchText: strings.Join(searchParts, " "),
+			Value:      ref,
+			Source:     groupIconSourceUpload,
+			Preferred:  preferred,
+		})
+	}
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Preferred != results[j].Preferred {
+			return results[i].Preferred
+		}
+		return results[i].Label < results[j].Label
+	})
+	return results
+}
+
+func (s *Server) loadDashboardIconAsset(ctx context.Context, tenantSlug string, slug string) ([]byte, string, error) {
+	slug = normalizeDashboardIconSlug(slug)
+	if slug == "" {
+		return nil, "", os.ErrNotExist
+	}
+
+	if payload, contentType, err := s.loadPersistedDashboardIcon(tenantSlug, slug); err == nil {
+		return payload, contentType, nil
+	}
+
+	s.iconAssetMu.RLock()
+	if asset, ok := s.iconAssets[slug]; ok && len(asset.Payload) > 0 {
+		payload := append([]byte(nil), asset.Payload...)
+		contentType := asset.ContentType
+		s.iconAssetMu.RUnlock()
+		return payload, contentType, nil
+	}
+	s.iconAssetMu.RUnlock()
+
+	s.iconAssetMu.Lock()
+	defer s.iconAssetMu.Unlock()
+	if asset, ok := s.iconAssets[slug]; ok && len(asset.Payload) > 0 {
+		return append([]byte(nil), asset.Payload...), asset.ContentType, nil
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, dashboardIconsBaseURL+"/svg/"+url.PathEscape(slug)+".svg", nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("build dashboard icon request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("fetch dashboard icon: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("dashboard icon returned %s", resp.Status)
+	}
+	payload, err := io.ReadAll(io.LimitReader(resp.Body, groupIconUploadMaxBytes))
+	if err != nil {
+		return nil, "", fmt.Errorf("read dashboard icon: %w", err)
+	}
+	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
+	if contentType == "" {
+		contentType = mime.TypeByExtension(".svg")
+	}
+	asset := dashboardIconAsset{Payload: payload, ContentType: contentType}
+	s.iconAssets[slug] = asset
+	return append([]byte(nil), payload...), contentType, nil
 }
 
 func buildDashboardIconSearchText(slug string, meta dashboardIconMetadata) string {

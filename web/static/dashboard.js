@@ -39,6 +39,7 @@
     const groupIconSearchStatus = document.getElementById('group-icon-search-status');
     const groupIconResults = document.getElementById('group-icon-results');
     const groupIconCustom = document.getElementById('group-icon-custom');
+    const groupIconUpload = document.getElementById('group-icon-upload');
     const groupIconSelection = document.getElementById('group-icon-selection');
     const groupIconPreview = document.getElementById('group-icon-preview');
     const groupIconPreviewFrame = document.getElementById('group-icon-preview-frame');
@@ -75,6 +76,7 @@
     const dashboardStateGroupsKey = `goup.dashboard.openGroups:${dashboardStateScope}`;
     let iconSearchTimer = null;
     let iconSearchRequest = null;
+    let groupIconUploadPreviewURL = null;
     let liveSnapshotInFlight = false;
 
     const bindOnce = (element, key, listener) => {
@@ -98,6 +100,28 @@
     };
 
     const normalizeIconSlug = (value) => value.trim().toLowerCase().replace(/\s+/g, '-');
+    const isUploadedIconRef = (value) => String(value || '').startsWith('upload:');
+    const buildIconUrl = (ref) => {
+      const normalizedRef = String(ref || '').trim();
+      if (!normalizedRef) {
+        return '';
+      }
+      return `${appBase}icons/render?ref=${encodeURIComponent(normalizedRef)}`;
+    };
+
+    const clearGroupIconUploadPreviewURL = () => {
+      if (groupIconUploadPreviewURL) {
+        URL.revokeObjectURL(groupIconUploadPreviewURL);
+        groupIconUploadPreviewURL = null;
+      }
+    };
+
+    const clearGroupIconUploadSelection = () => {
+      clearGroupIconUploadPreviewURL();
+      if (groupIconUpload) {
+        groupIconUpload.value = '';
+      }
+    };
 
     const currentOpenGroups = () => Array.from(document.querySelectorAll('.service-cluster[open]'))
       .map((element) => element.dataset.group || '')
@@ -331,20 +355,34 @@
       form.submit();
     };
 
-    const buildIconUrl = (slug) => {
-      if (!slug) {
-        return '';
-      }
-      return `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/${slug}.svg`;
-    };
-
     const updateGroupIconPreview = () => {
-      const slug = normalizeIconSlug(groupIconSlugField?.value || groupIconCustom?.value || '');
+      const uploadFile = groupIconUpload?.files?.[0] || null;
+      if (uploadFile) {
+        clearGroupIconUploadPreviewURL();
+        groupIconUploadPreviewURL = URL.createObjectURL(uploadFile);
+        if (groupIconPreviewFrame) {
+          groupIconPreviewFrame.hidden = false;
+        }
+        if (groupIconPreview) {
+          groupIconPreview.src = groupIconUploadPreviewURL;
+        }
+        if (groupIconSelection) {
+          groupIconSelection.textContent = `Ausgewählt: eigenes Upload-Icon (${uploadFile.name})`;
+        }
+        return;
+      }
+
+      const currentRef = String(groupIconSlugField?.value || '').trim();
+      const slug = isUploadedIconRef(currentRef)
+        ? currentRef
+        : normalizeIconSlug(currentRef || groupIconCustom?.value || '');
       if (groupIconSlugField) {
         groupIconSlugField.value = slug;
       }
       if (groupIconSelection) {
-        groupIconSelection.textContent = slug ? `Ausgewählt: ${slug}` : 'Kein Icon ausgewählt.';
+        groupIconSelection.textContent = slug
+          ? (isUploadedIconRef(slug) ? 'Ausgewählt: eigenes Upload-Icon' : `Ausgewählt: ${slug}`)
+          : 'Kein Icon ausgewählt.';
       }
       const iconUrl = buildIconUrl(slug);
       if (!iconUrl) {
@@ -374,12 +412,13 @@
         return;
       }
       const normalizedQuery = normalizeIconSlug(query || '');
+      const selectedValue = String(groupIconSlugField?.value || '').trim();
       groupIconResults.innerHTML = '';
 
       if (normalizedQuery) {
         const useCustomButton = document.createElement('button');
         useCustomButton.type = 'button';
-        useCustomButton.className = `group-icon-result${groupIconSlugField?.value === normalizedQuery ? ' is-selected' : ''}`;
+        useCustomButton.className = `group-icon-result${selectedValue === normalizedQuery ? ' is-selected' : ''}`;
         const customBody = document.createElement('div');
         customBody.className = 'group-icon-result-body';
         const customTitle = document.createElement('strong');
@@ -391,6 +430,7 @@
         customBody.appendChild(customSlug);
         useCustomButton.appendChild(customBody);
         useCustomButton.addEventListener('click', () => {
+          clearGroupIconUploadSelection();
           if (groupIconCustom) {
             groupIconCustom.value = normalizedQuery;
           }
@@ -406,32 +446,38 @@
       results.forEach((result) => {
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = `group-icon-result${groupIconSlugField?.value === result.slug ? ' is-selected' : ''}`;
+        button.className = `group-icon-result${selectedValue === result.value ? ' is-selected' : ''}`;
         const previewImage = document.createElement('img');
         previewImage.src = result.url;
         previewImage.alt = result.label;
         previewImage.loading = 'lazy';
-        previewImage.referrerPolicy = 'no-referrer';
         const body = document.createElement('div');
         body.className = 'group-icon-result-body';
         const titleNode = document.createElement('strong');
         titleNode.textContent = result.label;
         const slugNode = document.createElement('span');
         slugNode.className = 'muted compact';
-        slugNode.textContent = result.slug;
+        slugNode.textContent = result.source === 'upload' ? `Upload · ${result.slug}` : result.slug;
         body.appendChild(titleNode);
         body.appendChild(slugNode);
+        if (result.preferred) {
+          const badge = document.createElement('span');
+          badge.className = 'muted compact';
+          badge.textContent = 'Bereits vorhanden';
+          body.appendChild(badge);
+        }
         button.appendChild(previewImage);
         button.appendChild(body);
         previewImage.addEventListener('error', () => {
           previewImage.hidden = true;
         });
         button.addEventListener('click', () => {
+          clearGroupIconUploadSelection();
           if (groupIconCustom) {
-            groupIconCustom.value = result.slug;
+            groupIconCustom.value = result.source === 'upload' ? '' : result.slug;
           }
           if (groupIconSlugField) {
-            groupIconSlugField.value = result.slug;
+            groupIconSlugField.value = result.value;
           }
           updateGroupIconPreview();
           renderIconResults(results, query);
@@ -490,12 +536,13 @@
         return;
       }
       const groupName = button.dataset.group || 'Gruppe';
-      const iconSlug = normalizeIconSlug(button.dataset.iconSlug || '');
+      const iconValue = String(button.dataset.iconSlug || '').trim();
       groupModalTitle.textContent = `Gruppe konfigurieren · ${groupName}`;
       groupNameField.value = groupName;
-      groupIconCustom.value = iconSlug;
-      groupIconSearch.value = iconSlug || groupName;
-      groupIconSlugField.value = iconSlug;
+      clearGroupIconUploadSelection();
+      groupIconCustom.value = isUploadedIconRef(iconValue) ? '' : normalizeIconSlug(iconValue);
+      groupIconSearch.value = !isUploadedIconRef(iconValue) && iconValue ? normalizeIconSlug(iconValue) : groupName;
+      groupIconSlugField.value = iconValue;
       updateGroupIconPreview();
       scheduleIconSearch(groupIconSearch.value);
       groupDialog.showModal();
@@ -695,6 +742,7 @@
     cancelButton?.addEventListener('click', () => dialog?.close());
     groupCancelButton?.addEventListener('click', () => groupDialog?.close());
     groupResetButton?.addEventListener('click', () => {
+      clearGroupIconUploadSelection();
       if (groupIconCustom) {
         groupIconCustom.value = '';
       }
@@ -713,8 +761,20 @@
     verifyCertField?.addEventListener('change', applyKindRules);
     groupIconSearch?.addEventListener('input', () => scheduleIconSearch(groupIconSearch.value));
     groupIconCustom?.addEventListener('input', () => {
+      clearGroupIconUploadSelection();
       if (groupIconSlugField) {
         groupIconSlugField.value = normalizeIconSlug(groupIconCustom.value || '');
+      }
+      updateGroupIconPreview();
+    });
+    groupIconUpload?.addEventListener('change', () => {
+      if (groupIconUpload?.files?.length) {
+        if (groupIconCustom) {
+          groupIconCustom.value = '';
+        }
+        if (groupIconSlugField) {
+          groupIconSlugField.value = '';
+        }
       }
       updateGroupIconPreview();
     });

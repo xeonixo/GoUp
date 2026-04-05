@@ -137,7 +137,7 @@
 
 {{if .IsAdmin}}
 <dialog id="group-modal" class="monitor-modal group-modal">
-  <form method="post" action="{{$.AppBase}}groups/save" class="stack" id="group-form">
+  <form method="post" action="{{$.AppBase}}groups/save" class="stack" id="group-form" enctype="multipart/form-data">
     <input type="hidden" name="group" id="group-name-field">
     <input type="hidden" name="trend" value="{{.TrendValue}}">
     <input type="hidden" name="icon_slug" id="group-icon-slug">
@@ -145,7 +145,7 @@
     <div class="modal-header">
       <div>
         <h2 id="group-modal-title">Gruppe konfigurieren</h2>
-        <p class="muted compact">Wähle ein Icon aus Dashboard Icons oder hinterlege einen eigenen Slug.</p>
+        <p class="muted compact">Wähle ein wiederverwendetes Icon, suche in Dashboard Icons oder lade ein eigenes Icon hoch.</p>
       </div>
       <button class="button button-secondary button-small" type="button" id="group-cancel">Schließen</button>
     </div>
@@ -154,7 +154,7 @@
       <div class="group-icon-preview-frame" id="group-icon-preview-frame" hidden>
         <img id="group-icon-preview" alt="Gruppen-Icon Vorschau">
       </div>
-      <p class="muted compact">Quelle: Dashboard Icons via jsDelivr CDN</p>
+      <p class="muted compact">Quelle: lokal gecachte Dashboard Icons oder eigener Upload</p>
     </div>
 
     <label>
@@ -164,6 +164,12 @@
 
     <p class="muted compact" id="group-icon-search-status">Suche nach Namen, Aliasen oder Kategorien.</p>
     <div class="group-icon-results" id="group-icon-results" aria-live="polite"></div>
+
+    <label>
+      <span>Eigenes Icon hochladen</span>
+      <input type="file" id="group-icon-upload" name="icon_upload" accept=".svg,image/svg+xml,.png,image/png,.webp,image/webp,.jpg,.jpeg,image/jpeg,.ico,image/x-icon,image/vnd.microsoft.icon">
+    </label>
+    <p class="muted compact">Unterstützt SVG, PNG, WEBP, JPG und ICO. Bereits hochgeladene Dateien werden wiederverwendet.</p>
 
     <label>
       <span>Eigener Dashboardicons-Slug</span>

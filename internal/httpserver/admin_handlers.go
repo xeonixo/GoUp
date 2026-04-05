@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -35,6 +36,23 @@ func (s *Server) writeAudit(r *http.Request, action, targetType string, targetID
 	if err := s.controlStore.InsertAuditEvent(r.Context(), s.adminActor(r), action, targetType, targetID, details); err != nil {
 		s.logger.Warn("write audit event failed", "action", action, "target_type", targetType, "target_id", targetID, "error", err)
 	}
+}
+
+func (s *Server) ensureTenantStorage(slug string) error {
+	if err := os.MkdirAll(s.uploadedIconsDir(slug), 0o755); err != nil {
+		return fmt.Errorf("create tenant icon storage: %w", err)
+	}
+	if err := os.MkdirAll(s.persistedDashboardIconsDir(slug), 0o755); err != nil {
+		return fmt.Errorf("create tenant dashboard icon storage: %w", err)
+	}
+	return nil
+}
+
+func (s *Server) removeTenantStorage(slug string) error {
+	if err := os.RemoveAll(s.uploadedIconsDir(slug)); err != nil {
+		return fmt.Errorf("remove tenant icon storage: %w", err)
+	}
+	return nil
 }
 
 func (s *Server) handleAdminAccess(w http.ResponseWriter, r *http.Request) {
@@ -544,6 +562,14 @@ func (s *Server) handleAdminTenantSave(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/admin/tenants/new?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 			return
 		}
+		if err := s.ensureTenantStorage(tenant.Slug); err != nil {
+			s.logger.Error("prepare tenant storage failed", "tenant", tenant.Slug, "error", err)
+			if purgeErr := s.controlStore.PurgeTenant(r.Context(), tenant.ID); purgeErr != nil {
+				s.logger.Error("rollback tenant create failed", "tenant_id", tenant.ID, "error", purgeErr)
+			}
+			http.Redirect(w, r, "/admin/tenants/new?error="+url.QueryEscape("Tenant-Speicher konnte nicht vorbereitet werden"), http.StatusSeeOther)
+			return
+		}
 		s.writeAudit(r, "tenant.create", "tenant", tenant.ID, fmt.Sprintf("slug=%s name=%s", tenant.Slug, tenant.Name))
 		http.Redirect(w, r, "/admin/tenants/"+fmt.Sprintf("%d", tenant.ID)+"/edit?notice="+url.QueryEscape("Tenant erstellt"), http.StatusSeeOther)
 	} else {
@@ -563,6 +589,13 @@ func (s *Server) handleAdminTenantSave(w http.ResponseWriter, r *http.Request) {
 			s.logger.Error("update tenant failed", "error", err)
 			http.Redirect(w, r, "/admin/tenants/"+id+"/edit?error="+url.QueryEscape("Tenant konnte nicht gespeichert werden"), http.StatusSeeOther)
 			return
+		}
+		if active {
+			if err := s.ensureTenantStorage(tenant.Slug); err != nil {
+				s.logger.Error("prepare tenant storage failed", "tenant", tenant.Slug, "error", err)
+				http.Redirect(w, r, "/admin/tenants/"+id+"/edit?error="+url.QueryEscape("Tenant-Speicher konnte nicht vorbereitet werden"), http.StatusSeeOther)
+				return
+			}
 		}
 		s.writeAudit(r, "tenant.update", "tenant", tenantID, fmt.Sprintf("name=%s active=%t", name, active))
 		http.Redirect(w, r, "/admin/tenants?notice="+url.QueryEscape("Tenant aktualisiert"), http.StatusSeeOther)
@@ -619,6 +652,11 @@ func (s *Server) handleAdminTenantPurge(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "invalid tenant id", http.StatusBadRequest)
 		return
 	}
+	tenant, err := s.controlStore.GetTenantByID(r.Context(), tenantID)
+	if err != nil {
+		http.Error(w, "invalid tenant id", http.StatusBadRequest)
+		return
+	}
 	if tenantID == s.defaultTenant.ID {
 		http.Redirect(w, r, "/admin/tenants?error="+url.QueryEscape("Default-Tenant kann nicht restlos gelöscht werden"), http.StatusSeeOther)
 		return
@@ -627,6 +665,11 @@ func (s *Server) handleAdminTenantPurge(w http.ResponseWriter, r *http.Request) 
 	if err := s.controlStore.PurgeTenant(r.Context(), tenantID); err != nil {
 		s.logger.Error("purge tenant failed", "tenant_id", tenantID, "error", err)
 		http.Redirect(w, r, "/admin/tenants?error="+url.QueryEscape("Tenant konnte nicht restlos gelöscht werden"), http.StatusSeeOther)
+		return
+	}
+	if err := s.removeTenantStorage(tenant.Slug); err != nil {
+		s.logger.Error("purge tenant storage failed", "tenant", tenant.Slug, "error", err)
+		http.Redirect(w, r, "/admin/tenants?error="+url.QueryEscape("Tenant wurde gelöscht, aber Icon-Speicher konnte nicht entfernt werden"), http.StatusSeeOther)
 		return
 	}
 	s.writeAudit(r, "tenant.purge", "tenant", tenantID, "permanent delete requested")
