@@ -10,3 +10,4 @@ coverage.out
 *.db-wal
 .tmp*
 tmp_*
+.vscode/

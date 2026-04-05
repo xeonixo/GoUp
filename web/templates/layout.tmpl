@@ -49,7 +49,7 @@
           <span aria-hidden="true">⚙️</span>
           <span class="sr-only">Einstellungen</span>
         </a>
-        <a class="button button-secondary topbar-icon-link" href="/auth/logout" aria-label="Abmelden" title="Abmelden">
+        <a class="button button-secondary topbar-icon-link" href="{{if .AppBase}}{{.AppBase}}auth/logout{{else}}/auth/logout{{end}}" aria-label="Abmelden" title="Abmelden">
           <span aria-hidden="true">⎋</span>
           <span class="sr-only">Abmelden</span>
         </a>

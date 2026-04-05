@@ -743,6 +743,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 // /{slug}/X to /X.
 func (s *Server) buildAppMux() http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("/auth/logout", http.HandlerFunc(s.handleLogout))
 	mux.Handle("/", s.requireAuth(http.HandlerFunc(s.handleDashboard)))
 	mux.Handle("/live", s.requireAuth(http.HandlerFunc(s.handleDashboardLive)))
 	mux.Handle("/live/snapshot", s.requireAuth(http.HandlerFunc(s.handleDashboardLiveSnapshot)))
@@ -897,8 +898,14 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	session, _ := s.sessions.Get(r)
-	s.sessions.Clear(w)
+	session, _ := s.sessionForRequest(r)
+	if slug := strings.TrimSpace(tenantSlugFromRequest(r)); slug != "" {
+		s.sessions.ClearForTenant(w, slug)
+	} else if session != nil && strings.TrimSpace(session.TenantSlug) != "" {
+		s.sessions.ClearForTenant(w, session.TenantSlug)
+	} else {
+		s.sessions.Clear(w)
+	}
 	if session != nil && strings.TrimSpace(session.TenantSlug) != "" {
 		http.Redirect(w, r, "/"+session.TenantSlug+"/login", http.StatusSeeOther)
 		return
@@ -2420,7 +2427,18 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		if _, err := s.sessions.Get(r); err != nil {
+		session, err := s.sessionForRequest(r)
+		if err != nil {
+			slug := tenantSlugFromRequest(r)
+			if slug != "" {
+				http.Redirect(w, r, "/"+slug+"/login", http.StatusSeeOther)
+			} else {
+				http.Redirect(w, r, "/", http.StatusSeeOther)
+			}
+			return
+		}
+
+		if tenantID := tenantIDFromRequest(r); tenantID > 0 && session != nil && session.TenantID > 0 && session.TenantID != tenantID {
 			slug := tenantSlugFromRequest(r)
 			if slug != "" {
 				http.Redirect(w, r, "/"+slug+"/login", http.StatusSeeOther)
@@ -2435,8 +2453,17 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 
 func (s *Server) requireUserManagement(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		session, err := s.sessions.Get(r)
+		session, err := s.sessionForRequest(r)
 		if err != nil {
+			slug := tenantSlugFromRequest(r)
+			if slug != "" {
+				http.Redirect(w, r, "/"+slug+"/login", http.StatusSeeOther)
+			} else {
+				http.Redirect(w, r, "/", http.StatusSeeOther)
+			}
+			return
+		}
+		if tenantID := tenantIDFromRequest(r); tenantID > 0 && session.TenantID > 0 && session.TenantID != tenantID {
 			slug := tenantSlugFromRequest(r)
 			if slug != "" {
 				http.Redirect(w, r, "/"+slug+"/login", http.StatusSeeOther)
@@ -2457,10 +2484,21 @@ func (s *Server) requireUserManagement(next http.Handler) http.Handler {
 // When no session exists (auth-disabled tenant) the request is passed through.
 func (s *Server) requireAdminWhenAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		session, err := s.sessions.Get(r)
-		if err == nil && !strings.EqualFold(strings.TrimSpace(session.Role), "admin") {
-			http.Error(w, "forbidden: admin role required", http.StatusForbidden)
-			return
+		session, err := s.sessionForRequest(r)
+		if err == nil {
+			if tenantID := tenantIDFromRequest(r); tenantID > 0 && session.TenantID > 0 && session.TenantID != tenantID {
+				slug := tenantSlugFromRequest(r)
+				if slug != "" {
+					http.Redirect(w, r, "/"+slug+"/login", http.StatusSeeOther)
+				} else {
+					http.Redirect(w, r, "/", http.StatusSeeOther)
+				}
+				return
+			}
+			if !strings.EqualFold(strings.TrimSpace(session.Role), "admin") {
+				http.Error(w, "forbidden: admin role required", http.StatusForbidden)
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -2656,16 +2694,26 @@ func (s *Server) clearAdminAccessAttempts(key string) {
 }
 
 func (s *Server) currentUser(r *http.Request) *auth.UserSession {
-	session, err := s.sessions.Get(r)
+	session, err := s.sessionForRequest(r)
 	if err != nil {
 		return nil
 	}
 	return session
 }
 
+func (s *Server) sessionForRequest(r *http.Request) (*auth.UserSession, error) {
+	if slug := strings.TrimSpace(tenantSlugFromRequest(r)); slug != "" {
+		return s.sessions.GetForTenant(r, slug)
+	}
+	return s.sessions.Get(r)
+}
+
 func (s *Server) appStore(r *http.Request) (*store.Store, error) {
 	if s.tenantStores == nil {
 		return s.store, nil
+	}
+	if tenantID := tenantIDFromRequest(r); tenantID > 0 {
+		return s.tenantStores.StoreForTenant(r.Context(), tenantID)
 	}
 	currentUser := s.currentUser(r)
 	if currentUser == nil || currentUser.TenantID <= 0 {
@@ -4521,7 +4569,7 @@ func (s *Server) handleTenantEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if session, err := s.sessions.Get(r); err == nil && session != nil && session.TenantID == tenant.ID {
+	if session, err := s.sessionForRequest(r); err == nil && session != nil && session.TenantID == tenant.ID {
 		http.Redirect(w, r, "/"+tenantSlug+"/", http.StatusSeeOther)
 		return
 	}

@@ -1166,7 +1166,7 @@ func (s *Server) handleSettingsProfileSave(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if session, err := s.sessions.Get(r); err == nil {
+	if session, err := s.sessionForRequest(r); err == nil {
 		session.Email = email
 		session.Name = displayName
 		_ = s.sessions.Set(w, *session)
@@ -1275,7 +1275,7 @@ func (s *Server) handleSettingsUserRoleSave(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if userID == user.UserID {
-		if session, err := s.sessions.Get(r); err == nil {
+		if session, err := s.sessionForRequest(r); err == nil {
 			session.Role = strings.ToLower(strings.TrimSpace(role))
 			_ = s.sessions.Set(w, *session)
 		}
@@ -1428,7 +1428,7 @@ func (s *Server) handleSettingsLocalUserSave(w http.ResponseWriter, r *http.Requ
 	}
 
 	if userID == user.UserID {
-		if session, err := s.sessions.Get(r); err == nil {
+		if session, err := s.sessionForRequest(r); err == nil {
 			session.Role = role
 			_ = s.sessions.Set(w, *session)
 		}

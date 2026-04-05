@@ -36,12 +36,83 @@ func NewSessionManager(key []byte, secure bool) *SessionManager {
 }
 
 func (m *SessionManager) Get(r *http.Request) (*UserSession, error) {
-	cookie, err := r.Cookie(sessionCookieName)
+	return m.GetForTenant(r, "")
+}
+
+func (m *SessionManager) GetForTenant(r *http.Request, tenantSlug string) (*UserSession, error) {
+	tenantSlug = strings.ToLower(strings.TrimSpace(tenantSlug))
+	var lastErr error
+	for _, cookie := range r.Cookies() {
+		if cookie == nil || cookie.Name != sessionCookieName {
+			continue
+		}
+		session, err := m.parseCookieValue(cookie.Value)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if tenantSlug != "" {
+			if strings.ToLower(strings.TrimSpace(session.TenantSlug)) != tenantSlug {
+				continue
+			}
+		}
+		return session, nil
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, http.ErrNoCookie
+}
+
+func (m *SessionManager) Set(w http.ResponseWriter, session UserSession) error {
+	payload, err := json.Marshal(session)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	parts := strings.Split(cookie.Value, ".")
+	path := "/"
+	if slug := strings.Trim(strings.TrimSpace(session.TenantSlug), "/"); slug != "" {
+		path = "/" + slug
+	}
+
+	value := base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(m.sign(payload))
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    value,
+		Path:     path,
+		HttpOnly: true,
+		Secure:   m.secure,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  session.ExpiresAt,
+		MaxAge:   int(time.Until(session.ExpiresAt).Seconds()),
+	})
+
+	return nil
+}
+
+func (m *SessionManager) Clear(w http.ResponseWriter) {
+	m.ClearForTenant(w, "")
+}
+
+func (m *SessionManager) ClearForTenant(w http.ResponseWriter, tenantSlug string) {
+	path := "/"
+	if slug := strings.Trim(strings.TrimSpace(tenantSlug), "/"); slug != "" {
+		path = "/" + slug
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    "",
+		Path:     path,
+		HttpOnly: true,
+		Secure:   m.secure,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+	})
+}
+
+func (m *SessionManager) parseCookieValue(value string) (*UserSession, error) {
+	parts := strings.Split(value, ".")
 	if len(parts) != 2 {
 		return nil, errors.New("invalid session cookie format")
 	}
@@ -69,40 +140,6 @@ func (m *SessionManager) Get(r *http.Request) (*UserSession, error) {
 	}
 
 	return &session, nil
-}
-
-func (m *SessionManager) Set(w http.ResponseWriter, session UserSession) error {
-	payload, err := json.Marshal(session)
-	if err != nil {
-		return err
-	}
-
-	value := base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(m.sign(payload))
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    value,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   m.secure,
-		SameSite: http.SameSiteLaxMode,
-		Expires:  session.ExpiresAt,
-		MaxAge:   int(time.Until(session.ExpiresAt).Seconds()),
-	})
-
-	return nil
-}
-
-func (m *SessionManager) Clear(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   m.secure,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   -1,
-		Expires:  time.Unix(0, 0),
-	})
 }
 
 func (m *SessionManager) sign(payload []byte) []byte {
