@@ -9,11 +9,11 @@ func TestNormalizeICMPTarget(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{name: "hostname rejected", input: "example.com", wantErr: true},
+		{name: "hostname", input: "example.com", want: "example.com"},
 		{name: "ipv4", input: "1.1.1.1", want: "1.1.1.1"},
-		{name: "invalid ipv4 literal", input: "999.999.999.999", wantErr: true},
-		{name: "url rejected", input: "https://example.com/health", wantErr: true},
-		{name: "host port rejected", input: "example.com:443", wantErr: true},
+		{name: "invalid ipv4 literal treated as hostname", input: "999.999.999.999", want: "999.999.999.999"},
+		{name: "url host extracted", input: "https://example.com/health", want: "example.com"},
+		{name: "host port normalized", input: "example.com:443", want: "example.com"},
 		{name: "bracket ipv6", input: "[2001:db8::1]", want: "2001:db8::1"},
 		{name: "empty", input: "  ", wantErr: true},
 	}

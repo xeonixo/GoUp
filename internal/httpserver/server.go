@@ -25,6 +25,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -303,6 +304,11 @@ var supportedTrendRanges = []trendRange{
 	{Value: "30d", Label: "30d", BucketSize: 24 * time.Hour, Buckets: 30, Step: "day"},
 	{Value: "12m", Label: "12M", BucketSize: 24 * time.Hour, Buckets: 12, Step: "month"},
 }
+
+var (
+	tenantIconDirKeyPattern      = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+	dashboardIconFileSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,127}$`)
+)
 
 const (
 	dashboardIconsBaseURL     = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons"
@@ -2682,7 +2688,7 @@ func (s *Server) tenantSlugForRequest(r *http.Request) string {
 }
 
 func (s *Server) uploadedIconsDir(tenantSlug string) string {
-	tenantSlug = normalizeDashboardIconSlug(tenantSlug)
+	tenantSlug = normalizeTenantIconDirKey(tenantSlug)
 	if tenantSlug == "" {
 		tenantSlug = "default"
 	}
@@ -2739,7 +2745,11 @@ func (s *Server) storeUploadedGroupIcon(r *http.Request, groupName string) (stri
 	}
 
 	fileName := hash + "-" + baseName + ext
-	if err := os.WriteFile(filepath.Join(dir, fileName), payload, 0o644); err != nil {
+	iconPath, err := safePathWithinDir(dir, fileName)
+	if err != nil {
+		return "", fmt.Errorf("Icon-Upload konnte nicht gespeichert werden")
+	}
+	if err := os.WriteFile(iconPath, payload, 0o644); err != nil {
 		return "", fmt.Errorf("Icon-Upload konnte nicht gespeichert werden")
 	}
 	return groupIconUploadPrefix + fileName, nil
@@ -2750,7 +2760,11 @@ func (s *Server) loadUploadedIcon(r *http.Request, fileName string) ([]byte, str
 	if fileName == "" {
 		return nil, "", os.ErrNotExist
 	}
-	payload, err := os.ReadFile(filepath.Join(s.uploadedIconsDir(s.tenantSlugForRequest(r)), fileName))
+	iconPath, err := safePathWithinDir(s.uploadedIconsDir(s.tenantSlugForRequest(r)), fileName)
+	if err != nil {
+		return nil, "", os.ErrNotExist
+	}
+	payload, err := os.ReadFile(iconPath)
 	if err != nil {
 		return nil, "", err
 	}
@@ -2763,6 +2777,7 @@ func (s *Server) loadUploadedIcon(r *http.Request, fileName string) ([]byte, str
 
 func (s *Server) persistSelectedDashboardIcon(ctx context.Context, tenantSlug string, ref string) error {
 	kind, slug := splitGroupIconReference(ref)
+	slug = sanitizeDashboardIconFileSlug(slug)
 	if kind != groupIconSourceDashboard || slug == "" {
 		return nil
 	}
@@ -2781,14 +2796,18 @@ func (s *Server) persistSelectedDashboardIcon(ctx context.Context, tenantSlug st
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("Dashboard-Icon-Verzeichnis konnte nicht vorbereitet werden")
 	}
-	if err := os.WriteFile(filepath.Join(dir, slug+".svg"), payload, 0o644); err != nil {
+	iconPath, err := safePathWithinDir(dir, slug+".svg")
+	if err != nil {
+		return fmt.Errorf("Dashboard-Icon konnte nicht lokal gespeichert werden")
+	}
+	if err := os.WriteFile(iconPath, payload, 0o644); err != nil {
 		return fmt.Errorf("Dashboard-Icon konnte nicht lokal gespeichert werden")
 	}
 	return nil
 }
 
 func (s *Server) dashboardIconExists(ctx context.Context, slug string) (bool, error) {
-	slug = normalizeDashboardIconSlug(slug)
+	slug = sanitizeDashboardIconFileSlug(slug)
 	if slug == "" {
 		return false, nil
 	}
@@ -2805,11 +2824,15 @@ func (s *Server) dashboardIconExists(ctx context.Context, slug string) (bool, er
 }
 
 func (s *Server) loadPersistedDashboardIcon(tenantSlug string, slug string) ([]byte, string, error) {
-	slug = normalizeDashboardIconSlug(slug)
+	slug = sanitizeDashboardIconFileSlug(slug)
 	if slug == "" {
 		return nil, "", os.ErrNotExist
 	}
-	payload, err := os.ReadFile(filepath.Join(s.persistedDashboardIconsDir(tenantSlug), slug+".svg"))
+	iconPath, err := safePathWithinDir(s.persistedDashboardIconsDir(tenantSlug), slug+".svg")
+	if err != nil {
+		return nil, "", os.ErrNotExist
+	}
+	payload, err := os.ReadFile(iconPath)
 	if err != nil {
 		return nil, "", err
 	}
@@ -2822,10 +2845,60 @@ func (s *Server) loadPersistedDashboardIcon(tenantSlug string, slug string) ([]b
 
 func sanitizeUploadedIconName(name string) string {
 	name = filepath.Base(strings.TrimSpace(name))
-	if name == "." || name == "" || strings.Contains(name, string(filepath.Separator)) {
+	if name == "." || name == ".." || name == "" || strings.Contains(name, "..") || strings.ContainsAny(name, `/\\`) {
 		return ""
 	}
 	return name
+}
+
+func sanitizeDashboardIconFileSlug(slug string) string {
+	slug = normalizeDashboardIconSlug(slug)
+	if slug == "" || strings.Contains(slug, "..") || strings.ContainsAny(slug, `/\\`) {
+		return ""
+	}
+	if !dashboardIconFileSlugPattern.MatchString(slug) {
+		return ""
+	}
+	return slug
+}
+
+func normalizeTenantIconDirKey(slug string) string {
+	slug = strings.ToLower(strings.TrimSpace(slug))
+	if slug == "" {
+		return ""
+	}
+	if !tenantIconDirKeyPattern.MatchString(slug) {
+		return ""
+	}
+	return slug
+}
+
+func safePathWithinDir(baseDir string, name string) (string, error) {
+	baseDir = strings.TrimSpace(baseDir)
+	name = strings.TrimSpace(name)
+	if baseDir == "" || name == "" {
+		return "", fmt.Errorf("invalid path")
+	}
+	if filepath.IsAbs(name) {
+		return "", fmt.Errorf("invalid path")
+	}
+	cleanName := filepath.Clean(name)
+	if cleanName == "." || cleanName == ".." || strings.HasPrefix(cleanName, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("invalid path")
+	}
+	absBaseDir, err := filepath.Abs(baseDir)
+	if err != nil {
+		return "", err
+	}
+	fullPath := filepath.Join(absBaseDir, cleanName)
+	rel, err := filepath.Rel(absBaseDir, fullPath)
+	if err != nil {
+		return "", err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("invalid path")
+	}
+	return fullPath, nil
 }
 
 func sanitizeUploadedIconBaseName(name string) string {

@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -19,13 +20,16 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/pbkdf2"
 )
 
 var tenantSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)
 
 type ControlPlaneStore struct {
-	db        *sql.DB
-	secretKey []byte
+	db              *sql.DB
+	secretKey       []byte
+	legacySecretKey []byte
 }
 
 type Tenant struct {
@@ -169,8 +173,10 @@ func (s *ControlPlaneStore) ConfigureSecretKey(key string) error {
 	if key == "" {
 		return fmt.Errorf("secret key must not be empty")
 	}
-	derived := sha256.Sum256([]byte(key))
-	s.secretKey = derived[:]
+	legacy := sha256.Sum256([]byte(key))
+	derived := pbkdf2.Key([]byte(key), []byte("goup/control-plane/secret-key/v2"), 120000, 32, sha256.New)
+	s.secretKey = derived
+	s.legacySecretKey = legacy[:]
 	return nil
 }
 
@@ -1463,7 +1469,7 @@ WHERE tenant_id = ? AND provider_key = ?
 		return "", err
 	}
 
-	plaintext, err := decryptProviderSecret(s.secretKey, ciphertext)
+	plaintext, err := s.decryptSecret(ciphertext)
 	if err != nil {
 		return "", fmt.Errorf("decrypt auth provider secret: %w", err)
 	}
@@ -1513,6 +1519,24 @@ func decryptProviderSecret(key []byte, ciphertext string) (string, error) {
 		return "", err
 	}
 	return string(plaintext), nil
+}
+
+func (s *ControlPlaneStore) decryptSecret(ciphertext string) (string, error) {
+	if len(s.secretKey) == 0 {
+		return "", fmt.Errorf("secret key is not configured")
+	}
+	plaintext, err := decryptProviderSecret(s.secretKey, ciphertext)
+	if err == nil {
+		return plaintext, nil
+	}
+	if len(s.legacySecretKey) == 0 || bytes.Equal(s.legacySecretKey, s.secretKey) {
+		return "", err
+	}
+	legacyPlaintext, legacyErr := decryptProviderSecret(s.legacySecretKey, ciphertext)
+	if legacyErr == nil {
+		return legacyPlaintext, nil
+	}
+	return "", err
 }
 
 func (s *ControlPlaneStore) GetGlobalSMTPSettings(ctx context.Context) (GlobalSMTPSettings, error) {
@@ -1620,7 +1644,7 @@ WHERE id = 1
 		return GlobalSMTPDeliveryConfig{}, fmt.Errorf("secret key is not configured")
 	}
 
-	password, err := decryptProviderSecret(s.secretKey, passwordCiphertext)
+	password, err := s.decryptSecret(passwordCiphertext)
 	if err != nil {
 		return GlobalSMTPDeliveryConfig{}, fmt.Errorf("decrypt smtp password: %w", err)
 	}
@@ -1920,7 +1944,7 @@ LIMIT 1
 		settings.MatrixRoomID = strings.TrimSpace(parsed.RoomID)
 	}
 	if strings.TrimSpace(secretCiphertext) != "" && len(s.secretKey) > 0 {
-		if token, err := decryptProviderSecret(s.secretKey, secretCiphertext); err == nil {
+		if token, err := s.decryptSecret(secretCiphertext); err == nil {
 			settings.MatrixAccessToken = token
 		}
 	}
@@ -2069,7 +2093,7 @@ ORDER BY unc.user_id ASC
 		if strings.TrimSpace(secretCiphertext) == "" || len(s.secretKey) == 0 {
 			continue
 		}
-		token, err := decryptProviderSecret(s.secretKey, secretCiphertext)
+		token, err := s.decryptSecret(secretCiphertext)
 		if err != nil {
 			continue
 		}
@@ -2224,7 +2248,7 @@ func (s *ControlPlaneStore) GetControlPlaneAdmin(ctx context.Context) (ControlPl
 	}
 	a.TOTPEnabled = totpEnabled == 1
 	if totpCiphertext != "" {
-		decrypted, err := decryptProviderSecret(s.secretKey, totpCiphertext)
+		decrypted, err := s.decryptSecret(totpCiphertext)
 		if err != nil {
 			// Graceful recovery path for unrecoverable key mismatch: keep
 			// username/password login possible and require TOTP re-setup.

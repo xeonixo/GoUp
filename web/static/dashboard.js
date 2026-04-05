@@ -1433,6 +1433,54 @@
       return wrapper.firstElementChild;
     };
 
+    const applySafeGroupOptionsHTML = (target, html) => {
+      if (!(target instanceof Element) || typeof html !== 'string') {
+        return false;
+      }
+      const parser = new DOMParser();
+      const parsed = parser.parseFromString(`<select>${html}</select>`, 'text/html');
+      const select = parsed.querySelector('select');
+      if (!(select instanceof HTMLSelectElement)) {
+        return false;
+      }
+
+      const fragment = document.createDocumentFragment();
+      Array.from(select.children).forEach((node) => {
+        if (node instanceof HTMLOptGroupElement) {
+          const nextGroup = document.createElement('optgroup');
+          nextGroup.label = node.label || '';
+          if (node.disabled) {
+            nextGroup.disabled = true;
+          }
+          Array.from(node.children).forEach((child) => {
+            if (!(child instanceof HTMLOptionElement)) {
+              return;
+            }
+            const option = document.createElement('option');
+            option.value = child.value || '';
+            option.textContent = child.textContent || '';
+            option.disabled = child.disabled;
+            option.selected = child.selected;
+            nextGroup.appendChild(option);
+          });
+          fragment.appendChild(nextGroup);
+          return;
+        }
+
+        if (node instanceof HTMLOptionElement) {
+          const option = document.createElement('option');
+          option.value = node.value || '';
+          option.textContent = node.textContent || '';
+          option.disabled = node.disabled;
+          option.selected = node.selected;
+          fragment.appendChild(option);
+        }
+      });
+
+      target.replaceChildren(fragment);
+      return true;
+    };
+
     const patchMonitorGrid = (currentGrid, nextGrid) => {
       if (!(currentGrid instanceof Element) || !(nextGrid instanceof Element)) {
         return false;
@@ -1808,8 +1856,9 @@
 
       const groupOptions = document.getElementById('monitor-group-options');
       if (groupOptions && typeof payload.group_options_html === 'string' && typeof payload.group_options_hash === 'string' && payload.group_options_hash !== liveSnapshotHashes.groupOptions) {
-        groupOptions.innerHTML = payload.group_options_html;
-        liveSnapshotHashes.groupOptions = payload.group_options_hash;
+        if (applySafeGroupOptionsHTML(groupOptions, payload.group_options_html)) {
+          liveSnapshotHashes.groupOptions = payload.group_options_hash;
+        }
       }
 
       const changed = updates.some(Boolean);

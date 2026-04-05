@@ -247,6 +247,8 @@ func (m *DynamicOIDCManager) ClearEphemeralCookies(w http.ResponseWriter) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
 	})
 	http.SetCookie(w, &http.Cookie{
 		Name:     oidcNonceCookieName,
@@ -254,6 +256,8 @@ func (m *DynamicOIDCManager) ClearEphemeralCookies(w http.ResponseWriter) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 
