@@ -42,10 +42,13 @@ Aktuell ist TLS Pflicht, mTLS ist als optionaler nächster Schritt vorgesehen.
 
 Beispiel-Variablen:
 
+- `GOUP_MODE=remote-node`
 - `REMOTE_NODE_CONTROL_PLANE_URL=https://example.com`
 - `REMOTE_NODE_ID=rn_xxx`
 - `REMOTE_NODE_BOOTSTRAP_KEY=...`
 - `REMOTE_NODE_POLL_SECONDS=20`
+
+Wichtig: Das Container-Image enthält **Server und Agent**. Standardmäßig startet es den normalen GoUp-Server. Für eine Remote-Node muss daher `GOUP_MODE=remote-node` gesetzt sein.
 
 ## Monitor-Zuweisung
 
