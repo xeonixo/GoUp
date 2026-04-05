@@ -93,11 +93,99 @@
       {{end}}
     </datalist>
 
-    <label>
+    <label id="monitor-target-row">
       <span>Ziel</span>
       <input type="text" name="target" id="monitor-target" placeholder="example.com/health" required>
       <small class="muted compact" id="monitor-target-hint">Für HTTP(S): Host/Pfad ohne Protokoll (wird automatisch ergänzt).</small>
       <small class="muted compact" id="monitor-target-warn" hidden>Hinweis für .de: DENIC stellt im WHOIS auf Port 43 kein Ablaufdatum bereit. Es wird nur der Registrierungsstatus geprüft.</small>
+    </label>
+
+    <label id="https-target-row" hidden>
+      <span>HTTP(S) Ziel</span>
+      <div class="inline-grid">
+        <label>
+          <span>IP / Hostname</span>
+          <input type="text" id="monitor-http-host" name="http_host" placeholder="example.com oder 2001:db8::1" autocomplete="off" spellcheck="false">
+        </label>
+        <label>
+          <span>Port (optional)</span>
+          <input type="number" id="monitor-http-port" name="http_port" min="1" max="65535" placeholder="443" inputmode="numeric">
+        </label>
+      </div>
+      <label>
+        <span>Pfad / Query (optional)</span>
+        <input type="text" id="monitor-http-path" name="http_path" placeholder="/health">
+      </label>
+      <small class="muted compact">Wenn kein Port gesetzt ist: HTTPS nutzt 443, HTTP nutzt 80.</small>
+    </label>
+
+    <label id="https-family-row" hidden>
+      <span>IP-Familie (nur bei Hostname)</span>
+      <select id="monitor-https-family" name="https_family">
+        <option value="ipv4">IPv4</option>
+        <option value="ipv6">IPv6</option>
+        <option value="dual" selected>Dual Stack (IPv4 + IPv6)</option>
+      </select>
+      <small class="muted compact">Wird nur bei HTTP(S) und Hostnamen verwendet. Bei direkter IP-Adresse nicht nötig.</small>
+    </label>
+
+    <label id="tcp-target-row" hidden>
+      <span>TCP Ziel</span>
+      <div class="inline-grid">
+        <label>
+          <span>IP / Hostname</span>
+          <input type="text" id="monitor-tcp-host" name="tcp_host" placeholder="example.com oder 2001:db8::1" autocomplete="off" spellcheck="false">
+        </label>
+        <label>
+          <span>Port</span>
+          <input type="number" id="monitor-tcp-port" name="tcp_port" min="1" max="65535" placeholder="443" inputmode="numeric">
+        </label>
+      </div>
+      <small class="muted compact">Für TCP: IP/Hostname und Port getrennt angeben. IPv6 kann ohne Klammern eingegeben werden.</small>
+    </label>
+
+    <label id="tcp-family-row" hidden>
+      <span>IP-Familie (nur bei Hostname)</span>
+      <select id="monitor-tcp-family" name="tcp_family">
+        <option value="ipv4">IPv4</option>
+        <option value="ipv6">IPv6</option>
+        <option value="dual" selected>Dual Stack (IPv4 + IPv6)</option>
+      </select>
+      <small class="muted compact">Wird nur bei TCP und Hostnamen verwendet. Bei direkter IP-Adresse nicht nötig.</small>
+    </label>
+
+    <label id="udp-check-row" hidden>
+      <span>UDP-Check</span>
+      <select id="monitor-udp-check" name="udp_check">
+        <option value="dns">DNS Erreichbarkeit</option>
+        <option value="ntp">NTP Check</option>
+      </select>
+      <small class="muted compact">Wählt den Probe-Typ für UDP aus.</small>
+    </label>
+
+    <label id="udp-target-row" hidden>
+      <span>UDP Ziel</span>
+      <div class="inline-grid">
+        <label>
+          <span>IP / Hostname</span>
+          <input type="text" id="monitor-udp-host" name="udp_host" placeholder="resolver.example.com oder 2001:db8::1" autocomplete="off" spellcheck="false">
+        </label>
+        <label>
+          <span>Port</span>
+          <input type="number" id="monitor-udp-port" name="udp_port" min="1" max="65535" placeholder="53" inputmode="numeric">
+        </label>
+      </div>
+      <small class="muted compact">IPv6 kann ohne Klammern eingegeben werden. Standard-Port je Probe: DNS 53, NTP 123.</small>
+    </label>
+
+    <label id="udp-family-row" hidden>
+      <span>IP-Familie (nur bei Hostname)</span>
+      <select id="monitor-udp-family" name="udp_family">
+        <option value="ipv4">IPv4</option>
+        <option value="ipv6">IPv6</option>
+        <option value="dual" selected>Dual Stack (IPv4 + IPv6)</option>
+      </select>
+      <small class="muted compact">Wird nur bei UDP und Hostnamen verwendet. Bei direkter IP-Adresse nicht nötig.</small>
     </label>
 
     <label id="icmp-family-row" hidden>
@@ -127,9 +215,9 @@
     </label>
 
     <label id="expected-text-row" hidden>
-      <span>Erwartete Keywords (optional)</span>
+      <span id="monitor-expected-text-label">Erwartete Keywords (optional)</span>
       <input type="text" name="expected_text" id="monitor-expected-text" placeholder="z. B. healthy, ok">
-      <small class="muted compact">Mehrere Keywords mit Komma trennen. Alle Keywords müssen im Body vorkommen.</small>
+      <small class="muted compact" id="monitor-expected-text-hint">Mehrere Keywords mit Komma trennen. Alle Keywords müssen im Body vorkommen.</small>
     </label>
 
     <label class="checkbox-row">

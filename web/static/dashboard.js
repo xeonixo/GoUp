@@ -56,16 +56,38 @@
     const nameField = document.getElementById('monitor-name');
     const kindField = document.getElementById('monitor-kind');
     const groupField = document.getElementById('monitor-group');
+    const monitorForm = document.getElementById('monitor-form');
     const tlsModeField = document.getElementById('monitor-tls-mode');
+    const targetRow = document.getElementById('monitor-target-row');
     const targetField = document.getElementById('monitor-target');
     const targetHintField = document.getElementById('monitor-target-hint');
     const targetWarnField = document.getElementById('monitor-target-warn');
+    const httpsTargetRow = document.getElementById('https-target-row');
+    const httpHostField = document.getElementById('monitor-http-host');
+    const httpPortField = document.getElementById('monitor-http-port');
+    const httpPathField = document.getElementById('monitor-http-path');
+    const httpsFamilyRow = document.getElementById('https-family-row');
+    const httpsFamilyField = document.getElementById('monitor-https-family');
+    const tcpTargetRow = document.getElementById('tcp-target-row');
+    const tcpHostField = document.getElementById('monitor-tcp-host');
+    const tcpPortField = document.getElementById('monitor-tcp-port');
+    const tcpFamilyRow = document.getElementById('tcp-family-row');
+    const tcpFamilyField = document.getElementById('monitor-tcp-family');
+    const udpCheckRow = document.getElementById('udp-check-row');
+    const udpCheckField = document.getElementById('monitor-udp-check');
+    const udpTargetRow = document.getElementById('udp-target-row');
+    const udpHostField = document.getElementById('monitor-udp-host');
+    const udpPortField = document.getElementById('monitor-udp-port');
+    const udpFamilyRow = document.getElementById('udp-family-row');
+    const udpFamilyField = document.getElementById('monitor-udp-family');
     const icmpFamilyRow = document.getElementById('icmp-family-row');
     const icmpFamilyField = document.getElementById('monitor-icmp-family');
     const intervalField = document.getElementById('monitor-interval');
     const timeoutField = document.getElementById('monitor-timeout');
     const expectedStatusField = document.getElementById('monitor-expected-status');
     const expectedTextField = document.getElementById('monitor-expected-text');
+    const expectedTextLabelField = document.getElementById('monitor-expected-text-label');
+    const expectedTextHintField = document.getElementById('monitor-expected-text-hint');
     const useHTTPSField = document.getElementById('monitor-use-https');
     const useHTTPSLabelField = document.getElementById('monitor-use-https-label');
     const verifyCertField = document.getElementById('monitor-verify-cert');
@@ -614,27 +636,119 @@
       groupDialog.showModal();
     };
 
+    const isLiteralIP = (value) => {
+      const text = String(value || '').trim();
+      if (!text) {
+        return false;
+      }
+      const ipv4Pattern = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+      if (ipv4Pattern.test(text)) {
+        return true;
+      }
+      if (text.includes(':')) {
+        const compact = text.replace(/^\[/, '').replace(/\]$/, '');
+        const ipv6Pattern = /^[0-9a-fA-F:]+$/;
+        return ipv6Pattern.test(compact);
+      }
+      return false;
+    };
+
+    const parseHostPort = (value) => {
+      const text = String(value || '').trim();
+      if (!text) {
+        return { host: '', port: '' };
+      }
+      if (text.startsWith('[')) {
+        const closeIndex = text.indexOf(']');
+        if (closeIndex > 0) {
+          const host = text.slice(1, closeIndex).trim();
+          const rest = text.slice(closeIndex + 1);
+          if (rest.startsWith(':')) {
+            return { host, port: rest.slice(1).trim() };
+          }
+        }
+      }
+      const firstColon = text.indexOf(':');
+      const lastColon = text.lastIndexOf(':');
+      if (firstColon > 0 && firstColon === lastColon) {
+        return { host: text.slice(0, firstColon).trim(), port: text.slice(firstColon + 1).trim() };
+      }
+      return { host: text, port: '' };
+    };
+
+    const formatHostPort = (hostValue, portValue) => {
+      const host = String(hostValue || '').trim().replace(/^\[/, '').replace(/\]$/, '');
+      const port = String(portValue || '').trim();
+      if (!host || !port) {
+        return '';
+      }
+      const normalizedHost = host.includes(':') ? `[${host}]` : host;
+      return `${normalizedHost}:${port}`;
+    };
+
+    const parseHTTPURLTarget = (value) => {
+      const raw = String(value || '').trim();
+      if (!raw) {
+        return { host: '', port: '', path: '' };
+      }
+      try {
+        const parsed = new URL(raw);
+        return {
+          host: String(parsed.hostname || '').trim(),
+          port: String(parsed.port || '').trim(),
+          path: `${parsed.pathname || ''}${parsed.search || ''}`
+        };
+      } catch (_) {
+        return { host: '', port: '', path: '' };
+      }
+    };
+
+    const formatHTTPHostPort = (hostValue, portValue) => {
+      const host = String(hostValue || '').trim().replace(/^\[/, '').replace(/\]$/, '');
+      const port = String(portValue || '').trim();
+      if (!host) {
+        return '';
+      }
+      if (!port) {
+        return host;
+      }
+      return host.includes(':') ? `[${host}]:${port}` : `${host}:${port}`;
+    };
+
+    const composeHTTPSMonitorTarget = (useHTTPS) => {
+      const hostPort = formatHTTPHostPort(httpHostField?.value, httpPortField?.value);
+      if (!hostPort) {
+        return '';
+      }
+      let path = String(httpPathField?.value || '').trim();
+      if (path && !path.startsWith('/') && !path.startsWith('?')) {
+        path = `/${path}`;
+      }
+      const scheme = useHTTPS ? 'https://' : 'http://';
+      return `${scheme}${hostPort}${path}`;
+    };
+
+    const normalizeUDPCheck = (value) => {
+      const raw = String(value || '').trim().toLowerCase();
+      if (raw === 'dns' || raw === 'ntp') {
+        return raw;
+      }
+      return 'dns';
+    };
+
+    const defaultUDPPortForCheck = (check) => {
+      switch (normalizeUDPCheck(check)) {
+        case 'ntp':
+          return '123';
+        default:
+          return '53';
+      }
+    };
+
     const applyKindRules = () => {
       if (!kindField || !tlsModeRow || !httpsModeRow || !httpsVerifyRow || !expectedStatusRow || !expectedTextRow || !tlsModeField || !expectedStatusField || !expectedTextField || !useHTTPSField || !verifyCertField) {
         return;
       }
-
-      const isLiteralIP = (value) => {
-        const text = String(value || '').trim();
-        if (!text) {
-          return false;
-        }
-        const ipv4Pattern = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
-        if (ipv4Pattern.test(text)) {
-          return true;
-        }
-        if (text.includes(':')) {
-          const compact = text.replace(/^\[/, '').replace(/\]$/, '');
-          const ipv6Pattern = /^[0-9a-fA-F:]+$/;
-          return ipv6Pattern.test(compact);
-        }
-        return false;
-      };
 
       const syncICMPFamilyMode = () => {
         if (!icmpFamilyRow || !icmpFamilyField) {
@@ -665,6 +779,71 @@
         }
       };
 
+      const syncTCPFamilyMode = () => {
+        if (!tcpFamilyRow || !tcpFamilyField) {
+          return;
+        }
+        const isTCPMonitor = kindField.value === 'tcp';
+        if (!isTCPMonitor) {
+          tcpFamilyRow.hidden = true;
+          return;
+        }
+
+        const tcpHost = String(tcpHostField?.value || '').trim().replace(/^\[/, '').replace(/\]$/, '');
+        const requiresFamily = tcpHost !== '' && !isLiteralIP(tcpHost);
+        tcpFamilyRow.hidden = !requiresFamily;
+        if (!requiresFamily) {
+          tcpFamilyField.value = 'dual';
+        }
+      };
+
+      const syncUDPFamilyMode = () => {
+        if (!udpFamilyRow || !udpFamilyField) {
+          return;
+        }
+        const isUDPMonitor = kindField.value === 'udp';
+        if (!isUDPMonitor) {
+          udpFamilyRow.hidden = true;
+          return;
+        }
+
+        const udpHost = String(udpHostField?.value || '').trim().replace(/^\[/, '').replace(/\]$/, '');
+        const requiresFamily = udpHost !== '' && !isLiteralIP(udpHost);
+        udpFamilyRow.hidden = !requiresFamily;
+        if (!requiresFamily) {
+          udpFamilyField.value = 'dual';
+        }
+      };
+
+      const syncUDPPortSuggestion = () => {
+        if (!udpPortField) {
+          return;
+        }
+        const suggestedPort = defaultUDPPortForCheck(udpCheckField?.value);
+        udpPortField.placeholder = suggestedPort;
+        if (!String(udpPortField.value || '').trim()) {
+          udpPortField.value = suggestedPort;
+        }
+      };
+
+      const syncHTTPSFamilyMode = () => {
+        if (!httpsFamilyRow || !httpsFamilyField) {
+          return;
+        }
+        const isHTTPMonitor = kindField.value === 'https';
+        if (!isHTTPMonitor) {
+          httpsFamilyRow.hidden = true;
+          return;
+        }
+
+        const httpHost = String(httpHostField?.value || '').trim().replace(/^\[/, '').replace(/\]$/, '');
+        const requiresFamily = httpHost !== '' && !isLiteralIP(httpHost);
+        httpsFamilyRow.hidden = !requiresFamily;
+        if (!requiresFamily) {
+          httpsFamilyField.value = 'dual';
+        }
+      };
+
       const isDEWhoisTarget = (value) => {
         const domain = String(value || '').trim().toLowerCase().replace(/\.$/, '');
         return domain.length > 3 && domain.endsWith('.de');
@@ -686,13 +865,52 @@
       const isDNS = kind === 'dns';
       const isUDP = kind === 'udp';
       const isWhois = kind === 'whois';
+      const udpCheckMode = normalizeUDPCheck(udpCheckField?.value);
       const supportsTLSChecks = isHTTPMonitor || isTCPMonitor;
+      const showExpectedText = isHTTPMonitor || isDNS;
+
+      if (targetRow) {
+        targetRow.hidden = isTCPMonitor || isHTTPMonitor || isUDP;
+      }
+      if (httpsTargetRow) {
+        httpsTargetRow.hidden = !isHTTPMonitor;
+      }
+      if (tcpTargetRow) {
+        tcpTargetRow.hidden = !isTCPMonitor;
+      }
+      if (udpCheckRow) {
+        udpCheckRow.hidden = !isUDP;
+      }
+      if (udpTargetRow) {
+        udpTargetRow.hidden = !isUDP;
+      }
+      if (targetField) {
+        targetField.required = !isTCPMonitor && !isHTTPMonitor && !isUDP;
+      }
+      if (httpHostField) {
+        httpHostField.required = isHTTPMonitor;
+      }
+      if (httpPortField) {
+        httpPortField.required = false;
+      }
+      if (tcpHostField) {
+        tcpHostField.required = isTCPMonitor;
+      }
+      if (tcpPortField) {
+        tcpPortField.required = isTCPMonitor;
+      }
+      if (udpHostField) {
+        udpHostField.required = isUDP;
+      }
+      if (udpPortField) {
+        udpPortField.required = isUDP;
+      }
 
       tlsModeRow.hidden = !isMail;
       httpsModeRow.hidden = !supportsTLSChecks;
       httpsVerifyRow.hidden = !supportsTLSChecks || !useHTTPSField.checked;
       expectedStatusRow.hidden = !isHTTPMonitor;
-      expectedTextRow.hidden = !isHTTPMonitor && !isDNS;
+      expectedTextRow.hidden = !showExpectedText;
 
       if (isHTTPMonitor) {
         if (useHTTPSLabelField) {
@@ -710,11 +928,27 @@
         if (targetField) {
           targetField.placeholder = 'example.com/health';
         }
+        if (httpHostField) {
+          httpHostField.placeholder = 'example.com oder 2001:db8::1';
+        }
+        if (httpPortField) {
+          httpPortField.placeholder = useHTTPSField.checked ? '443' : '80';
+        }
+        if (httpPathField) {
+          httpPathField.placeholder = '/health';
+        }
         if (targetHintField) {
           targetHintField.textContent = useHTTPSField.checked
             ? 'Für HTTPS: Host/Pfad ohne Protokoll (https:// wird automatisch ergänzt).'
             : 'Für HTTP: Host/Pfad ohne Protokoll (http:// wird automatisch ergänzt).';
         }
+        if (expectedTextLabelField) {
+          expectedTextLabelField.textContent = 'Erwartete Keywords (optional)';
+        }
+        if (expectedTextHintField) {
+          expectedTextHintField.textContent = 'Mehrere Keywords mit Komma trennen. Alle Keywords müssen im Body vorkommen.';
+        }
+        syncHTTPSFamilyMode();
       } else if (isTCPMonitor) {
         if (useHTTPSLabelField) {
           useHTTPSLabelField.textContent = 'TLS Handshake prüfen';
@@ -733,9 +967,16 @@
         if (targetField) {
           targetField.placeholder = 'example.com:443';
         }
+        if (tcpHostField) {
+          tcpHostField.placeholder = 'example.com oder 2001:db8::1';
+        }
+        if (tcpPortField) {
+          tcpPortField.placeholder = '443';
+        }
         if (targetHintField) {
           targetHintField.textContent = 'Für TCP: host:port';
         }
+        syncTCPFamilyMode();
       } else if (isMail) {
         useHTTPSField.checked = false;
         verifyCertField.checked = false;
@@ -762,6 +1003,12 @@
         if (expectedTextField) {
           expectedTextField.placeholder = '1.2.3.4';
         }
+        if (expectedTextLabelField) {
+          expectedTextLabelField.textContent = 'Erwartete DNS-Antwort (optional)';
+        }
+        if (expectedTextHintField) {
+          expectedTextHintField.textContent = 'Optionaler Teilstring, der in den aufgelösten IP-Adressen vorkommen muss.';
+        }
       } else if (isUDP) {
         useHTTPSField.checked = false;
         verifyCertField.checked = false;
@@ -771,9 +1018,17 @@
         if (targetField) {
           targetField.placeholder = 'example.com:53';
         }
-        if (targetHintField) {
-          targetHintField.textContent = 'Für UDP: host:port';
+        if (udpHostField) {
+          udpHostField.placeholder = 'resolver.example.com oder 2001:db8::1';
         }
+        if (udpCheckField && !udpCheckField.value) {
+          udpCheckField.value = 'dns';
+        }
+        syncUDPPortSuggestion();
+        if (targetHintField) {
+          targetHintField.textContent = 'Für UDP: IP/Hostname + Port (DNS 53, NTP 123).';
+        }
+        syncUDPFamilyMode();
       } else if (isWhois) {
         useHTTPSField.checked = false;
         verifyCertField.checked = false;
@@ -824,6 +1079,15 @@
       if (!isICMPMonitor && icmpFamilyRow) {
         icmpFamilyRow.hidden = true;
       }
+      if (!isTCPMonitor && tcpFamilyRow) {
+        tcpFamilyRow.hidden = true;
+      }
+      if (!isHTTPMonitor && httpsFamilyRow) {
+        httpsFamilyRow.hidden = true;
+      }
+      if (!isUDP && udpFamilyRow) {
+        udpFamilyRow.hidden = true;
+      }
 
       syncWhoisTargetDisclaimer();
     };
@@ -841,7 +1105,40 @@
       if (icmpFamilyField) {
         icmpFamilyField.value = 'ipv4';
       }
+      if (httpsFamilyField) {
+        httpsFamilyField.value = 'dual';
+      }
+      if (tcpFamilyField) {
+        tcpFamilyField.value = 'dual';
+      }
+      if (udpFamilyField) {
+        udpFamilyField.value = 'dual';
+      }
+      if (udpCheckField) {
+        udpCheckField.value = 'dns';
+      }
       targetField.value = '';
+      if (httpHostField) {
+        httpHostField.value = '';
+      }
+      if (httpPortField) {
+        httpPortField.value = '';
+      }
+      if (httpPathField) {
+        httpPathField.value = '';
+      }
+      if (tcpHostField) {
+        tcpHostField.value = '';
+      }
+      if (tcpPortField) {
+        tcpPortField.value = '';
+      }
+      if (udpHostField) {
+        udpHostField.value = '';
+      }
+      if (udpPortField) {
+        udpPortField.value = defaultUDPPortForCheck('dns');
+      }
       intervalField.value = '60';
       timeoutField.value = '10';
       expectedStatusField.value = '';
@@ -873,12 +1170,117 @@
           icmpFamilyField.value = 'ipv4';
         }
       }
-      targetField.value = button.dataset.target || '';
+      const rawTarget = button.dataset.target || '';
+      targetField.value = rawTarget;
+      const monitorKind = button.dataset.kind || 'https';
+      if (monitorKind === 'https') {
+        const httpsModeRaw = String(button.dataset.tlsMode || 'tls').toLowerCase();
+        if (httpsFamilyField) {
+          if (httpsModeRaw.endsWith('_ipv6')) {
+            httpsFamilyField.value = 'ipv6';
+          } else if (httpsModeRaw.endsWith('_ipv4')) {
+            httpsFamilyField.value = 'ipv4';
+          } else {
+            httpsFamilyField.value = 'dual';
+          }
+        }
+        const parsedHTTP = parseHTTPURLTarget(rawTarget);
+        if (httpHostField) {
+          httpHostField.value = parsedHTTP.host;
+        }
+        if (httpPortField) {
+          httpPortField.value = parsedHTTP.port;
+        }
+        if (httpPathField) {
+          httpPathField.value = parsedHTTP.path;
+        }
+      } else {
+        if (httpHostField) {
+          httpHostField.value = '';
+        }
+        if (httpPortField) {
+          httpPortField.value = '';
+        }
+        if (httpPathField) {
+          httpPathField.value = '';
+        }
+        if (httpsFamilyField) {
+          httpsFamilyField.value = 'dual';
+        }
+      }
+      if (monitorKind === 'tcp') {
+        const tcpModeRaw = String(button.dataset.tlsMode || 'none').toLowerCase();
+        if (tcpFamilyField) {
+          if (tcpModeRaw.endsWith('_ipv6')) {
+            tcpFamilyField.value = 'ipv6';
+          } else if (tcpModeRaw.endsWith('_ipv4')) {
+            tcpFamilyField.value = 'ipv4';
+          } else {
+            tcpFamilyField.value = 'dual';
+          }
+        }
+        const parsedTarget = parseHostPort(rawTarget);
+        if (tcpHostField) {
+          tcpHostField.value = parsedTarget.host;
+        }
+        if (tcpPortField) {
+          tcpPortField.value = parsedTarget.port;
+        }
+      } else {
+        if (tcpHostField) {
+          tcpHostField.value = '';
+        }
+        if (tcpPortField) {
+          tcpPortField.value = '';
+        }
+        if (tcpFamilyField) {
+          tcpFamilyField.value = 'dual';
+        }
+      }
+      if (monitorKind === 'udp') {
+        const udpModeRaw = String(button.dataset.tlsMode || 'none').toLowerCase();
+        const baseUDPMode = udpModeRaw.replace(/_(ipv4|ipv6|dual)$/, '');
+        if (udpCheckField) {
+          udpCheckField.value = normalizeUDPCheck(baseUDPMode === 'none' ? 'wireguard' : baseUDPMode);
+        }
+        if (udpFamilyField) {
+          if (udpModeRaw.endsWith('_ipv6')) {
+            udpFamilyField.value = 'ipv6';
+          } else if (udpModeRaw.endsWith('_ipv4')) {
+            udpFamilyField.value = 'ipv4';
+          } else {
+            udpFamilyField.value = 'dual';
+          }
+        }
+        const parsedTarget = parseHostPort(rawTarget);
+        if (udpHostField) {
+          udpHostField.value = parsedTarget.host;
+        }
+        if (udpPortField) {
+          udpPortField.value = parsedTarget.port || defaultUDPPortForCheck(udpCheckField?.value);
+        }
+      } else {
+        if (udpCheckField) {
+          udpCheckField.value = 'dns';
+        }
+        if (udpHostField) {
+          udpHostField.value = '';
+        }
+        if (udpPortField) {
+          udpPortField.value = defaultUDPPortForCheck('dns');
+        }
+        if (udpFamilyField) {
+          udpFamilyField.value = 'dual';
+        }
+      }
       intervalField.value = button.dataset.interval || '60';
       timeoutField.value = button.dataset.timeout || '10';
       expectedStatusField.value = button.dataset.expectedStatus || '';
       expectedTextField.value = button.dataset.expectedText || '';
-      const tlsMode = button.dataset.tlsMode || 'tls';
+      const tlsModeRaw = String(button.dataset.tlsMode || 'tls').toLowerCase();
+      const tlsMode = tlsModeRaw.endsWith('_ipv4') || tlsModeRaw.endsWith('_ipv6') || tlsModeRaw.endsWith('_dual')
+        ? tlsModeRaw.replace(/_(ipv4|ipv6|dual)$/, '')
+        : tlsModeRaw;
       if (tlsMode === 'none') {
         useHTTPSField.checked = false;
         verifyCertField.checked = false;
@@ -919,9 +1321,124 @@
         applyKindRules();
       }
     });
+    tcpHostField?.addEventListener('input', () => {
+      if (kindField?.value === 'tcp') {
+        applyKindRules();
+      }
+    });
+    tcpPortField?.addEventListener('input', () => {
+      if (kindField?.value === 'tcp') {
+        const value = String(tcpPortField.value || '').trim();
+        targetField.value = formatHostPort(tcpHostField?.value, value);
+      }
+    });
+    tcpFamilyField?.addEventListener('change', () => {
+      if (kindField?.value === 'tcp') {
+        applyKindRules();
+      }
+    });
+    udpCheckField?.addEventListener('change', () => {
+      if (kindField?.value === 'udp') {
+        if (udpPortField && !String(udpPortField.value || '').trim()) {
+          udpPortField.value = defaultUDPPortForCheck(udpCheckField.value);
+        }
+        applyKindRules();
+      }
+    });
+    udpHostField?.addEventListener('input', () => {
+      if (kindField?.value === 'udp') {
+        applyKindRules();
+      }
+    });
+    udpPortField?.addEventListener('input', () => {
+      if (kindField?.value === 'udp') {
+        targetField.value = formatHostPort(udpHostField?.value, udpPortField?.value);
+      }
+    });
+    udpFamilyField?.addEventListener('change', () => {
+      if (kindField?.value === 'udp') {
+        applyKindRules();
+      }
+    });
+    httpHostField?.addEventListener('input', () => {
+      if (kindField?.value === 'https') {
+        applyKindRules();
+      }
+    });
+    httpPortField?.addEventListener('input', () => {
+      if (kindField?.value === 'https') {
+        targetField.value = composeHTTPSMonitorTarget(useHTTPSField?.checked !== false);
+      }
+    });
+    httpPathField?.addEventListener('input', () => {
+      if (kindField?.value === 'https') {
+        targetField.value = composeHTTPSMonitorTarget(useHTTPSField?.checked !== false);
+      }
+    });
+    httpsFamilyField?.addEventListener('change', () => {
+      if (kindField?.value === 'https') {
+        applyKindRules();
+      }
+    });
     icmpFamilyField?.addEventListener('change', () => {
       if (kindField?.value === 'icmp') {
         applyKindRules();
+      }
+    });
+    monitorForm?.addEventListener('submit', (event) => {
+      if (kindField?.value === 'https') {
+        const normalizedTarget = composeHTTPSMonitorTarget(useHTTPSField?.checked !== false);
+        if (!normalizedTarget) {
+          event.preventDefault();
+          return;
+        }
+        if (targetField) {
+          targetField.value = normalizedTarget;
+        }
+        if (httpsFamilyField) {
+          const host = String(httpHostField?.value || '').trim().replace(/^\[/, '').replace(/\]$/, '');
+          if (!host || isLiteralIP(host)) {
+            httpsFamilyField.value = 'dual';
+          }
+        }
+        return;
+      }
+      if (kindField?.value === 'udp') {
+        const normalizedTarget = formatHostPort(udpHostField?.value, udpPortField?.value);
+        if (!normalizedTarget) {
+          event.preventDefault();
+          return;
+        }
+        if (targetField) {
+          targetField.value = normalizedTarget;
+        }
+        if (udpFamilyField) {
+          const host = String(udpHostField?.value || '').trim().replace(/^\[/, '').replace(/\]$/, '');
+          if (!host || isLiteralIP(host)) {
+            udpFamilyField.value = 'dual';
+          }
+        }
+        if (udpCheckField) {
+          udpCheckField.value = normalizeUDPCheck(udpCheckField.value);
+        }
+        return;
+      }
+      if (kindField?.value !== 'tcp') {
+        return;
+      }
+      const normalizedTarget = formatHostPort(tcpHostField?.value, tcpPortField?.value);
+      if (!normalizedTarget) {
+        event.preventDefault();
+        return;
+      }
+      if (targetField) {
+        targetField.value = normalizedTarget;
+      }
+      if (tcpFamilyField) {
+        const host = String(tcpHostField?.value || '').trim().replace(/^\[/, '').replace(/\]$/, '');
+        if (!host || isLiteralIP(host)) {
+          tcpFamilyField.value = 'dual';
+        }
       }
     });
     useHTTPSField?.addEventListener('change', applyKindRules);

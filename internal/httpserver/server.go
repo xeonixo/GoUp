@@ -2011,13 +2011,47 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 		}
 		expectedStatusCode = &value
 	}
-	if kind == monitor.KindHTTPS || kind == monitor.KindDNS {
+	if kind == monitor.KindHTTPS || kind == monitor.KindDNS || kind == monitor.KindUDP {
 		expectedText = strings.TrimSpace(r.FormValue("expected_text"))
 	}
 
 	target := strings.TrimSpace(r.FormValue("target"))
 	if kind == monitor.KindHTTPS {
-		target = normalizeHTTPMonitorTarget(target, tlsMode)
+		httpHost := strings.TrimSpace(r.FormValue("http_host"))
+		httpPort := strings.TrimSpace(r.FormValue("http_port"))
+		httpPath := strings.TrimSpace(r.FormValue("http_path"))
+		if httpHost != "" || httpPort != "" || httpPath != "" {
+			target = buildHTTPMonitorTarget(httpHost, httpPort, httpPath, tlsMode)
+		} else {
+			target = normalizeHTTPMonitorTarget(target, tlsMode)
+		}
+
+		if parsedTarget, parseErr := url.Parse(target); parseErr == nil {
+			hostname := strings.TrimSpace(parsedTarget.Hostname())
+			if hostname != "" {
+				if isLiteralIPAddress(hostname) {
+					tlsMode = monitor.ComposeHTTPSTLSMode(tlsMode, monitor.TCPAddressFamilyDual)
+				} else {
+					family := monitor.NormalizeTCPAddressFamily(strings.TrimSpace(r.FormValue("https_family")))
+					tlsMode = monitor.ComposeHTTPSTLSMode(tlsMode, family)
+				}
+			}
+		}
+	}
+	if kind == monitor.KindTCP {
+		tcpHost := strings.TrimSpace(r.FormValue("tcp_host"))
+		tcpPort := strings.TrimSpace(r.FormValue("tcp_port"))
+		if tcpHost != "" || tcpPort != "" {
+			target = strings.TrimSpace(net.JoinHostPort(strings.Trim(tcpHost, "[]"), tcpPort))
+		}
+		if host, _, splitErr := net.SplitHostPort(target); splitErr == nil {
+			if isLiteralIPAddress(host) {
+				tlsMode = monitor.ComposeTCPTLSMode(tlsMode, monitor.TCPAddressFamilyDual)
+			} else {
+				family := monitor.NormalizeTCPAddressFamily(strings.TrimSpace(r.FormValue("tcp_family")))
+				tlsMode = monitor.ComposeTCPTLSMode(tlsMode, family)
+			}
+		}
 	}
 	if kind == monitor.KindICMP {
 		if !isLiteralIPAddress(target) && target != "" {
@@ -2031,6 +2065,24 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			tlsMode = monitor.TLSModeNone
+		}
+	}
+	if kind == monitor.KindUDP {
+		udpHost := strings.TrimSpace(r.FormValue("udp_host"))
+		udpPort := strings.TrimSpace(r.FormValue("udp_port"))
+		if udpHost != "" || udpPort != "" {
+			target = strings.TrimSpace(net.JoinHostPort(strings.Trim(udpHost, "[]"), udpPort))
+		}
+		probeKind := monitor.NormalizeUDPProbeKind(strings.TrimSpace(r.FormValue("udp_check")))
+		family := monitor.TCPAddressFamilyDual
+		if host, _, splitErr := net.SplitHostPort(target); splitErr == nil {
+			if !isLiteralIPAddress(host) {
+				family = monitor.NormalizeTCPAddressFamily(strings.TrimSpace(r.FormValue("udp_family")))
+			}
+		}
+		tlsMode = monitor.ComposeUDPMode(probeKind, family)
+		if probeKind != monitor.UDPProbeKindWireGuard {
+			expectedText = ""
 		}
 	}
 
@@ -3291,7 +3343,7 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 		kindLabel := monitorKindLabel(item.Monitor.Kind)
 		tlsLabel := monitorTLSModeLabel(item.Monitor)
 		if item.Monitor.Kind == monitor.KindHTTPS {
-			kindLabel = monitorHTTPKindLabel(item.Monitor.TLSMode)
+			kindLabel = monitorHTTPKindLabel(item.Monitor.Target, item.Monitor.TLSMode)
 			tlsLabel = ""
 		}
 
@@ -4431,15 +4483,9 @@ func defaultTLSMode(kind monitor.Kind) monitor.TLSMode {
 func normalizeTLSMode(kind monitor.Kind, requested monitor.TLSMode) monitor.TLSMode {
 	switch kind {
 	case monitor.KindHTTPS:
-		if requested == monitor.TLSModeNone || requested == monitor.TLSModeTLS || requested == monitor.TLSModeSTARTTLS {
-			return requested
-		}
-		return monitor.TLSModeTLS
+		return monitor.NormalizeHTTPSTLSSecurityMode(requested)
 	case monitor.KindTCP:
-		if requested == monitor.TLSModeNone || requested == monitor.TLSModeTLS || requested == monitor.TLSModeSTARTTLS {
-			return requested
-		}
-		return monitor.TLSModeNone
+		return monitor.NormalizeTCPTLSSecurityMode(requested)
 	case monitor.KindICMP:
 		if requested == monitor.TLSModeNone || requested == monitor.TLSModeTLS || requested == monitor.TLSModeSTARTTLS {
 			return requested
@@ -4455,7 +4501,12 @@ func normalizeTLSMode(kind monitor.Kind, requested monitor.TLSMode) monitor.TLSM
 			return requested
 		}
 		return monitor.TLSModeTLS
-	case monitor.KindDNS, monitor.KindUDP, monitor.KindWhois:
+	case monitor.KindUDP:
+		if monitor.IsValidUDPMode(requested) {
+			return requested
+		}
+		return monitor.TLSModeNone
+	case monitor.KindDNS, monitor.KindWhois:
 		return monitor.TLSModeNone
 	default:
 		return requested
@@ -4473,7 +4524,7 @@ func monitorTargetLabel(item monitor.Monitor) string {
 	if host == "" {
 		host = "localhost"
 	}
-	return host + ":" + port
+	return net.JoinHostPort(host, port)
 }
 
 func monitorTLSModeLabel(item monitor.Monitor) string {
@@ -4486,14 +4537,21 @@ func monitorTLSModeLabel(item monitor.Monitor) string {
 		}
 		return "TLS"
 	case monitor.KindTCP:
-		switch item.TLSMode {
+		securityMode, family := monitor.ParseTCPTLSMode(item.TLSMode)
+		parts := make([]string, 0, 2)
+		switch securityMode {
 		case monitor.TLSModeTLS:
-			return "TLS"
+			parts = append(parts, "TLS")
 		case monitor.TLSModeSTARTTLS:
-			return "TLS (selfsigned)"
-		default:
-			return ""
+			parts = append(parts, "TLS (selfsigned)")
 		}
+		switch family {
+		case monitor.TCPAddressFamilyIPv4:
+			parts = append(parts, "IPv4")
+		case monitor.TCPAddressFamilyIPv6:
+			parts = append(parts, "IPv6")
+		}
+		return strings.Join(parts, " · ")
 	case monitor.KindICMP:
 		switch item.TLSMode {
 		case monitor.TLSModeTLS:
@@ -4508,6 +4566,26 @@ func monitorTLSModeLabel(item monitor.Monitor) string {
 		default:
 			return ""
 		}
+	case monitor.KindUDP:
+		probeKind, family := monitor.ParseUDPMode(item.TLSMode)
+		kindLabel := "WireGuard"
+		switch probeKind {
+		case monitor.UDPProbeKindDNS:
+			kindLabel = "DNS"
+		case monitor.UDPProbeKindNTP:
+			kindLabel = "NTP"
+		}
+		if monitor.IsExplicitUDPFamilyMode(item.TLSMode) {
+			switch family {
+			case monitor.TCPAddressFamilyIPv4:
+				return kindLabel + " · IPv4"
+			case monitor.TCPAddressFamilyIPv6:
+				return kindLabel + " · IPv6"
+			default:
+				return kindLabel + " · Dual Stack"
+			}
+		}
+		return kindLabel
 	default:
 		return ""
 	}
@@ -4539,15 +4617,57 @@ func isLiteralIPAddress(raw string) bool {
 	return net.ParseIP(target) != nil
 }
 
-func monitorHTTPKindLabel(mode monitor.TLSMode) string {
-	switch mode {
+func monitorHTTPKindLabel(target string, mode monitor.TLSMode) string {
+	securityMode, family := monitor.ParseHTTPSTLSMode(mode)
+	base := "HTTPS"
+	switch securityMode {
 	case monitor.TLSModeNone:
-		return "HTTP"
+		base = "HTTP"
 	case monitor.TLSModeSTARTTLS:
-		return "HTTPS (selfsigned)"
-	default:
-		return "HTTPS"
+		base = "HTTPS (selfsigned)"
 	}
+
+	parsed, err := url.Parse(strings.TrimSpace(target))
+	hasLiteralIPHost := false
+	if err == nil && parsed != nil {
+		hostname := strings.TrimSpace(parsed.Hostname())
+		hasLiteralIPHost = isLiteralIPAddress(hostname)
+	}
+
+	switch family {
+	case monitor.TCPAddressFamilyIPv4:
+		return base + " · IPv4"
+	case monitor.TCPAddressFamilyIPv6:
+		return base + " · IPv6"
+	case monitor.TCPAddressFamilyDual:
+		if !hasLiteralIPHost {
+			return base + " · Dual Stack"
+		}
+		return base
+	default:
+		return base
+	}
+}
+
+func buildHTTPMonitorTarget(host string, port string, path string, mode monitor.TLSMode) string {
+	host = strings.TrimSpace(strings.Trim(host, "[]"))
+	if host == "" {
+		return normalizeHTTPMonitorTarget(path, mode)
+	}
+	port = strings.TrimSpace(port)
+	if port != "" {
+		host = net.JoinHostPort(host, port)
+	}
+	path = strings.TrimSpace(path)
+	if path != "" && !strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "?") {
+		path = "/" + path
+	}
+
+	scheme := "https://"
+	if mode == monitor.TLSModeNone {
+		scheme = "http://"
+	}
+	return scheme + host + path
 }
 
 // ========== Tenant-Specific Login Handlers (Multi-Tenant SSO) ==========

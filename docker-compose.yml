@@ -1,7 +1,12 @@
 services:
   goup:
-    image: ${GOUP_IMAGE:-ghcr.io/xeonixo/goup:latest}
-    pull_policy: always
+    image: ghcr.io/xeonixo/goup:latest
+    dns:
+      - 1.1.1.1 # Cloudflare DNS
+      - 8.8.8.8 # Google DNS
+      - 2606:4700:4700::1111 # Cloudflare IPv6
+      - 2001:4860:4860::8888 # Google 
+    ## Please customize the ports and environment variables below according to your needs. The provided settings are just an example and may not work in all environments.
     ports:
       - "8080:8080"
     env_file:
@@ -11,3 +16,20 @@ services:
     volumes:
       - ./data:/data
     restart: unless-stopped
+    ## Please customize the network settings below according to your needs. The provided settings are just an example and may not work in all environments.
+    networks:
+      goup-network:
+        ipv4_address: 172.19.27.2
+        ipv6_address: fdaa:19:27::2
+## Please customize the network settings below according to your needs. The provided settings are just an example and may not work in all environments.
+## !! Configure your host docker deamon for IPv6 !!
+networks:
+  goup-network:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 172.19.27.0/24
+          ip_range: 172.19.27.128/25
+          gateway: 172.19.27.1
+        - subnet: fdaa:19:27::/64
+          gateway: fdaa:19:27::1

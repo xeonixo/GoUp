@@ -218,6 +218,45 @@ Der Admin-Bereich (`/admin/*`) hat einen **eigenen** Login, unabhängig von Tena
 
 SMTP und IMAP unterstützen `tls` und `starttls`. Bei `https` wird das TLS-Zertifikat automatisch ausgewertet (Restlaufzeit, Ablaufdatum).
 
+### IPv6 / Dual-Stack Unterstützung
+
+- Für `https`, `tcp`, `icmp` und `udp` kann bei **Hostname** die IP-Familie gewählt werden: `IPv4`, `IPv6` oder `Dual Stack`.
+- Bei direkter IP (IPv4/IPv6) ist keine Familienauswahl nötig.
+- IPv6 kann in den Eingabefeldern ohne eckige Klammern eingegeben werden; GoUp formatiert intern korrekt.
+- Bei `Dual Stack` werden beide Familien aktiv geprüft (IPv4 + IPv6).
+
+### HTTPS Eingabe (UI)
+
+Für HTTPS/HTTP gibt es im Dialog getrennte Felder:
+
+- `IP / Hostname`
+- `Port` (optional)
+- `Pfad / Query` (optional)
+
+Wenn kein Port gesetzt ist, gelten die Standards:
+
+- HTTPS → `443`
+- HTTP → `80`
+
+Bestehende Monitore bleiben kompatibel (legacy URL-Einträge werden weiter unterstützt).
+
+### UDP Modi (neu)
+
+UDP-Monitore unterstützen jetzt auswählbare Probe-Typen:
+
+- `DNS Erreichbarkeit` (aktive DNS-Query, gültige Antwort erforderlich)
+- `NTP Check` (NTP-Request, gültige Antwort erforderlich)
+
+Standardport-Vorschläge im UI:
+
+- DNS → `53`
+- NTP → `123`
+
+Hinweis: Der WireGuard-Modus ist aktuell **nicht mehr im Create/Edit-UI auswählbar**.
+Bestehende Legacy-Monitore bleiben backend-seitig kompatibel.
+
+Für neue UDP-Monitore stehen derzeit DNS und NTP im UI zur Verfügung.
+
 ---
 
 ## Benachrichtigungen

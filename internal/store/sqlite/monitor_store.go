@@ -1108,8 +1108,8 @@ func validateCreateMonitorParams(params CreateMonitorParams) error {
 		return errors.New("timeout must not exceed interval")
 	}
 	expectedText := strings.TrimSpace(params.ExpectedText)
-	if expectedText != "" && params.Kind != monitor.KindHTTPS && params.Kind != monitor.KindDNS {
-		return errors.New("expected keywords are only valid for HTTPS and DNS monitors")
+	if expectedText != "" && params.Kind != monitor.KindHTTPS && params.Kind != monitor.KindDNS && params.Kind != monitor.KindUDP {
+		return errors.New("expected value is only valid for HTTPS, DNS and UDP monitors")
 	}
 	return validateMonitorKindSettings(params.Kind, params.Target, params.TLSMode, params.ExpectedStatusCode)
 }
@@ -1121,7 +1121,11 @@ func validateMonitorKindSettings(kind monitor.Kind, target string, tlsMode monit
 		if err != nil || parsedTarget == nil || parsedTarget.Host == "" {
 			return errors.New("target must be a valid http(s) URL")
 		}
-		switch tlsMode {
+		if !monitor.IsValidHTTPSTLSMode(tlsMode) {
+			return errors.New("invalid HTTP(S) tls mode")
+		}
+		httpsTLSMode, _ := monitor.ParseHTTPSTLSMode(tlsMode)
+		switch httpsTLSMode {
 		case "", monitor.TLSModeTLS:
 			if parsedTarget.Scheme != "https" {
 				return errors.New("https mode requires an https URL")
@@ -1134,8 +1138,6 @@ func validateMonitorKindSettings(kind monitor.Kind, target string, tlsMode monit
 			if parsedTarget.Scheme != "http" {
 				return errors.New("http mode requires an http URL")
 			}
-		default:
-			return errors.New("invalid HTTP(S) tls mode")
 		}
 	case monitor.KindTCP:
 		if _, _, err := net.SplitHostPort(strings.TrimSpace(target)); err != nil {
@@ -1144,7 +1146,7 @@ func validateMonitorKindSettings(kind monitor.Kind, target string, tlsMode monit
 		if expectedStatusCode != nil {
 			return errors.New("expected HTTP status is only valid for HTTPS monitors")
 		}
-		if tlsMode != "" && tlsMode != monitor.TLSModeNone && tlsMode != monitor.TLSModeTLS && tlsMode != monitor.TLSModeSTARTTLS {
+		if !monitor.IsValidTCPTLSMode(tlsMode) {
 			return errors.New("tcp monitors support tls, starttls (self-signed) or none")
 		}
 	case monitor.KindICMP:
@@ -1201,8 +1203,8 @@ func validateMonitorKindSettings(kind monitor.Kind, target string, tlsMode monit
 		if expectedStatusCode != nil {
 			return errors.New("expected HTTP status is only valid for HTTPS monitors")
 		}
-		if tlsMode != "" && tlsMode != monitor.TLSModeNone {
-			return errors.New("UDP monitors do not support TLS mode")
+		if !monitor.IsValidUDPMode(tlsMode) {
+			return errors.New("UDP monitors support dns, ntp or wireguard check mode")
 		}
 	case monitor.KindWhois:
 		whoisTarget := strings.TrimSpace(target)
