@@ -19,7 +19,7 @@
 
 <div id="dashboard-page" data-app-base="{{$.AppBase}}" data-trend-value="{{.TrendValue}}" data-state-owner="{{if .User}}{{if .User.Email}}{{.User.Email}}{{else}}{{.User.Name}}{{end}}{{end}}" data-is-admin="{{if .IsAdmin}}1{{else}}0{{end}}">
 
-<section class="stats-grid stats-grid-wide">
+<section id="dashboard-live-stats" class="stats-grid stats-grid-wide">
   <article class="card stat-card stat-card-primary">
     <h2>Monitore</h2>
     <div class="metric">{{.Stats.MonitorCount}}</div>
@@ -239,7 +239,7 @@
   </div>
 </dialog>
 
-<section class="card stack dashboard-board">
+<section id="dashboard-live-board" class="card stack dashboard-board">
   {{range .MonitorGroups}}
   <section class="monitor-group {{.AccentClass}} stack">
     {{if .Monitors}}
@@ -423,7 +423,7 @@
   {{end}}
 </section>
 
-<section class="card stack notification-events-card">
+<section id="dashboard-live-state-events" class="card stack notification-events-card">
   <h2>Letzte Statusänderungen</h2>
   {{if .StateEvents}}
   <div class="state-events-toolbar">
@@ -479,7 +479,7 @@
   {{end}}
 </section>
 
-<section class="card stack notification-events-card">
+<section id="dashboard-live-notification-events" class="card stack notification-events-card">
   <h2>Letzte Notification-Events</h2>
   {{if .Events}}
   <div class="table-wrap">

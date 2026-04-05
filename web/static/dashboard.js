@@ -73,12 +73,24 @@
     const dashboardStateScope = `${appBase || '/'}:${dashboardStateOwner}:${window.location.pathname}`;
     const dashboardStateScrollKey = `goup.dashboard.scrollY:${dashboardStateScope}`;
     const dashboardStateGroupsKey = `goup.dashboard.openGroups:${dashboardStateScope}`;
-    const actionMenus = Array.from(document.querySelectorAll('.action-menu'));
     let iconSearchTimer = null;
     let iconSearchRequest = null;
+    let liveSnapshotInFlight = false;
+
+    const bindOnce = (element, key, listener) => {
+      if (!(element instanceof Element)) {
+        return;
+      }
+      const attr = `bound${key}`;
+      if (element.dataset[attr] === '1') {
+        return;
+      }
+      element.dataset[attr] = '1';
+      element.addEventListener('click', listener);
+    };
 
     const closeActionMenus = (except = null) => {
-      actionMenus.forEach((menu) => {
+      document.querySelectorAll('.action-menu').forEach((menu) => {
         if (menu !== except) {
           menu.removeAttribute('open');
         }
@@ -86,6 +98,185 @@
     };
 
     const normalizeIconSlug = (value) => value.trim().toLowerCase().replace(/\s+/g, '-');
+
+    const currentOpenGroups = () => Array.from(document.querySelectorAll('.service-cluster[open]'))
+      .map((element) => element.dataset.group || '')
+      .filter(Boolean);
+
+    const restoreOpenGroups = (groups) => {
+      if (!Array.isArray(groups) || groups.length === 0) {
+        return;
+      }
+      document.querySelectorAll('.service-cluster').forEach((cluster) => {
+        const group = cluster.dataset.group || '';
+        if (groups.includes(group)) {
+          cluster.open = true;
+        }
+      });
+    };
+
+    let liveSocket = null;
+    let liveReconnectTimer = null;
+    let liveReconnectDelayMS = 1000;
+    let liveReloadTimer = null;
+    let liveUpdatesEnabled = true;
+    let liveLastReloadAt = 0;
+    let livePendingParts = new Set();
+    let livePendingBoardGroups = new Set();
+    const liveSnapshotHashes = {
+      stats: '',
+      board: '',
+      stateEvents: '',
+      notificationEvents: '',
+      groupOptions: ''
+    };
+    let applyLiveSnapshot = async () => false;
+    let rebindDynamicHandlers = () => {};
+    let reformatLiveContent = () => {};
+
+    const hasOpenDialog = () => Array.from(document.querySelectorAll('dialog')).some((dialogElement) => dialogElement.open);
+
+    const scheduleLiveReload = () => {
+      if (!liveUpdatesEnabled) {
+        return;
+      }
+      if (liveReloadTimer !== null) {
+        return;
+      }
+      liveReloadTimer = window.setTimeout(() => {
+        liveReloadTimer = null;
+        if (!liveUpdatesEnabled) {
+          return;
+        }
+        if (hasOpenDialog()) {
+          scheduleLiveReload();
+          return;
+        }
+
+        const now = Date.now();
+        if (now - liveLastReloadAt < 2000) {
+          scheduleLiveReload();
+          return;
+        }
+
+        if (!liveSnapshotInFlight) {
+          liveSnapshotInFlight = true;
+          const requestedParts = Array.from(livePendingParts);
+          const requestedBoardGroups = Array.from(livePendingBoardGroups);
+          livePendingParts = new Set();
+          livePendingBoardGroups = new Set();
+          applyLiveSnapshot(requestedParts, requestedBoardGroups).then((updated) => {
+            liveSnapshotInFlight = false;
+            if (updated) {
+              liveLastReloadAt = Date.now();
+              return;
+            }
+            liveLastReloadAt = Date.now();
+            saveDashboardState();
+            window.location.reload();
+          }).catch(() => {
+            liveSnapshotInFlight = false;
+            liveLastReloadAt = Date.now();
+            saveDashboardState();
+            window.location.reload();
+          });
+          return;
+        }
+
+        liveLastReloadAt = now;
+        saveDashboardState();
+        window.location.reload();
+      }, 500);
+    };
+
+    const queueLiveReconnect = () => {
+      if (!liveUpdatesEnabled || liveReconnectTimer !== null) {
+        return;
+      }
+      const delay = liveReconnectDelayMS;
+      liveReconnectTimer = window.setTimeout(() => {
+        liveReconnectTimer = null;
+        connectLiveUpdates();
+      }, delay);
+      liveReconnectDelayMS = Math.min(liveReconnectDelayMS * 2, 15000);
+    };
+
+    const connectLiveUpdates = () => {
+      if (!liveUpdatesEnabled || typeof window.WebSocket !== 'function') {
+        return;
+      }
+      const wsURL = new URL(`${appBase}live?trend=${encodeURIComponent(currentTrend)}`, window.location.href);
+      wsURL.protocol = wsURL.protocol === 'https:' ? 'wss:' : 'ws:';
+
+      try {
+        liveSocket = new window.WebSocket(wsURL.toString());
+      } catch (_) {
+        queueLiveReconnect();
+        return;
+      }
+
+      liveSocket.addEventListener('open', () => {
+        liveReconnectDelayMS = 1000;
+      });
+
+      liveSocket.addEventListener('message', (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload?.type === 'refresh') {
+            const parts = Array.isArray(payload.parts) ? payload.parts : [];
+            if (parts.length > 0) {
+              parts.forEach((part) => {
+                if (typeof part === 'string' && part.trim() !== '') {
+                  livePendingParts.add(part.trim());
+                }
+              });
+            } else {
+              ['stats', 'board', 'state_events', 'notification_events', 'group_options'].forEach((part) => livePendingParts.add(part));
+            }
+            const boardGroups = Array.isArray(payload.board_groups) ? payload.board_groups : [];
+            boardGroups.forEach((groupName) => {
+              if (typeof groupName === 'string' && groupName.trim() !== '') {
+                livePendingBoardGroups.add(groupName.trim());
+              }
+            });
+            scheduleLiveReload();
+          }
+        } catch (_) {
+        }
+      });
+
+      liveSocket.addEventListener('error', () => {
+        try {
+          liveSocket?.close();
+        } catch (_) {
+        }
+      });
+
+      liveSocket.addEventListener('close', () => {
+        liveSocket = null;
+        liveSnapshotInFlight = false;
+        queueLiveReconnect();
+      });
+    };
+
+    window.addEventListener('beforeunload', () => {
+      liveUpdatesEnabled = false;
+      if (liveReconnectTimer !== null) {
+        window.clearTimeout(liveReconnectTimer);
+        liveReconnectTimer = null;
+      }
+      if (liveReloadTimer !== null) {
+        window.clearTimeout(liveReloadTimer);
+        liveReloadTimer = null;
+      }
+      if (liveSocket) {
+        try {
+          liveSocket.close();
+        } catch (_) {
+        }
+        liveSocket = null;
+      }
+    });
 
     const saveDashboardState = () => {
       try {
@@ -121,6 +312,8 @@
       } catch (_) {
       }
     };
+
+    connectLiveUpdates();
 
     const submitPost = (action, fields) => {
       saveDashboardState();
@@ -527,66 +720,260 @@
     });
     groupForm?.addEventListener('submit', saveDashboardState);
 
-    document.querySelectorAll('.edit-monitor').forEach((button) => {
-      button.addEventListener('click', () => openEdit(button));
-    });
-    document.querySelectorAll('.group-settings').forEach((button) => {
-      button.addEventListener('click', () => openGroupDialog(button));
-    });
-
-    actionMenus.forEach((menu) => {
-      menu.addEventListener('toggle', () => {
-        if (menu.open) {
-          closeActionMenus(menu);
-        }
-      });
-      menu.addEventListener('click', (event) => {
-        event.stopPropagation();
-      });
-    });
-    document.querySelectorAll('.action-menu-trigger, .action-menu-list').forEach((element) => {
-      element.addEventListener('click', (event) => {
-        event.stopPropagation();
-      });
-    });
-
-    document.addEventListener('click', (event) => {
-      const target = event.target;
-      if (!(target instanceof Element)) {
-        closeActionMenus();
+    let globalDashboardListenersBound = false;
+    const bindGlobalDashboardListeners = () => {
+      if (globalDashboardListenersBound) {
         return;
       }
-      if (!target.closest('.action-menu')) {
-        closeActionMenus();
-      }
-    });
-
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') {
-        closeActionMenus();
-      }
-    });
-
-    document.querySelectorAll(`form[action^="${appBase}"]`).forEach((form) => {
-      form.addEventListener('submit', saveDashboardState);
-    });
-    document.querySelectorAll('.trend-range-toggle a').forEach((link) => {
-      link.addEventListener('click', saveDashboardState);
-    });
-    document.querySelectorAll('.service-cluster').forEach((cluster) => {
-      cluster.addEventListener('toggle', saveDashboardState);
-    });
-    document.querySelectorAll('.group-icon').forEach((image) => {
-      image.addEventListener('error', () => {
-        image.hidden = true;
+      globalDashboardListenersBound = true;
+      document.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) {
+          closeActionMenus();
+          return;
+        }
+        if (!target.closest('.action-menu')) {
+          closeActionMenus();
+        }
       });
-    });
-    document.querySelectorAll('.service-summary-trend').forEach((button) => {
-      button.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          closeActionMenus();
+        }
       });
-    });
+    };
+
+    const bindStateEventListeners = () => {
+      const search = document.getElementById('state-events-search');
+      const statusFilter = document.getElementById('state-events-status-filter');
+      const incidentsOnly = document.getElementById('state-events-incidents-only');
+      const exportButton = document.getElementById('state-events-export');
+
+      bindOnce(search, 'StateSearch', applyStateEventFilters);
+      if (search instanceof Element && search.dataset.boundStateSearchChange !== '1') {
+        search.dataset.boundStateSearchChange = '1';
+        search.addEventListener('input', applyStateEventFilters);
+      }
+
+      if (statusFilter instanceof Element && statusFilter.dataset.boundStateStatus !== '1') {
+        statusFilter.dataset.boundStateStatus = '1';
+        statusFilter.addEventListener('change', applyStateEventFilters);
+      }
+      if (incidentsOnly instanceof Element && incidentsOnly.dataset.boundStateIncidents !== '1') {
+        incidentsOnly.dataset.boundStateIncidents = '1';
+        incidentsOnly.addEventListener('change', applyStateEventFilters);
+      }
+      if (exportButton instanceof Element && exportButton.dataset.boundStateExport !== '1') {
+        exportButton.dataset.boundStateExport = '1';
+        exportButton.addEventListener('click', exportStateEventsCSV);
+      }
+    };
+
+    const bindDynamicDashboardListeners = () => {
+      document.querySelectorAll('.edit-monitor').forEach((button) => {
+        if (button.dataset.boundEditMonitor === '1') {
+          return;
+        }
+        button.dataset.boundEditMonitor = '1';
+        button.addEventListener('click', () => openEdit(button));
+      });
+
+      document.querySelectorAll('.group-settings').forEach((button) => {
+        if (button.dataset.boundGroupSettings === '1') {
+          return;
+        }
+        button.dataset.boundGroupSettings = '1';
+        button.addEventListener('click', () => openGroupDialog(button));
+      });
+
+      document.querySelectorAll('.action-menu').forEach((menu) => {
+        if (menu.dataset.boundActionMenu !== '1') {
+          menu.dataset.boundActionMenu = '1';
+          menu.addEventListener('toggle', () => {
+            if (menu.open) {
+              closeActionMenus(menu);
+            }
+          });
+          menu.addEventListener('click', (event) => {
+            event.stopPropagation();
+          });
+        }
+      });
+
+      document.querySelectorAll('.action-menu-trigger, .action-menu-list').forEach((element) => {
+        if (element.dataset.boundActionMenuClick === '1') {
+          return;
+        }
+        element.dataset.boundActionMenuClick = '1';
+        element.addEventListener('click', (event) => {
+          event.stopPropagation();
+        });
+      });
+
+      document.querySelectorAll(`form[action^="${appBase}"]`).forEach((form) => {
+        if (form.dataset.boundDashboardSubmit === '1') {
+          return;
+        }
+        form.dataset.boundDashboardSubmit = '1';
+        form.addEventListener('submit', saveDashboardState);
+      });
+
+      document.querySelectorAll('.trend-range-toggle a').forEach((link) => {
+        if (link.dataset.boundTrendLink === '1') {
+          return;
+        }
+        link.dataset.boundTrendLink = '1';
+        link.addEventListener('click', saveDashboardState);
+      });
+
+      document.querySelectorAll('.service-cluster').forEach((cluster) => {
+        if (cluster.dataset.boundClusterToggle === '1') {
+          return;
+        }
+        cluster.dataset.boundClusterToggle = '1';
+        cluster.addEventListener('toggle', saveDashboardState);
+      });
+
+      document.querySelectorAll('.group-icon').forEach((image) => {
+        if (image.dataset.boundGroupIconError === '1') {
+          return;
+        }
+        image.dataset.boundGroupIconError = '1';
+        image.addEventListener('error', () => {
+          image.hidden = true;
+        });
+      });
+
+      document.querySelectorAll('.service-summary-trend').forEach((button) => {
+        if (button.dataset.boundServiceTrend === '1') {
+          return;
+        }
+        button.dataset.boundServiceTrend = '1';
+        button.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
+      });
+
+      document.querySelectorAll('.trend-trigger').forEach((button) => {
+        if (button.dataset.boundTrendTrigger === '1') {
+          return;
+        }
+        button.dataset.boundTrendTrigger = '1';
+        button.addEventListener('click', () => openTrendDetail(button));
+      });
+
+      if (isAdmin) {
+        document.querySelectorAll('.service-cluster').forEach((cluster) => {
+          if (cluster.dataset.boundGroupDrag === '1') {
+            return;
+          }
+          cluster.dataset.boundGroupDrag = '1';
+          cluster.addEventListener('dragstart', (event) => {
+            cluster.dataset.draggedGroup = cluster.dataset.group || '';
+            cluster.classList.add('is-dragging');
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', cluster.dataset.draggedGroup || '');
+          });
+          cluster.addEventListener('dragend', () => {
+            cluster.classList.remove('is-dragging');
+            document.querySelectorAll('.service-cluster.drop-target').forEach((item) => item.classList.remove('drop-target'));
+          });
+          cluster.addEventListener('dragover', (event) => {
+            const draggedGroup = event.dataTransfer.getData('text/plain') || '';
+            const targetGroup = cluster.dataset.group || '';
+            if (!draggedGroup || draggedGroup === targetGroup) {
+              return;
+            }
+            event.preventDefault();
+            cluster.classList.add('drop-target');
+          });
+          cluster.addEventListener('dragleave', () => {
+            cluster.classList.remove('drop-target');
+          });
+          cluster.addEventListener('drop', (event) => {
+            event.preventDefault();
+            const draggedGroup = event.dataTransfer.getData('text/plain') || '';
+            const targetGroup = cluster.dataset.group || '';
+            cluster.classList.remove('drop-target');
+            if (!draggedGroup || !targetGroup || draggedGroup === targetGroup) {
+              return;
+            }
+            submitPost(appBase + 'groups/reorder', {
+              dragged_group: draggedGroup,
+              target_group: targetGroup,
+              trend: currentTrend
+            });
+          });
+        });
+
+        document.querySelectorAll('.monitor-card').forEach((card) => {
+          if (card.dataset.boundMonitorDrag === '1') {
+            return;
+          }
+          card.dataset.boundMonitorDrag = '1';
+          card.addEventListener('dragstart', (event) => {
+            const payload = JSON.stringify({
+              id: card.dataset.monitorId || '',
+              group: card.dataset.group || ''
+            });
+            card.classList.add('is-dragging');
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', payload);
+          });
+          card.addEventListener('dragend', () => {
+            card.classList.remove('is-dragging');
+            document.querySelectorAll('.monitor-card.drop-target').forEach((item) => item.classList.remove('drop-target'));
+          });
+          card.addEventListener('dragover', (event) => {
+            let dragged = null;
+            try {
+              dragged = JSON.parse(event.dataTransfer.getData('text/plain') || '{}');
+            } catch (_) {
+              return;
+            }
+            const targetId = card.dataset.monitorId || '';
+            const targetGroup = card.dataset.group || '';
+            if (!dragged || dragged.id === targetId || dragged.group !== targetGroup) {
+              return;
+            }
+            event.preventDefault();
+            card.classList.add('drop-target');
+          });
+          card.addEventListener('dragleave', () => {
+            card.classList.remove('drop-target');
+          });
+          card.addEventListener('drop', (event) => {
+            event.preventDefault();
+            let dragged = null;
+            try {
+              dragged = JSON.parse(event.dataTransfer.getData('text/plain') || '{}');
+            } catch (_) {
+              return;
+            }
+            const targetId = card.dataset.monitorId || '';
+            const targetGroup = card.dataset.group || '';
+            card.classList.remove('drop-target');
+            if (!dragged || !targetId || dragged.id === targetId || dragged.group !== targetGroup) {
+              return;
+            }
+            submitPost(appBase + 'monitors/reorder', {
+              dragged_id: dragged.id,
+              target_id: targetId,
+              group: targetGroup,
+              trend: currentTrend
+            });
+          });
+        });
+      }
+
+      bindStateEventListeners();
+      applyStateEventFilters();
+    };
+
+    bindGlobalDashboardListeners();
+    rebindDynamicHandlers = bindDynamicDashboardListeners;
 
     restoreDashboardState();
 
@@ -598,36 +985,470 @@
       month: new Intl.DateTimeFormat(undefined, { month: 'short', year: 'numeric' })
     };
 
-    document.querySelectorAll('.client-time').forEach((element) => {
-      const value = element.getAttribute('datetime');
-      if (!value) {
-        return;
-      }
-      const date = new Date(value);
-      if (Number.isNaN(date.getTime())) {
-        return;
-      }
-      const format = element.dataset.format || 'datetime';
-      const formatter = formatters[format] || formatters.datetime;
-      element.textContent = formatter.format(date);
-      element.title = date.toLocaleString();
-    });
+    const formatClientTimes = (root = document) => {
+      root.querySelectorAll('.client-time').forEach((element) => {
+        const value = element.getAttribute('datetime');
+        if (!value) {
+          return;
+        }
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+          return;
+        }
+        const format = element.dataset.format || 'datetime';
+        const formatter = formatters[format] || formatters.datetime;
+        element.textContent = formatter.format(date);
+        element.title = date.toLocaleString();
+      });
+    };
 
-    document.querySelectorAll('.trend-bar').forEach((element) => {
-      const bucket = element.dataset.bucket;
-      const label = element.dataset.label || '';
-      const format = element.dataset.format || 'hour';
-      if (!bucket) {
-        return;
+    const formatTrendBars = (root = document) => {
+      root.querySelectorAll('.trend-bar').forEach((element) => {
+        const bucket = element.dataset.bucket;
+        const label = element.dataset.label || '';
+        const format = element.dataset.format || 'hour';
+        if (!bucket) {
+          return;
+        }
+        const date = new Date(bucket);
+        if (Number.isNaN(date.getTime())) {
+          element.title = label;
+          return;
+        }
+        const formatter = formatters[format] || formatters.hour;
+        element.title = `${formatter.format(date)} · ${label}`;
+      });
+    };
+
+    const replaceSectionByID = (id, html) => {
+      const current = document.getElementById(id);
+      if (!current || typeof html !== 'string' || html.trim() === '') {
+        return false;
       }
-      const date = new Date(bucket);
-      if (Number.isNaN(date.getTime())) {
-        element.title = label;
-        return;
+      if (current.outerHTML.trim() === html.trim()) {
+        return false;
       }
-      const formatter = formatters[format] || formatters.hour;
-      element.title = `${formatter.format(date)} · ${label}`;
-    });
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = html.trim();
+      const next = wrapper.firstElementChild;
+      if (!next) {
+        return false;
+      }
+      current.replaceWith(next);
+      return true;
+    };
+
+    const parseFragmentRoot = (html) => {
+      if (typeof html !== 'string' || html.trim() === '') {
+        return null;
+      }
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = html.trim();
+      return wrapper.firstElementChild;
+    };
+
+    const patchMonitorGrid = (currentGrid, nextGrid) => {
+      if (!(currentGrid instanceof Element) || !(nextGrid instanceof Element)) {
+        return false;
+      }
+
+      let changed = false;
+      const currentCards = Array.from(currentGrid.querySelectorAll(':scope > .monitor-card'));
+      const nextCards = Array.from(nextGrid.querySelectorAll(':scope > .monitor-card'));
+      const currentByID = new Map(currentCards.map((card) => [card.dataset.monitorId || '', card]));
+      const nextIDs = new Set(nextCards.map((card) => card.dataset.monitorId || ''));
+
+      currentCards.forEach((card) => {
+        const id = card.dataset.monitorId || '';
+        if (!nextIDs.has(id)) {
+          card.remove();
+          changed = true;
+        }
+      });
+
+      nextCards.forEach((nextCard, index) => {
+        const id = nextCard.dataset.monitorId || '';
+        if (!id) {
+          return;
+        }
+        const current = currentByID.get(id);
+        if (!current) {
+          const currentOrdered = Array.from(currentGrid.querySelectorAll(':scope > .monitor-card'));
+          const reference = currentOrdered[index] || null;
+          currentGrid.insertBefore(nextCard.cloneNode(true), reference);
+          changed = true;
+          return;
+        }
+
+        if (current.outerHTML !== nextCard.outerHTML) {
+          current.replaceWith(nextCard.cloneNode(true));
+          changed = true;
+        }
+
+        const orderedAfter = Array.from(currentGrid.querySelectorAll(':scope > .monitor-card'));
+        const currentNode = orderedAfter.find((node) => (node.dataset.monitorId || '') === id);
+        if (!currentNode) {
+          return;
+        }
+        if (orderedAfter[index] !== currentNode) {
+          currentGrid.insertBefore(currentNode, orderedAfter[index] || null);
+          changed = true;
+        }
+      });
+
+      return changed;
+    };
+
+    const patchServiceCluster = (currentCluster, nextCluster) => {
+      if (!(currentCluster instanceof Element) || !(nextCluster instanceof Element)) {
+        return false;
+      }
+
+      const wasOpen = currentCluster.open;
+      let changed = false;
+
+      const currentSummary = currentCluster.querySelector(':scope > .service-cluster-header');
+      const nextSummary = nextCluster.querySelector(':scope > .service-cluster-header');
+      if (currentSummary && nextSummary) {
+        const patchAttr = (currentElement, nextElement, attributeName) => {
+          const currentValue = currentElement.getAttribute(attributeName) || '';
+          const nextValue = nextElement.getAttribute(attributeName) || '';
+          if (currentValue !== nextValue) {
+            if (nextValue === '') {
+              currentElement.removeAttribute(attributeName);
+            } else {
+              currentElement.setAttribute(attributeName, nextValue);
+            }
+            return true;
+          }
+          return false;
+        };
+
+        const currentCount = currentSummary.querySelector('.service-summary-right .service-count');
+        const nextCount = nextSummary.querySelector('.service-summary-right .service-count');
+        if (currentCount && nextCount) {
+          if (currentCount.textContent !== nextCount.textContent) {
+            currentCount.textContent = nextCount.textContent;
+            changed = true;
+          }
+          if (patchAttr(currentCount, nextCount, 'aria-label')) {
+            changed = true;
+          }
+        }
+
+        const currentStatus = currentSummary.querySelector('.service-summary-right .status-pill');
+        const nextStatus = nextSummary.querySelector('.service-summary-right .status-pill');
+        if (currentStatus && nextStatus) {
+          if (currentStatus.textContent !== nextStatus.textContent) {
+            currentStatus.textContent = nextStatus.textContent;
+            changed = true;
+          }
+          if (currentStatus.className !== nextStatus.className) {
+            currentStatus.className = nextStatus.className;
+            changed = true;
+          }
+        }
+
+        const currentSettings = currentSummary.querySelector('.group-settings');
+        const nextSettings = nextSummary.querySelector('.group-settings');
+        if (currentSettings && nextSettings) {
+          if (patchAttr(currentSettings, nextSettings, 'data-icon-slug')) {
+            changed = true;
+          }
+        }
+
+        const currentTitle = currentSummary.querySelector('.service-cluster-title h4');
+        const nextTitle = nextSummary.querySelector('.service-cluster-title h4');
+        if (currentTitle && nextTitle && currentTitle.textContent !== nextTitle.textContent) {
+          currentTitle.textContent = nextTitle.textContent;
+          changed = true;
+        }
+
+        const currentIcon = currentSummary.querySelector('.service-cluster-title .group-icon');
+        const nextIcon = nextSummary.querySelector('.service-cluster-title .group-icon');
+        const currentTitleWrapper = currentSummary.querySelector('.service-cluster-title');
+        if (currentIcon && nextIcon) {
+          if (currentIcon.getAttribute('src') !== nextIcon.getAttribute('src')) {
+            currentIcon.setAttribute('src', nextIcon.getAttribute('src') || '');
+            changed = true;
+          }
+          if (currentIcon.getAttribute('alt') !== nextIcon.getAttribute('alt')) {
+            currentIcon.setAttribute('alt', nextIcon.getAttribute('alt') || '');
+            changed = true;
+          }
+        } else if (!currentIcon && nextIcon && currentTitleWrapper) {
+          currentTitleWrapper.insertBefore(nextIcon.cloneNode(true), currentTitleWrapper.firstChild || null);
+          changed = true;
+        } else if (currentIcon && !nextIcon) {
+          currentIcon.remove();
+          changed = true;
+        }
+
+        const currentTrendTrigger = currentSummary.querySelector('.service-summary-trend');
+        const nextTrendTrigger = nextSummary.querySelector('.service-summary-trend');
+        if (currentTrendTrigger && nextTrendTrigger) {
+          ['data-monitor-name', 'data-monitor-kind', 'data-target', 'data-status', 'data-uptime', 'data-trend-label', 'data-last-check', 'data-last-message', 'aria-label'].forEach((attributeName) => {
+            if (patchAttr(currentTrendTrigger, nextTrendTrigger, attributeName)) {
+              changed = true;
+            }
+          });
+
+          const currentTrendBars = currentTrendTrigger.querySelector('.trend-bars');
+          const nextTrendBars = nextTrendTrigger.querySelector('.trend-bars');
+          if (currentTrendBars && nextTrendBars && currentTrendBars.innerHTML !== nextTrendBars.innerHTML) {
+            currentTrendBars.innerHTML = nextTrendBars.innerHTML;
+            changed = true;
+          }
+        } else if (!currentTrendTrigger && nextTrendTrigger) {
+          const summaryBody = currentSummary.querySelector('.service-summary');
+          if (summaryBody) {
+            summaryBody.appendChild(nextTrendTrigger.cloneNode(true));
+            changed = true;
+          }
+        } else if (currentTrendTrigger && !nextTrendTrigger) {
+          currentTrendTrigger.remove();
+          changed = true;
+        }
+
+        const currentMuted = currentSummary.querySelector('.service-summary > p.muted.compact');
+        const nextMuted = nextSummary.querySelector('.service-summary > p.muted.compact');
+        if (currentMuted && nextMuted) {
+          if (currentMuted.textContent !== nextMuted.textContent) {
+            currentMuted.textContent = nextMuted.textContent;
+            changed = true;
+          }
+        } else if (!currentMuted && nextMuted) {
+          const summaryBody = currentSummary.querySelector('.service-summary');
+          if (summaryBody) {
+            summaryBody.appendChild(nextMuted.cloneNode(true));
+            changed = true;
+          }
+        } else if (currentMuted && !nextMuted) {
+          currentMuted.remove();
+          changed = true;
+        }
+      } else if (currentSummary?.innerHTML !== nextSummary?.innerHTML) {
+        if (currentSummary && nextSummary) {
+          currentSummary.innerHTML = nextSummary.innerHTML;
+          changed = true;
+        }
+      }
+
+      const currentGrid = currentCluster.querySelector(':scope > .monitor-grid');
+      const nextGrid = nextCluster.querySelector(':scope > .monitor-grid');
+      if (currentGrid && nextGrid) {
+        if (patchMonitorGrid(currentGrid, nextGrid)) {
+          changed = true;
+        }
+      } else if (currentCluster.outerHTML !== nextCluster.outerHTML) {
+        currentCluster.replaceWith(nextCluster.cloneNode(true));
+        return true;
+      }
+
+      currentCluster.open = wasOpen;
+      return changed;
+    };
+
+    const patchBoardSection = (html) => {
+      const currentBoard = document.getElementById('dashboard-live-board');
+      const nextBoard = parseFragmentRoot(html);
+      if (!(currentBoard instanceof Element) || !(nextBoard instanceof Element)) {
+        return false;
+      }
+
+      const currentList = currentBoard.querySelector('.service-group-list');
+      const nextList = nextBoard.querySelector('.service-group-list');
+      if (!(currentList instanceof Element) || !(nextList instanceof Element)) {
+        return replaceSectionByID('dashboard-live-board', html);
+      }
+
+      let changed = false;
+      const currentClusters = Array.from(currentList.querySelectorAll(':scope > .service-cluster'));
+      const nextClusters = Array.from(nextList.querySelectorAll(':scope > .service-cluster'));
+      const currentByGroup = new Map(currentClusters.map((cluster) => [cluster.dataset.group || '', cluster]));
+      const nextGroups = new Set(nextClusters.map((cluster) => cluster.dataset.group || ''));
+
+      currentClusters.forEach((cluster) => {
+        const key = cluster.dataset.group || '';
+        if (!nextGroups.has(key)) {
+          cluster.remove();
+          changed = true;
+        }
+      });
+
+      nextClusters.forEach((nextCluster, index) => {
+        const key = nextCluster.dataset.group || '';
+        if (!key) {
+          return;
+        }
+        const currentCluster = currentByGroup.get(key);
+        if (!currentCluster) {
+          const ordered = Array.from(currentList.querySelectorAll(':scope > .service-cluster'));
+          const reference = ordered[index] || null;
+          currentList.insertBefore(nextCluster.cloneNode(true), reference);
+          changed = true;
+          return;
+        }
+
+        if (patchServiceCluster(currentCluster, nextCluster)) {
+          changed = true;
+        }
+
+        const orderedAfter = Array.from(currentList.querySelectorAll(':scope > .service-cluster'));
+        const currentNode = orderedAfter.find((node) => (node.dataset.group || '') === key);
+        if (!currentNode) {
+          return;
+        }
+        if (orderedAfter[index] !== currentNode) {
+          currentList.insertBefore(currentNode, orderedAfter[index] || null);
+          changed = true;
+        }
+      });
+
+      const currentBoardClasses = currentBoard.className || '';
+      const nextBoardClasses = nextBoard.className || '';
+      if (currentBoardClasses !== nextBoardClasses) {
+        currentBoard.className = nextBoardClasses;
+        changed = true;
+      }
+
+      return changed;
+    };
+
+    const patchBoardGroups = (groupsHTML) => {
+      if (!groupsHTML || typeof groupsHTML !== 'object' || Array.isArray(groupsHTML)) {
+        return false;
+      }
+
+      const currentBoard = document.getElementById('dashboard-live-board');
+      if (!(currentBoard instanceof Element)) {
+        return false;
+      }
+      const currentList = currentBoard.querySelector('.service-group-list');
+      if (!(currentList instanceof Element)) {
+        return false;
+      }
+
+      let changed = false;
+      Object.entries(groupsHTML).forEach(([groupName, html]) => {
+        if (typeof groupName !== 'string' || groupName.trim() === '') {
+          return;
+        }
+        const nextCluster = parseFragmentRoot(html);
+        if (!(nextCluster instanceof Element)) {
+          return;
+        }
+
+        const currentCluster = Array.from(currentList.querySelectorAll(':scope > .service-cluster'))
+          .find((cluster) => (cluster.dataset.group || '') === groupName);
+
+        if (!currentCluster) {
+          currentList.appendChild(nextCluster.cloneNode(true));
+          changed = true;
+          return;
+        }
+
+        if (patchServiceCluster(currentCluster, nextCluster)) {
+          changed = true;
+        }
+      });
+
+      return changed;
+    };
+
+    applyLiveSnapshot = async (requestedParts = [], requestedBoardGroups = []) => {
+      if (hasOpenDialog()) {
+        return false;
+      }
+
+      const openGroupsBeforeUpdate = currentOpenGroups();
+
+      const parts = Array.isArray(requestedParts)
+        ? requestedParts
+          .map((value) => String(value || '').trim())
+          .filter((value) => value.length > 0)
+        : [];
+      const boardGroups = Array.isArray(requestedBoardGroups)
+        ? requestedBoardGroups
+          .map((value) => String(value || '').trim())
+          .filter((value) => value.length > 0)
+        : [];
+      const uniqueParts = Array.from(new Set(parts));
+      const uniqueBoardGroups = Array.from(new Set(boardGroups));
+      const snapshotURL = new URL(`${appBase}live/snapshot`, window.location.href);
+      snapshotURL.searchParams.set('trend', currentTrend);
+      if (uniqueParts.length > 0) {
+        snapshotURL.searchParams.set('parts', uniqueParts.join(','));
+      }
+      if (uniqueParts.includes('board') && uniqueBoardGroups.length > 0) {
+        snapshotURL.searchParams.set('board_groups', uniqueBoardGroups.join(','));
+      }
+
+      const response = await fetch(snapshotURL.toString(), {
+        method: 'GET',
+        headers: { Accept: 'application/json' }
+      });
+      if (!response.ok) {
+        return false;
+      }
+      const payload = await response.json();
+      if (!payload || typeof payload !== 'object') {
+        return false;
+      }
+
+      const updates = [];
+      let boardReplaced = false;
+      if (typeof payload.stats_hash === 'string' && payload.stats_hash !== liveSnapshotHashes.stats) {
+        updates.push(replaceSectionByID('dashboard-live-stats', payload.stats_html));
+        liveSnapshotHashes.stats = payload.stats_hash;
+      }
+      if (typeof payload.board_hash === 'string' && payload.board_hash !== liveSnapshotHashes.board) {
+        if (payload.board_groups_html && typeof payload.board_groups_html === 'object' && !Array.isArray(payload.board_groups_html)) {
+          boardReplaced = patchBoardGroups(payload.board_groups_html);
+        } else {
+          boardReplaced = patchBoardSection(payload.board_html);
+        }
+        updates.push(boardReplaced);
+        liveSnapshotHashes.board = payload.board_hash;
+      }
+      if (typeof payload.state_events_hash === 'string' && payload.state_events_hash !== liveSnapshotHashes.stateEvents) {
+        updates.push(replaceSectionByID('dashboard-live-state-events', payload.state_events_html));
+        liveSnapshotHashes.stateEvents = payload.state_events_hash;
+      }
+      if (typeof payload.notification_events_hash === 'string' && payload.notification_events_hash !== liveSnapshotHashes.notificationEvents) {
+        updates.push(replaceSectionByID('dashboard-live-notification-events', payload.notification_events_html));
+        liveSnapshotHashes.notificationEvents = payload.notification_events_hash;
+      }
+
+      const groupOptions = document.getElementById('monitor-group-options');
+      if (groupOptions && typeof payload.group_options_html === 'string' && typeof payload.group_options_hash === 'string' && payload.group_options_hash !== liveSnapshotHashes.groupOptions) {
+        groupOptions.innerHTML = payload.group_options_html;
+        liveSnapshotHashes.groupOptions = payload.group_options_hash;
+      }
+
+      const changed = updates.some(Boolean);
+
+      if (!changed) {
+        return false;
+      }
+
+      rebindDynamicHandlers();
+      reformatLiveContent();
+
+      if (boardReplaced) {
+        restoreOpenGroups(openGroupsBeforeUpdate);
+      }
+
+      applyKindRules();
+      return true;
+    };
+
+    reformatLiveContent = () => {
+      formatClientTimes(document);
+      formatTrendBars(document);
+    };
+
+    reformatLiveContent();
 
     const formatDateValue = (value, format = 'datetime') => {
       if (!value) {
@@ -711,38 +1532,41 @@
     };
 
     trendDetailClose?.addEventListener('click', () => trendDetailModal?.close());
-    document.querySelectorAll('.trend-trigger').forEach((button) => {
-      button.addEventListener('click', () => openTrendDetail(button));
-    });
-
-    const stateEventRows = stateEventsBody
-      ? Array.from(stateEventsBody.querySelectorAll('tr')).filter((row) => row.id !== 'state-events-empty-row')
-      : [];
 
     const updateStateEventFilterStatus = (visible, total) => {
-      if (!stateEventsFilterStatus) {
+      const filterStatus = document.getElementById('state-events-filter-status');
+      if (!filterStatus) {
         return;
       }
       if (total <= 0) {
-        stateEventsFilterStatus.textContent = 'Keine Statusänderungen vorhanden.';
+        filterStatus.textContent = 'Keine Statusänderungen vorhanden.';
         return;
       }
       if (visible === total) {
-        stateEventsFilterStatus.textContent = `${total} Einträge`;
+        filterStatus.textContent = `${total} Einträge`;
         return;
       }
-      stateEventsFilterStatus.textContent = `${visible} von ${total} Einträgen sichtbar`;
+      filterStatus.textContent = `${visible} von ${total} Einträgen sichtbar`;
     };
 
     const applyStateEventFilters = () => {
+      const body = document.getElementById('state-events-body');
+      const search = document.getElementById('state-events-search');
+      const statusFilterNode = document.getElementById('state-events-status-filter');
+      const incidentsOnlyNode = document.getElementById('state-events-incidents-only');
+      const emptyRow = document.getElementById('state-events-empty-row');
+      const stateEventRows = body
+        ? Array.from(body.querySelectorAll('tr')).filter((row) => row.id !== 'state-events-empty-row')
+        : [];
+
       if (!stateEventRows.length) {
         updateStateEventFilterStatus(0, 0);
         return;
       }
 
-      const query = (stateEventsSearch?.value || '').trim().toLowerCase();
-      const statusFilter = (stateEventsStatusFilter?.value || 'all').trim().toLowerCase();
-      const incidentsOnly = stateEventsIncidentsOnly?.checked === true;
+      const query = (search?.value || '').trim().toLowerCase();
+      const statusFilter = (statusFilterNode?.value || 'all').trim().toLowerCase();
+      const incidentsOnly = incidentsOnlyNode?.checked === true;
 
       let visible = 0;
       stateEventRows.forEach((row) => {
@@ -763,13 +1587,17 @@
         }
       });
 
-      if (stateEventsEmptyRow) {
-        stateEventsEmptyRow.hidden = visible > 0;
+      if (emptyRow) {
+        emptyRow.hidden = visible > 0;
       }
       updateStateEventFilterStatus(visible, stateEventRows.length);
     };
 
     const exportStateEventsCSV = () => {
+      const body = document.getElementById('state-events-body');
+      const stateEventRows = body
+        ? Array.from(body.querySelectorAll('tr')).filter((row) => row.id !== 'state-events-empty-row')
+        : [];
       if (!stateEventRows.length) {
         return;
       }
@@ -806,98 +1634,6 @@
       URL.revokeObjectURL(url);
     };
 
-    stateEventsSearch?.addEventListener('input', applyStateEventFilters);
-    stateEventsStatusFilter?.addEventListener('change', applyStateEventFilters);
-    stateEventsIncidentsOnly?.addEventListener('change', applyStateEventFilters);
-    stateEventsExport?.addEventListener('click', exportStateEventsCSV);
-    applyStateEventFilters();
-
-    if (!isAdmin) {
-      return;
-    }
-
-    let draggedGroup = null;
-    document.querySelectorAll('.service-cluster').forEach((cluster) => {
-      cluster.addEventListener('dragstart', (event) => {
-        draggedGroup = cluster.dataset.group || null;
-        cluster.classList.add('is-dragging');
-        event.dataTransfer.effectAllowed = 'move';
-        event.dataTransfer.setData('text/plain', draggedGroup || '');
-      });
-      cluster.addEventListener('dragend', () => {
-        draggedGroup = null;
-        cluster.classList.remove('is-dragging');
-        document.querySelectorAll('.service-cluster.drop-target').forEach((item) => item.classList.remove('drop-target'));
-      });
-      cluster.addEventListener('dragover', (event) => {
-        const targetGroup = cluster.dataset.group || '';
-        if (!draggedGroup || draggedGroup === targetGroup) {
-          return;
-        }
-        event.preventDefault();
-        cluster.classList.add('drop-target');
-      });
-      cluster.addEventListener('dragleave', () => {
-        cluster.classList.remove('drop-target');
-      });
-      cluster.addEventListener('drop', (event) => {
-        event.preventDefault();
-        const targetGroup = cluster.dataset.group || '';
-        cluster.classList.remove('drop-target');
-        if (!draggedGroup || !targetGroup || draggedGroup === targetGroup) {
-          return;
-        }
-        submitPost(appBase + 'groups/reorder', {
-          dragged_group: draggedGroup,
-          target_group: targetGroup,
-          trend: currentTrend
-        });
-      });
-    });
-
-    let draggedMonitor = null;
-    document.querySelectorAll('.monitor-card').forEach((card) => {
-      card.addEventListener('dragstart', (event) => {
-        draggedMonitor = {
-          id: card.dataset.monitorId || '',
-          group: card.dataset.group || ''
-        };
-        card.classList.add('is-dragging');
-        event.dataTransfer.effectAllowed = 'move';
-        event.dataTransfer.setData('text/plain', draggedMonitor.id);
-      });
-      card.addEventListener('dragend', () => {
-        draggedMonitor = null;
-        card.classList.remove('is-dragging');
-        document.querySelectorAll('.monitor-card.drop-target').forEach((item) => item.classList.remove('drop-target'));
-      });
-      card.addEventListener('dragover', (event) => {
-        const targetId = card.dataset.monitorId || '';
-        const targetGroup = card.dataset.group || '';
-        if (!draggedMonitor || draggedMonitor.id === targetId || draggedMonitor.group !== targetGroup) {
-          return;
-        }
-        event.preventDefault();
-        card.classList.add('drop-target');
-      });
-      card.addEventListener('dragleave', () => {
-        card.classList.remove('drop-target');
-      });
-      card.addEventListener('drop', (event) => {
-        event.preventDefault();
-        const targetId = card.dataset.monitorId || '';
-        const targetGroup = card.dataset.group || '';
-        card.classList.remove('drop-target');
-        if (!draggedMonitor || !targetId || draggedMonitor.id === targetId || draggedMonitor.group !== targetGroup) {
-          return;
-        }
-        submitPost(appBase + 'monitors/reorder', {
-          dragged_id: draggedMonitor.id,
-          target_id: targetId,
-          group: targetGroup,
-          trend: currentTrend
-        });
-      });
-    });
+    rebindDynamicHandlers();
   });
 })();
