@@ -1,0 +1,69 @@
+{{define "content"}}
+<div class="admin-section">
+  <nav class="admin-nav card">
+    <a href="{{$.AppBase}}" class="admin-nav-link">Dashboard</a>
+    <a href="{{$.AppBase}}settings/profile" class="admin-nav-link">Profil</a>
+    {{if eq $.User.Role "admin"}}
+    <a href="{{$.AppBase}}settings/users" class="admin-nav-link">Benutzerverwaltung</a>
+    <a href="{{$.AppBase}}settings/providers" class="admin-nav-link is-active">OCID-Provider</a>
+    <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link">Remote Nodes</a>
+    {{end}}
+  </nav>
+
+  {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
+  {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+
+  <div class="admin-header">
+    <div>
+      <h1>OCID-Provider</h1>
+    </div>
+    <div class="admin-actions-inline">
+      <a href="{{$.AppBase}}settings/providers/new" class="button">+ OCID-Provider</a>
+    </div>
+  </div>
+
+  <div class="card table-card">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>Provider Key</th>
+          <th>Typ</th>
+          <th>Name</th>
+          <th>Status</th>
+          <th>Aktionen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{if .AdminProviders}}
+        {{range .AdminProviders}}
+        <tr>
+          <td>{{.ProviderKey}}</td>
+          <td><span class="status-badge">{{.Kind}}</span></td>
+          <td>{{.DisplayName}}</td>
+          <td>
+            {{if .Enabled}}
+            <span class="status-badge status-badge-success">Aktiv</span>
+            {{else}}
+            <span class="status-badge status-badge-muted">Deaktiviert</span>
+            {{end}}
+          </td>
+          <td class="admin-actions-inline">
+            {{if ne .Kind "local"}}
+            <a href="{{$.AppBase}}settings/providers/{{.ProviderKey}}/edit" class="button button-secondary button-small">Bearbeiten</a>
+            {{end}}
+            <form method="POST" action="{{$.AppBase}}settings/providers/{{.ProviderKey}}/delete" class="inline-form" data-confirm="Provider wirklich löschen?">
+              <button type="submit" class="button button-danger button-small">Löschen</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+        {{else}}
+        <tr>
+          <td colspan="5" class="muted">Keine Provider vorhanden.</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

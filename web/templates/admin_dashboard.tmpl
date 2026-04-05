@@ -1,14 +1,16 @@
 {{define "content"}}
 <div class="admin-section">
   <nav class="admin-nav card">
-    <a href="/admin/" class="admin-nav-link is-active">Dashboard</a>
+    <a href="/admin/" class="admin-nav-link is-active">Allgemein</a>
     <a href="/admin/tenants" class="admin-nav-link">Tenants</a>
+    <a href="/admin/providers" class="admin-nav-link">OCID-Provider</a>
+    <a href="/admin/users" class="admin-nav-link">Benutzerverwaltung</a>
+    <a href="/admin/remote-nodes" class="admin-nav-link">Remote Nodes</a>
   </nav>
 
   <div class="admin-header">
     <div>
-      <p class="eyebrow">Control Plane</p>
-      <h1>Admin Dashboard</h1>
+      <h1>Allgemein</h1>
     </div>
     <a href="/admin/tenants" class="button">Tenants verwalten</a>
   </div>
@@ -19,51 +21,15 @@
     <article class="card stat-card stat-card-primary stack">
       <p class="muted">Tenants gesamt</p>
       <div class="metric">{{len .AdminTenants}}</div>
-      <p class="muted">Control-Plane Übersicht</p>
     </article>
     <article class="card stat-card stat-card-soft stack">
-      <p class="muted">Schnellzugriff</p>
-      <div class="admin-actions-inline">
-        <a class="button" href="/admin/tenants">Tenants</a>
-        <a class="button button-secondary" href="/app/">Zur App</a>
-      </div>
+      <p class="muted">Monitore</p>
+      <div class="metric">{{.AdminMonitorCount}}</div>
     </article>
-  </div>
-
-  <div class="card stack">
-    <h2>Letzte Tenants</h2>
-    {{if .AdminTenants}}
-    <table class="admin-table">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Slug</th>
-          <th>Name</th>
-          <th>Status</th>
-          <th>Aktion</th>
-        </tr>
-      </thead>
-      <tbody>
-      {{range .AdminTenants}}
-        <tr>
-          <td>{{.ID}}</td>
-          <td>{{.Slug}}</td>
-          <td>{{.Name}}</td>
-          <td>
-            {{if .Active}}
-            <span class="status-badge status-badge-success">Aktiv</span>
-            {{else}}
-            <span class="status-badge status-badge-muted">Deaktiviert</span>
-            {{end}}
-          </td>
-          <td><a class="button button-secondary button-small" href="/admin/tenants/{{.ID}}/edit">Bearbeiten</a></td>
-        </tr>
-      {{end}}
-      </tbody>
-    </table>
-    {{else}}
-    <p class="muted">Noch keine Tenants vorhanden.</p>
-    {{end}}
+    <article class="card stat-card stat-card-soft stack">
+      <p class="muted">Remote Nodes</p>
+      <div class="metric">{{.AdminRemoteNodeCount}}</div>
+    </article>
   </div>
 
   <form method="POST" action="/admin/settings/smtp/save" class="admin-form card stack">

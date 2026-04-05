@@ -1,9 +1,13 @@
 {{define "content"}}
-<section class="hero">
-  <div class="hero-copy">
-    <span class="eyebrow">GoUp</span>
-    <h1>Kein Tenant ausgewählt</h1>
-    <p class="muted">Bitte gib den Tenant-Namen direkt in der URL an, z.B. <strong>/mein-tenant/</strong>.</p>
-  </div>
+<section class="login-shell no-tenant-shell">
+  <a class="login-brand" href="/" aria-label="GoUp Startseite">
+    <img class="login-brand-logo no-tenant-brand-logo" src="/assets/logo_goup.svg" alt="GoUp Logo">
+  </a>
+  <article class="card login-card stack no-tenant-card">
+    <div>
+      <h1>Kein gültiger Tenant</h1>
+      <p class="muted">Bitte gib den Tenant-Namen direkt in der URL an, z. B. <strong>/mein-tenant/</strong>.</p>
+    </div>
+  </article>
 </section>
 {{end}}

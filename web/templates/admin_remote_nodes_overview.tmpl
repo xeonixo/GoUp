@@ -1,0 +1,57 @@
+{{define "content"}}
+<div class="admin-section">
+  <nav class="admin-nav card">
+    <a href="/admin/" class="admin-nav-link">Allgemein</a>
+    <a href="/admin/tenants" class="admin-nav-link">Tenants</a>
+    <a href="/admin/providers" class="admin-nav-link">OCID-Provider</a>
+    <a href="/admin/users" class="admin-nav-link">Benutzerverwaltung</a>
+    <a href="/admin/remote-nodes" class="admin-nav-link is-active">Remote Nodes</a>
+  </nav>
+
+  {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
+  {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+
+  <div class="admin-header">
+    <div>
+      <h1>Remote Nodes</h1>
+    </div>
+  </div>
+
+  <div class="card table-card">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>Tenant</th>
+          <th>Name</th>
+          <th>Node ID</th>
+          <th>Status</th>
+          <th>Zuletzt gesehen</th>
+          <th>Timeout</th>
+          <th>Aktionen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{if .AdminRemoteNodeRows}}
+        {{range .AdminRemoteNodeRows}}
+        <tr>
+          <td>{{.TenantName}}</td>
+          <td>{{.Name}}</td>
+          <td class="break-all"><code>{{.NodeID}}</code></td>
+          <td>{{if .Online}}<span class="status-badge status-badge-success">ONLINE</span>{{else}}<span class="status-badge status-badge-muted">OFFLINE</span>{{end}}</td>
+          <td>{{if .LastSeenAtRaw}}<span class="js-relative-age" data-utc="{{.LastSeenAtRaw}}">{{.LastSeenAt}}</span>{{else}}—{{end}}</td>
+          <td>{{.HeartbeatWindow}}</td>
+          <td class="admin-actions-inline">
+            <a href="/admin/tenants/{{.TenantID}}/remote-nodes" class="button button-secondary button-small">Tenant öffnen</a>
+          </td>
+        </tr>
+        {{end}}
+        {{else}}
+        <tr>
+          <td colspan="7" class="muted">Noch keine Remote-Nodes vorhanden.</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

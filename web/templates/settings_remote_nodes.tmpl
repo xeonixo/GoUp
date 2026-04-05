@@ -1,10 +1,11 @@
 {{define "content"}}
-<div class="admin-section">
+<div class="admin-section" id="settings-remote-nodes-page" data-app-base="{{$.AppBase}}">
   <nav class="admin-nav card">
     <a href="{{$.AppBase}}" class="admin-nav-link">Dashboard</a>
-    <a href="{{$.AppBase}}settings/profile" class="admin-nav-link">Settings · Profil</a>
-    <a href="{{$.AppBase}}settings/users" class="admin-nav-link">Settings · Benutzer</a>
-    <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link is-active">Settings · Remote Nodes</a>
+    <a href="{{$.AppBase}}settings/profile" class="admin-nav-link">Profil</a>
+    <a href="{{$.AppBase}}settings/users" class="admin-nav-link">Benutzerverwaltung</a>
+    <a href="{{$.AppBase}}settings/providers" class="admin-nav-link">OCID-Provider</a>
+    <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link is-active">Remote Nodes</a>
   </nav>
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
@@ -12,9 +13,7 @@
 
   <div class="admin-header">
     <div>
-      <p class="eyebrow">Settings</p>
-      <h1>Remote Nodes · {{.AdminTenant.Name}}</h1>
-      <p class="muted compact">Tenant: {{.AdminTenant.Slug}}</p>
+      <h1>Remote Nodes</h1>
     </div>
   </div>
 
@@ -48,17 +47,17 @@
           <th>Aktionen</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody id="settings-remote-nodes-body">
         {{if .RemoteNodes}}
         {{range .RemoteNodes}}
-        <tr>
+        <tr data-node-id="{{.NodeID}}">
           <td>{{.Name}}</td>
           <td class="break-all"><code>{{.NodeID}}</code></td>
-          <td>{{if .Online}}<span class="status-badge status-badge-success">ONLINE</span>{{else}}<span class="status-badge status-badge-muted">OFFLINE</span>{{end}}</td>
-          <td>{{if .LastSeenAtRaw}}<span class="js-relative-age" data-utc="{{.LastSeenAtRaw}}">{{.LastSeenAt}}</span>{{else}}—{{end}}</td>
+          <td data-role="status">{{if .Online}}<span class="status-badge status-badge-success">ONLINE</span>{{else}}<span class="status-badge status-badge-muted">OFFLINE</span>{{end}}</td>
+          <td data-role="last-seen">{{if .LastSeenAtRaw}}<span class="js-relative-age" data-utc="{{.LastSeenAtRaw}}">{{.LastSeenAt}}</span>{{else}}—{{end}}</td>
           <td>{{.HeartbeatWindow}}</td>
           <td class="break-all">{{.ProvisionURL}}</td>
-          <td>
+          <td data-role="logs">
             {{if .Events}}
             <details class="remote-node-log">
               <summary>{{len .Events}} Einträge</summary>
@@ -94,4 +93,8 @@
     </table>
   </div>
 </div>
+{{end}}
+
+{{define "page_scripts"}}
+<script src="/static/settings-remote-nodes.js" defer></script>
 {{end}}

@@ -42,7 +42,10 @@
 <dialog id="monitor-modal" class="monitor-modal">
   <form method="post" action="{{$.AppBase}}monitors/save" class="stack form-grid" id="monitor-form">
     <input type="hidden" name="id" id="monitor-id">
-    <h2 id="monitor-modal-title">Monitor anlegen</h2>
+    <div class="modal-header">
+      <h2 id="monitor-modal-title">Monitor anlegen</h2>
+      <button class="modal-close-button" type="button" id="monitor-close" aria-label="Monitor-Dialog schließen">×</button>
+    </div>
 
     <label>
       <span>Typ</span>
@@ -262,7 +265,7 @@
         <h2 id="group-modal-title">Gruppe konfigurieren</h2>
         <p class="muted compact">Wähle ein wiederverwendetes Icon, suche in Dashboard Icons oder lade ein eigenes Icon hoch.</p>
       </div>
-      <button class="button button-secondary button-small" type="button" id="group-cancel">Schließen</button>
+      <button class="modal-close-button" type="button" id="group-cancel" aria-label="Gruppen-Dialog schließen">×</button>
     </div>
 
     <div class="group-icon-preview-panel">
@@ -308,7 +311,7 @@
         <h2 id="trend-detail-title">Trenddetails</h2>
         <p class="muted compact" id="trend-detail-subtitle">Historie</p>
       </div>
-      <button class="button button-secondary button-small" type="button" id="trend-detail-close">Schließen</button>
+      <button class="modal-close-button" type="button" id="trend-detail-close" aria-label="Trenddetails schließen">×</button>
     </div>
 
     <div class="trend-detail-meta">
@@ -362,7 +365,6 @@
           </div>
         </div>
         <div class="trend-detail-latency-axis trend-detail-latency-axis-x" aria-hidden="true">
-          <span id="trend-detail-latency-axis-label">Skala (ms)</span>
           <span id="trend-detail-latency-x-start">—</span>
           <span id="trend-detail-latency-x-end">—</span>
         </div>
@@ -631,7 +633,7 @@
           <td>{{.Monitor}}</td>
           <td><span class="status-pill {{.FromClass}}">{{.From}}</span></td>
           <td><span class="status-pill {{.ToClass}}">{{.To}}</span></td>
-          <td class="break-all">{{.Message}}</td>
+          <td class="break-all" title="{{.Message}}"><span class="event-message-cell">{{.Message}}</span></td>
         </tr>
         {{end}}
         <tr id="state-events-empty-row" hidden>
@@ -640,6 +642,7 @@
       </tbody>
     </table>
   </div>
+  <div class="table-pagination" id="state-events-pagination" hidden></div>
   {{else}}
   <p class="muted">Noch keine Statusänderungen vorhanden.</p>
   {{end}}
@@ -661,21 +664,22 @@
           <th>Zugestellt</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody id="notification-events-body">
         {{range .Events}}
         <tr>
           <td><time class="client-time" datetime="{{.WhenRaw}}" data-format="datetime">{{.When}}</time></td>
           <td>{{.Monitor}}</td>
           <td>{{.EventType}}</td>
-          <td>{{.Endpoint}}</td>
-          <td>{{.Result}}</td>
-          <td class="break-all">{{.Error}}</td>
+          <td title="{{.Endpoint}}"><span class="notification-endpoint-cell">{{.Endpoint}}</span></td>
+          <td title="{{.Result}}"><span class="notification-result-cell">{{.Result}}</span></td>
+          <td class="break-all" title="{{.Error}}"><span class="notification-error-cell">{{.Error}}</span></td>
           <td>{{if .DeliveredAtRaw}}<time class="client-time" datetime="{{.DeliveredAtRaw}}" data-format="datetime">{{.DeliveredAt}}</time>{{else}}—{{end}}</td>
         </tr>
         {{end}}
       </tbody>
     </table>
   </div>
+  <div class="table-pagination" id="notification-events-pagination" hidden></div>
   {{else}}
   <p class="muted">Noch keine Notification-Events vorhanden.</p>
   {{end}}

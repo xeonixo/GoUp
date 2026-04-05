@@ -1,8 +1,11 @@
 {{define "content"}}
 <div class="admin-section">
   <nav class="admin-nav card">
-    <a href="/admin/" class="admin-nav-link">Dashboard</a>
+    <a href="/admin/" class="admin-nav-link">Allgemein</a>
     <a href="/admin/tenants" class="admin-nav-link is-active">Tenants</a>
+    <a href="/admin/providers" class="admin-nav-link">OCID-Provider</a>
+    <a href="/admin/users" class="admin-nav-link">Benutzerverwaltung</a>
+    <a href="/admin/remote-nodes" class="admin-nav-link">Remote Nodes</a>
   </nav>
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
@@ -10,7 +13,6 @@
 
   <div class="admin-header">
     <div>
-      <p class="eyebrow">Mandanten</p>
       <h1>Tenants</h1>
     </div>
     <a href="/admin/tenants/new" class="button">+ Neuer Tenant</a>

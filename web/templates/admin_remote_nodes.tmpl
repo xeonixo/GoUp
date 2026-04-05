@@ -1,10 +1,10 @@
 {{define "content"}}
 <div class="admin-section">
   <nav class="admin-nav card">
-    <a href="/admin/" class="admin-nav-link">Dashboard</a>
+    <a href="/admin/" class="admin-nav-link">Allgemein</a>
     <a href="/admin/tenants" class="admin-nav-link">Tenants</a>
-    <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link">Provider</a>
-    <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link">Benutzer</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link">OCID-Provider</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link">Benutzerverwaltung</a>
     <a href="/admin/tenants/{{.AdminTenant.ID}}/remote-nodes" class="admin-nav-link is-active">Remote Nodes</a>
   </nav>
 
@@ -13,8 +13,7 @@
 
   <div class="admin-header">
     <div>
-      <p class="eyebrow">Remote Ausführung</p>
-      <h1>Remote Nodes für {{.AdminTenant.Name}} ({{.AdminTenant.Slug}})</h1>
+      <h1>Remote Nodes · {{.AdminTenant.Name}}</h1>
     </div>
     <a href="/admin/tenants" class="button button-secondary">Zurück zu Tenants</a>
   </div>

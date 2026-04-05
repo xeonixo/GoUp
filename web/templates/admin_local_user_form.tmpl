@@ -8,10 +8,11 @@
   </nav>
   {{else}}
   <nav class="admin-nav card">
-    <a href="/admin/" class="admin-nav-link">Dashboard</a>
+    <a href="/admin/" class="admin-nav-link">Allgemein</a>
     <a href="/admin/tenants" class="admin-nav-link">Tenants</a>
-    <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link">Provider</a>
-    <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link is-active">Lokale Benutzer</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link">OCID-Provider</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link is-active">Benutzerverwaltung</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/remote-nodes" class="admin-nav-link">Remote Nodes</a>
   </nav>
   {{end}}
 

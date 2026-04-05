@@ -118,12 +118,17 @@ type pageData struct {
 	Events              []notificationEventView
 	StateEvents         []monitorStateEventView
 	AdminTenants        []store.Tenant
+	AdminMonitorCount   int
+	AdminRemoteNodeCount int
 	AdminTenant         store.Tenant
 	AdminProviders      []store.AuthProvider
+	AdminProviderRows   []adminProviderOverviewRow
 	AdminProvider       store.AuthProvider
 	AdminLocalUsers     []store.LocalUser
 	AdminTenantUsers    []store.TenantUser
+	AdminUserRows       []adminUserOverviewRow
 	AdminLocalUser      store.LocalUser
+	AdminRemoteNodeRows []adminRemoteNodeOverviewRow
 	ProfileUser         store.TenantUser
 	ProfileNotify       store.UserNotificationSettings
 	AdminAuditEvents    []store.AuditEvent
@@ -218,6 +223,43 @@ type remoteNodeEventView struct {
 	Details       string
 	OccurredAt    string
 	OccurredAtRaw string
+}
+
+type adminProviderOverviewRow struct {
+	TenantID     int64
+	TenantName   string
+	TenantSlug   string
+	ProviderKey  string
+	Kind         string
+	DisplayName  string
+	Enabled      bool
+}
+
+type adminUserOverviewRow struct {
+	TenantID            int64
+	TenantName          string
+	TenantSlug          string
+	UserID              int64
+	LoginName           string
+	Email               string
+	DisplayName         string
+	Role                string
+	LastLoginAt         string
+	LastLoginAtRaw      string
+	HasLocalCredentials bool
+	HasOIDCIdentity     bool
+}
+
+type adminRemoteNodeOverviewRow struct {
+	TenantID        int64
+	TenantName      string
+	TenantSlug      string
+	NodeID          string
+	Name            string
+	Online          bool
+	LastSeenAt      string
+	LastSeenAtRaw   string
+	HeartbeatWindow string
 }
 
 type monitorExecutorOptionView struct {
@@ -470,6 +512,9 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("/admin/security/totp/disable", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTOTPDisable)))
 	mux.Handle("/admin/", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminDashboard)))
 	mux.Handle("/admin/tenants", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantsList)))
+	mux.Handle("/admin/providers", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminProvidersOverview)))
+	mux.Handle("/admin/users", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminUsersOverview)))
+	mux.Handle("/admin/remote-nodes", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminRemoteNodesOverview)))
 	mux.Handle("/admin/tenants/new", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantForm)))
 	mux.Handle("/admin/tenants/{id}/edit", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantForm)))
 	mux.Handle("/admin/tenants/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantSave)))
@@ -816,7 +861,14 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/settings/profile/notifiers/delete", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileNotifierDelete)))
 	mux.Handle("/settings/profile/password", s.requireAuth(http.HandlerFunc(s.handleSettingsProfilePassword)))
 	mux.Handle("/settings/users", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUsers)))
+	mux.Handle("/settings/providers", s.requireUserManagement(http.HandlerFunc(s.handleSettingsProviders)))
+	mux.Handle("/settings/providers/new", s.requireUserManagement(http.HandlerFunc(s.handleSettingsProviderForm)))
+	mux.Handle("/settings/providers/{providerKey}/edit", s.requireUserManagement(http.HandlerFunc(s.handleSettingsProviderForm)))
+	mux.Handle("/settings/providers/save", s.requireUserManagement(http.HandlerFunc(s.handleSettingsProviderSave)))
+	mux.Handle("/settings/providers/{providerKey}/delete", s.requireUserManagement(http.HandlerFunc(s.handleSettingsProviderDelete)))
 	mux.Handle("/settings/remote-nodes", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSettingsRemoteNodes))))
+	mux.Handle("/settings/remote-nodes/live", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSettingsRemoteNodesLive))))
+	mux.Handle("/settings/remote-nodes/live/snapshot", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSettingsRemoteNodesLiveSnapshot))))
 	mux.Handle("/settings/local-users/new", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserForm)))
 	mux.Handle("/settings/local-users/{userID}/edit", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserForm)))
 	mux.Handle("/settings/local-users/save", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserSave)))
@@ -3217,7 +3269,7 @@ func tenantHasAppDatabase(path string) bool {
 
 func (s *Server) render(w http.ResponseWriter, name string, data pageData) {
 	switch name {
-	case "login", "admin_access", "admin_setup":
+	case "login", "admin_access", "admin_setup", "no_tenant":
 		data.HideTopbar = true
 	}
 
@@ -3272,7 +3324,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 }
 
 func parseTemplates() (map[string]*template.Template, error) {
-	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_provider_form", "admin_local_users", "admin_local_user_form", "admin_remote_nodes", "settings_users", "settings_profile", "settings_remote_nodes", "admin_access", "admin_setup", "admin_security", "no_tenant"}
+	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_providers_overview", "admin_provider_form", "admin_local_users", "admin_users_overview", "admin_local_user_form", "admin_remote_nodes", "admin_remote_nodes_overview", "settings_users", "settings_profile", "settings_providers", "settings_provider_form", "settings_remote_nodes", "admin_access", "admin_setup", "admin_security", "no_tenant"}
 	parsed := make(map[string]*template.Template, len(pages))
 	for _, page := range pages {
 		tmpl, err := template.ParseFS(web.FS, "templates/layout.tmpl", "templates/"+page+".tmpl")

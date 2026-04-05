@@ -3,10 +3,11 @@
 <div class="admin-section">
   <nav class="admin-nav card">
     <a href="{{$.AppBase}}" class="admin-nav-link">Dashboard</a>
-    <a href="{{$.AppBase}}settings/profile" class="admin-nav-link is-active">Settings · Profil</a>
+    <a href="{{$.AppBase}}settings/profile" class="admin-nav-link is-active">Profil</a>
     {{if eq $.User.Role "admin"}}
-    <a href="{{$.AppBase}}settings/users" class="admin-nav-link">Settings · Benutzer</a>
-    <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link">Settings · Remote Nodes</a>
+    <a href="{{$.AppBase}}settings/users" class="admin-nav-link">Benutzerverwaltung</a>
+    <a href="{{$.AppBase}}settings/providers" class="admin-nav-link">OCID-Provider</a>
+    <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link">Remote Nodes</a>
     {{end}}
   </nav>
 
@@ -15,9 +16,7 @@
 
   <div class="admin-header">
     <div>
-      <p class="eyebrow">Settings</p>
-      <h1>Profil · {{.AdminTenant.Name}}</h1>
-      <p class="muted compact">Tenant: {{.AdminTenant.Slug}}</p>
+      <h1>Profil</h1>
     </div>
   </div>
 

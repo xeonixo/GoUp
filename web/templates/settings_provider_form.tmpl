@@ -1,0 +1,60 @@
+{{define "content"}}
+<div class="admin-section">
+  <nav class="admin-nav card">
+    <a href="{{$.AppBase}}" class="admin-nav-link">Dashboard</a>
+    <a href="{{$.AppBase}}settings/profile" class="admin-nav-link">Settings · Profil</a>
+    {{if eq $.User.Role "admin"}}
+    <a href="{{$.AppBase}}settings/users" class="admin-nav-link">Settings · Benutzer</a>
+    <a href="{{$.AppBase}}settings/providers" class="admin-nav-link is-active">Settings · Provider</a>
+    <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link">Settings · Remote Nodes</a>
+    {{end}}
+  </nav>
+
+  {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
+  {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+
+  <div class="admin-header">
+    <div>
+      <p class="eyebrow">Settings · Provider</p>
+      <h1>{{if .IsEdit}}OIDC-Provider bearbeiten{{else}}Neuen OIDC-Provider anlegen{{end}}</h1>
+    </div>
+    <a href="{{$.AppBase}}settings/providers" class="button button-secondary">Zurück zu Provider</a>
+  </div>
+
+  <form method="POST" action="{{.FormAction}}" class="admin-form card stack">
+    <div class="form-group">
+      <label for="provider_key">Provider Key *</label>
+      <input type="text" id="provider_key" name="provider_key" value="{{.AdminProvider.ProviderKey}}" required {{if .IsEdit}}readonly{{end}} placeholder="z.B. oidc-primary">
+    </div>
+
+    <div class="form-group">
+      <label for="display_name">Anzeigename</label>
+      <input type="text" id="display_name" name="display_name" value="{{.AdminProvider.DisplayName}}" placeholder="z.B. Google, Keycloak">
+    </div>
+
+    <div class="form-group">
+      <label for="issuer_url">Issuer URL *</label>
+      <input type="url" id="issuer_url" name="issuer_url" value="{{.AdminProvider.IssuerURL}}" placeholder="https://auth.example.com" required>
+    </div>
+
+    <div class="form-group">
+      <label for="client_id">Client ID *</label>
+      <input type="text" id="client_id" name="client_id" value="{{.AdminProvider.ClientID}}" placeholder="Your client ID" required>
+    </div>
+
+    <div class="form-group">
+      <label for="client_secret">Client Secret {{if .IsEdit}}(leer lassen = unverändert){{else}}*{{end}}</label>
+      <input type="password" id="client_secret" name="client_secret" value="" {{if not .IsEdit}}required{{end}} placeholder="Your client secret">
+    </div>
+
+    <div class="form-note">
+      <strong>Hinweis:</strong> Das Secret wird verschlüsselt im Control-Plane-Store abgelegt.
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="button">Speichern</button>
+      <a href="{{$.AppBase}}settings/providers" class="button button-secondary">Abbrechen</a>
+    </div>
+  </form>
+</div>
+{{end}}

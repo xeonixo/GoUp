@@ -1,13 +1,14 @@
 {{define "content"}}
 <div class="admin-section">
   <nav class="admin-nav card">
-    <a href="/admin/" class="admin-nav-link">Dashboard</a>
+    <a href="/admin/" class="admin-nav-link">Allgemein</a>
     <a href="/admin/tenants" class="admin-nav-link">Tenants</a>
-    <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link is-active">Provider</a>
-    <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link">Lokale Benutzer</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link is-active">OCID-Provider</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link">Benutzerverwaltung</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/remote-nodes" class="admin-nav-link">Remote Nodes</a>
   </nav>
 
-  <h1>{{if .IsEdit}}Auth Provider bearbeiten{{else}}Neuen Auth Provider anlegen{{end}}</h1>
+  <h1>{{if .IsEdit}}OCID-Provider bearbeiten{{else}}Neuen OCID-Provider anlegen{{end}}</h1>
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
@@ -25,10 +26,12 @@
 
     <div class="form-group">
       <label for="kind">Typ *</label>
-      <select id="kind" name="kind" required>
+      <select id="kind" name="kind" required {{if .IsEdit}}disabled{{end}}>
         <option value="oidc" {{if eq .AdminProvider.Kind "oidc"}}selected{{end}}>OIDC</option>
-        <option value="local" {{if eq .AdminProvider.Kind "local"}}selected{{end}}>Local Auth</option>
       </select>
+      {{if .IsEdit}}
+      <input type="hidden" name="kind" value="{{.AdminProvider.Kind}}">
+      {{end}}
     </div>
 
     <div class="form-group">

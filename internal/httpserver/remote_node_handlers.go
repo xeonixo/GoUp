@@ -2,6 +2,8 @@ package httpserver
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"goup/internal/monitor"
 	emailnotify "goup/internal/notify/email"
 	matrixnotify "goup/internal/notify/matrix"
@@ -52,6 +55,25 @@ type remoteNodeResultPayload struct {
 	TLSValid         *bool   `json:"tls_valid,omitempty"`
 	TLSNotAfter      *string `json:"tls_not_after,omitempty"`
 	TLSDaysRemaining *int    `json:"tls_days_remaining,omitempty"`
+}
+
+type settingsRemoteNodesLiveSnapshotResponse struct {
+	Nodes []settingsRemoteNodeLiveNode `json:"nodes"`
+}
+
+type settingsRemoteNodeLiveNode struct {
+	NodeID        string                            `json:"node_id"`
+	Online        bool                              `json:"online"`
+	LastSeenAtRaw string                            `json:"last_seen_at_raw,omitempty"`
+	Events        []settingsRemoteNodeLiveNodeEvent `json:"events,omitempty"`
+}
+
+type settingsRemoteNodeLiveNodeEvent struct {
+	EventLabel    string `json:"event_label"`
+	SourceIP      string `json:"source_ip,omitempty"`
+	UserAgent     string `json:"user_agent,omitempty"`
+	Details       string `json:"details,omitempty"`
+	OccurredAtRaw string `json:"occurred_at_raw"`
 }
 
 func (s *Server) handleCreateRemoteNode(w http.ResponseWriter, r *http.Request) {
@@ -146,6 +168,184 @@ func (s *Server) remoteNodeManageRedirectBase(r *http.Request) string {
 		return base + "settings/remote-nodes"
 	}
 	return base
+}
+
+func (s *Server) handleSettingsRemoteNodesLiveSnapshot(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	snapshot, _, err := s.loadSettingsRemoteNodesLiveSnapshot(r)
+	if err != nil {
+		http.Error(w, "unable to load remote nodes snapshot", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(snapshot); err != nil {
+		http.Error(w, "unable to encode remote nodes snapshot", http.StatusInternalServerError)
+		return
+	}
+}
+
+func (s *Server) handleSettingsRemoteNodesLive(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if !s.websocketOriginAllowed(r) {
+		http.Error(w, "invalid origin", http.StatusForbidden)
+		return
+	}
+
+	_, previousSignature, err := s.loadSettingsRemoteNodesLiveSnapshot(r)
+	if err != nil {
+		http.Error(w, "unable to initialize live updates", http.StatusInternalServerError)
+		return
+	}
+
+	conn, err := dashboardLiveUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	conn.EnableWriteCompression(true)
+
+	const readTimeout = 120 * time.Second
+	const writeTimeout = 10 * time.Second
+
+	conn.SetReadLimit(1024)
+	_ = conn.SetReadDeadline(time.Now().Add(readTimeout))
+	conn.SetPongHandler(func(string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(readTimeout))
+		return nil
+	})
+
+	if err := conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err == nil {
+		_ = conn.WriteJSON(struct {
+			Type string `json:"type"`
+		}{Type: "connected"})
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			if _, _, readErr := conn.ReadMessage(); readErr != nil {
+				return
+			}
+		}
+	}()
+
+	pingTicker := time.NewTicker(25 * time.Second)
+	pollTicker := time.NewTicker(4 * time.Second)
+	defer pingTicker.Stop()
+	defer pollTicker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-done:
+			return
+		case <-pingTicker.C:
+			if err := conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+				return
+			}
+			if err := conn.WriteMessage(websocket.PingMessage, []byte("ping")); err != nil {
+				return
+			}
+		case <-pollTicker.C:
+			_, nextSignature, snapshotErr := s.loadSettingsRemoteNodesLiveSnapshot(r)
+			if snapshotErr != nil {
+				s.logger.Warn("load settings remote nodes live data failed", "error", snapshotErr)
+				continue
+			}
+			if nextSignature == previousSignature {
+				continue
+			}
+			previousSignature = nextSignature
+
+			if err := conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+				return
+			}
+			if err := conn.WriteJSON(struct {
+				Type string `json:"type"`
+			}{Type: "refresh"}); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func (s *Server) loadSettingsRemoteNodesLiveSnapshot(r *http.Request) (settingsRemoteNodesLiveSnapshotResponse, string, error) {
+	tenantID := tenantIDFromRequest(r)
+	if tenantID <= 0 {
+		if user := s.currentUser(r); user != nil {
+			tenantID = user.TenantID
+		}
+	}
+	if tenantID <= 0 {
+		return settingsRemoteNodesLiveSnapshotResponse{}, "", fmt.Errorf("tenant not resolved")
+	}
+
+	nodes, err := s.controlStore.ListRemoteNodesByTenant(r.Context(), tenantID)
+	if err != nil {
+		return settingsRemoteNodesLiveSnapshotResponse{}, "", err
+	}
+
+	events, err := s.controlStore.ListRecentRemoteNodeEventsByTenant(r.Context(), tenantID, 200)
+	if err != nil {
+		s.logger.Warn("settings remote node events list failed", "tenant_id", tenantID, "error", err)
+		events = nil
+	}
+
+	views := buildRemoteNodeViews(nodes, time.Now().UTC(), s.cfg.BaseURL, groupRemoteNodeEventsByNode(events, 8))
+	snapshot := settingsRemoteNodesLiveSnapshotResponse{
+		Nodes: make([]settingsRemoteNodeLiveNode, 0, len(views)),
+	}
+	for _, view := range views {
+		node := settingsRemoteNodeLiveNode{
+			NodeID:        view.NodeID,
+			Online:        view.Online,
+			LastSeenAtRaw: view.LastSeenAtRaw,
+		}
+		if len(view.Events) > 0 {
+			node.Events = make([]settingsRemoteNodeLiveNodeEvent, 0, len(view.Events))
+			for _, event := range view.Events {
+				node.Events = append(node.Events, settingsRemoteNodeLiveNodeEvent{
+					EventLabel:    event.EventLabel,
+					SourceIP:      event.SourceIP,
+					UserAgent:     event.UserAgent,
+					Details:       event.Details,
+					OccurredAtRaw: event.OccurredAtRaw,
+				})
+			}
+		}
+		snapshot.Nodes = append(snapshot.Nodes, node)
+	}
+
+	return snapshot, settingsRemoteNodesLiveSignature(snapshot), nil
+}
+
+func settingsRemoteNodesLiveSignature(snapshot settingsRemoteNodesLiveSnapshotResponse) string {
+	h := sha256.New()
+	for _, node := range snapshot.Nodes {
+		_, _ = fmt.Fprintf(h, "n:%s|%t|%s\n", strings.TrimSpace(node.NodeID), node.Online, strings.TrimSpace(node.LastSeenAtRaw))
+		for _, event := range node.Events {
+			_, _ = fmt.Fprintf(h, "e:%s|%s|%s|%s|%s\n",
+				strings.TrimSpace(event.EventLabel),
+				strings.TrimSpace(event.OccurredAtRaw),
+				strings.TrimSpace(event.SourceIP),
+				strings.TrimSpace(event.UserAgent),
+				strings.TrimSpace(event.Details),
+			)
+		}
+	}
+	sum := h.Sum(nil)
+	return hex.EncodeToString(sum[:8])
 }
 
 func (s *Server) handleAdminRemoteNodesList(w http.ResponseWriter, r *http.Request) {

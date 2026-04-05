@@ -11,6 +11,7 @@
     const isAdmin = page.dataset.isAdmin === '1';
 
     const dialog = document.getElementById('monitor-modal');
+    const monitorCloseButton = document.getElementById('monitor-close');
     const groupDialog = document.getElementById('group-modal');
     const openCreateButton = document.getElementById('open-create-monitor');
     const cancelButton = document.getElementById('monitor-cancel');
@@ -107,8 +108,12 @@
     const stateEventsExport = document.getElementById('state-events-export');
     const stateEventsFilterStatus = document.getElementById('state-events-filter-status');
     const stateEventsEmptyRow = document.getElementById('state-events-empty-row');
+    const stateEventsPagination = document.getElementById('state-events-pagination');
+    const notificationEventsBody = document.getElementById('notification-events-body');
+    const notificationEventsPagination = document.getElementById('notification-events-pagination');
     const liveConnectionIndicator = document.getElementById('live-ws-indicator');
-    const topbarMain = document.querySelector('.topbar-main');
+    const topbarElement = document.querySelector('.topbar');
+    const topbarHamburgerButton = document.getElementById('topbar-hamburger');
     const dashboardStateScope = `${appBase || '/'}:${dashboardStateOwner}:${window.location.pathname}`;
     const dashboardStateScrollKey = `goup.dashboard.scrollY:${dashboardStateScope}`;
     const dashboardStateGroupsKey = `goup.dashboard.openGroups:${dashboardStateScope}`;
@@ -127,6 +132,15 @@
       }
       element.dataset[attr] = '1';
       element.addEventListener('click', listener);
+    };
+
+    const clearChildren = (element) => {
+      if (!(element instanceof Element)) {
+        return;
+      }
+      while (element.firstChild) {
+        element.removeChild(element.firstChild);
+      }
     };
 
     const closeActionMenus = (except = null) => {
@@ -196,6 +210,9 @@
     let applyLiveSnapshot = async () => false;
     let rebindDynamicHandlers = () => {};
     let reformatLiveContent = () => {};
+    let stateEventsPage = 1;
+    let notificationEventsPage = 1;
+    const tablePageSize = 10;
 
     const setLiveConnectionState = (state) => {
       if (!(liveConnectionIndicator instanceof HTMLElement)) {
@@ -218,11 +235,72 @@
       liveConnectionIndicator.setAttribute('title', label);
     };
 
-    if (liveConnectionIndicator instanceof HTMLElement && topbarMain instanceof HTMLElement) {
-      topbarMain.appendChild(liveConnectionIndicator);
+    if (liveConnectionIndicator instanceof HTMLElement && topbarElement instanceof HTMLElement && topbarHamburgerButton instanceof HTMLElement) {
+      liveConnectionIndicator.classList.add('topbar-live-right');
+      topbarElement.insertBefore(liveConnectionIndicator, topbarHamburgerButton);
     }
 
     const hasOpenDialog = () => Array.from(document.querySelectorAll('dialog')).some((dialogElement) => dialogElement.open);
+
+    const bindDialogBackdropClose = (dialogElement) => {
+      if (!(dialogElement instanceof HTMLDialogElement) || dialogElement.dataset.boundBackdropClose === '1') {
+        return;
+      }
+      dialogElement.dataset.boundBackdropClose = '1';
+      dialogElement.addEventListener('click', (event) => {
+        if (event.target === dialogElement) {
+          dialogElement.close();
+        }
+      });
+    };
+
+    const renderTablePagination = (container, currentPage, pageCount, totalItems, onPageChange) => {
+      if (!(container instanceof HTMLElement)) {
+        return;
+      }
+
+      clearChildren(container);
+      if (totalItems <= tablePageSize || pageCount <= 1) {
+        container.hidden = true;
+        return;
+      }
+
+      container.hidden = false;
+
+      const summary = document.createElement('div');
+      summary.className = 'table-pagination-summary';
+      summary.textContent = `Seite ${currentPage} von ${pageCount} · ${totalItems} Einträge`;
+
+      const actions = document.createElement('div');
+      actions.className = 'table-pagination-actions';
+
+      const prev = document.createElement('button');
+      prev.className = 'button button-secondary button-small';
+      prev.type = 'button';
+      prev.textContent = '← Zurück';
+      prev.disabled = currentPage <= 1;
+      prev.addEventListener('click', () => {
+        if (currentPage > 1) {
+          onPageChange(currentPage - 1);
+        }
+      });
+
+      const next = document.createElement('button');
+      next.className = 'button button-secondary button-small';
+      next.type = 'button';
+      next.textContent = 'Weiter →';
+      next.disabled = currentPage >= pageCount;
+      next.addEventListener('click', () => {
+        if (currentPage < pageCount) {
+          onPageChange(currentPage + 1);
+        }
+      });
+
+      actions.appendChild(prev);
+      actions.appendChild(next);
+      container.appendChild(summary);
+      container.appendChild(actions);
+    };
 
     const scheduleLiveReload = () => {
       if (!liveUpdatesEnabled) {
@@ -1306,7 +1384,11 @@
 
     openCreateButton?.addEventListener('click', openCreate);
     cancelButton?.addEventListener('click', () => dialog?.close());
+    monitorCloseButton?.addEventListener('click', () => dialog?.close());
     groupCancelButton?.addEventListener('click', () => groupDialog?.close());
+    bindDialogBackdropClose(dialog);
+    bindDialogBackdropClose(groupDialog);
+    bindDialogBackdropClose(trendDetailModal);
     groupResetButton?.addEventListener('click', () => {
       clearGroupIconUploadSelection();
       if (groupIconCustom) {
@@ -1519,6 +1601,10 @@
         exportButton.dataset.boundStateExport = '1';
         exportButton.addEventListener('click', exportStateEventsCSV);
       }
+    };
+
+    const bindNotificationEventListeners = () => {
+      applyNotificationEventPagination();
     };
 
     const bindDynamicDashboardListeners = () => {
@@ -1769,6 +1855,7 @@
 
       bindStateEventListeners();
       applyStateEventFilters();
+      bindNotificationEventListeners();
     };
 
     bindGlobalDashboardListeners();
@@ -2865,7 +2952,7 @@
       });
     });
 
-    const updateStateEventFilterStatus = (visible, total) => {
+    const updateStateEventFilterStatus = (visible, total, page, pageCount) => {
       const filterStatus = document.getElementById('state-events-filter-status');
       if (!filterStatus) {
         return;
@@ -2874,14 +2961,14 @@
         filterStatus.textContent = 'Keine Statusänderungen vorhanden.';
         return;
       }
-      if (visible === total) {
+      if (pageCount <= 1) {
         filterStatus.textContent = `${total} Einträge`;
         return;
       }
-      filterStatus.textContent = `${visible} von ${total} Einträgen sichtbar`;
+      filterStatus.textContent = `${visible} von ${total} Einträgen · Seite ${page} von ${pageCount}`;
     };
 
-    const applyStateEventFilters = () => {
+    const applyStateEventFilters = (requestedPage = stateEventsPage) => {
       const body = document.getElementById('state-events-body');
       const search = document.getElementById('state-events-search');
       const statusFilterNode = document.getElementById('state-events-status-filter');
@@ -2892,7 +2979,11 @@
         : [];
 
       if (!stateEventRows.length) {
-        updateStateEventFilterStatus(0, 0);
+        const stateEventsPaginationRoot = document.getElementById('state-events-pagination');
+        if (stateEventsPaginationRoot instanceof HTMLElement) {
+          stateEventsPaginationRoot.hidden = true;
+        }
+        updateStateEventFilterStatus(0, 0, 1, 1);
         return;
       }
 
@@ -2900,7 +2991,7 @@
       const statusFilter = (statusFilterNode?.value || 'all').trim().toLowerCase();
       const incidentsOnly = incidentsOnlyNode?.checked === true;
 
-      let visible = 0;
+      const filteredRows = [];
       stateEventRows.forEach((row) => {
         const monitor = (row.dataset.monitor || '').toLowerCase();
         const fromStatus = (row.dataset.from || '').toLowerCase();
@@ -2913,16 +3004,62 @@
         const matchesIncidentsOnly = !incidentsOnly || toStatus === 'down' || toStatus === 'degraded';
         const rowVisible = matchesQuery && matchesStatus && matchesIncidentsOnly;
 
-        row.hidden = !rowVisible;
+        row.dataset.filteredVisible = rowVisible ? '1' : '0';
         if (rowVisible) {
-          visible += 1;
+          filteredRows.push(row);
         }
       });
 
+      const totalFiltered = filteredRows.length;
+      const pageCount = Math.max(1, Math.ceil(Math.max(totalFiltered, 1) / tablePageSize));
+      stateEventsPage = totalFiltered > 0 ? Math.min(Math.max(1, requestedPage), pageCount) : 1;
+      const pageStart = (stateEventsPage - 1) * tablePageSize;
+      const pageEnd = pageStart + tablePageSize;
+
+      stateEventRows.forEach((row) => {
+        row.hidden = row.dataset.filteredVisible !== '1';
+      });
+
+      filteredRows.forEach((row, index) => {
+        row.hidden = index < pageStart || index >= pageEnd;
+      });
+
       if (emptyRow) {
-        emptyRow.hidden = visible > 0;
+        emptyRow.hidden = totalFiltered > 0;
       }
-      updateStateEventFilterStatus(visible, stateEventRows.length);
+
+      renderTablePagination(document.getElementById('state-events-pagination'), stateEventsPage, pageCount, totalFiltered, (nextPage) => {
+        stateEventsPage = nextPage;
+        applyStateEventFilters(nextPage);
+      });
+
+      updateStateEventFilterStatus(Math.max(0, Math.min(tablePageSize, totalFiltered - pageStart)), totalFiltered, stateEventsPage, pageCount);
+    };
+
+    const applyNotificationEventPagination = (requestedPage = notificationEventsPage) => {
+      const notificationBody = document.getElementById('notification-events-body');
+      const rows = notificationBody ? Array.from(notificationBody.querySelectorAll('tr')) : [];
+      if (!rows.length) {
+        const notificationPaginationRoot = document.getElementById('notification-events-pagination');
+        if (notificationPaginationRoot instanceof HTMLElement) {
+          notificationPaginationRoot.hidden = true;
+        }
+        return;
+      }
+
+      const pageCount = Math.max(1, Math.ceil(rows.length / tablePageSize));
+      notificationEventsPage = Math.min(Math.max(1, requestedPage), pageCount);
+      const pageStart = (notificationEventsPage - 1) * tablePageSize;
+      const pageEnd = pageStart + tablePageSize;
+
+      rows.forEach((row, index) => {
+        row.hidden = index < pageStart || index >= pageEnd;
+      });
+
+      renderTablePagination(document.getElementById('notification-events-pagination'), notificationEventsPage, pageCount, rows.length, (nextPage) => {
+        notificationEventsPage = nextPage;
+        applyNotificationEventPagination(nextPage);
+      });
     };
 
     const exportStateEventsCSV = () => {
@@ -2934,7 +3071,7 @@
         return;
       }
 
-      const visibleRows = stateEventRows.filter((row) => !row.hidden);
+      const visibleRows = stateEventRows.filter((row) => row.dataset.filteredVisible === '1');
       if (!visibleRows.length) {
         return;
       }

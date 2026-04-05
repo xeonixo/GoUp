@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -408,10 +409,14 @@ func (s *Server) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 		auditTargetTypes = append([]string{auditTargetType}, auditTargetTypes...)
 	}
 
+	monitorCount, remoteNodeCount := s.loadControlPlaneInstanceCounts(r.Context(), tenants)
+
 	s.render(w, "admin_dashboard", pageData{
-		Title:             "Admin Dashboard · GoUp",
+		Title:             "Allgemein · GoUp",
 		User:              user,
 		AdminTenants:      tenants,
+		AdminMonitorCount: monitorCount,
+		AdminRemoteNodeCount: remoteNodeCount,
 		ControlPlaneAdmin: true,
 		AdminAuditEvents:  auditEvents,
 		AuditAction:       auditAction,
@@ -423,6 +428,217 @@ func (s *Server) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 		Notice:            strings.TrimSpace(r.URL.Query().Get("notice")),
 		Error:             strings.TrimSpace(r.URL.Query().Get("error")),
 	})
+}
+
+func (s *Server) handleAdminProvidersOverview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	rows, err := s.loadAdminProviderOverviewRows(r.Context())
+	if err != nil {
+		s.logger.Error("admin providers overview load failed", "error", err)
+		http.Error(w, "unable to load providers overview", http.StatusInternalServerError)
+		return
+	}
+
+	s.render(w, "admin_providers_overview", pageData{
+		Title:             "OCID-Provider · GoUp",
+		User:              s.currentUser(r),
+		ControlPlaneAdmin: true,
+		AdminProviderRows: rows,
+		Notice:            strings.TrimSpace(r.URL.Query().Get("notice")),
+		Error:             strings.TrimSpace(r.URL.Query().Get("error")),
+	})
+}
+
+func (s *Server) handleAdminUsersOverview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	rows, err := s.loadAdminUserOverviewRows(r.Context())
+	if err != nil {
+		s.logger.Error("admin users overview load failed", "error", err)
+		http.Error(w, "unable to load users overview", http.StatusInternalServerError)
+		return
+	}
+
+	s.render(w, "admin_users_overview", pageData{
+		Title:             "Benutzerverwaltung · GoUp",
+		User:              s.currentUser(r),
+		ControlPlaneAdmin: true,
+		AdminUserRows:     rows,
+		Notice:            strings.TrimSpace(r.URL.Query().Get("notice")),
+		Error:             strings.TrimSpace(r.URL.Query().Get("error")),
+	})
+}
+
+func (s *Server) handleAdminRemoteNodesOverview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	rows, err := s.loadAdminRemoteNodeOverviewRows(r.Context())
+	if err != nil {
+		s.logger.Error("admin remote nodes overview load failed", "error", err)
+		http.Error(w, "unable to load remote nodes overview", http.StatusInternalServerError)
+		return
+	}
+
+	s.render(w, "admin_remote_nodes_overview", pageData{
+		Title:               "Remote Nodes · GoUp",
+		User:                s.currentUser(r),
+		ControlPlaneAdmin:   true,
+		AdminRemoteNodeRows: rows,
+		Notice:              strings.TrimSpace(r.URL.Query().Get("notice")),
+		Error:               strings.TrimSpace(r.URL.Query().Get("error")),
+	})
+}
+
+func (s *Server) loadControlPlaneInstanceCounts(ctx context.Context, tenants []store.Tenant) (int, int) {
+	monitorCount := 0
+	for _, tenant := range tenants {
+		if strings.TrimSpace(tenant.DBPath) == "" {
+			continue
+		}
+
+		var (
+			tenantStore *store.Store
+			err        error
+			closeStore bool
+		)
+
+		if tenant.Active {
+			tenantStore, err = s.tenantStores.StoreForTenant(ctx, tenant.ID)
+		} else {
+			tenantStore, err = store.Open(ctx, tenant.DBPath)
+			closeStore = err == nil
+		}
+		if err != nil {
+			s.logger.Warn("admin dashboard monitor count skipped tenant", "tenant_id", tenant.ID, "error", err)
+			continue
+		}
+
+		stats, statsErr := tenantStore.DashboardStats(ctx)
+		if closeStore {
+			_ = tenantStore.Close()
+		}
+		if statsErr != nil {
+			s.logger.Warn("admin dashboard monitor count failed", "tenant_id", tenant.ID, "error", statsErr)
+			continue
+		}
+		monitorCount += stats.MonitorCount
+	}
+
+	remoteNodes, err := s.controlStore.ListAllEnabledRemoteNodes(ctx)
+	if err != nil {
+		s.logger.Warn("admin dashboard remote node count failed", "error", err)
+		return monitorCount, 0
+	}
+	return monitorCount, len(remoteNodes)
+}
+
+func (s *Server) loadAdminProviderOverviewRows(ctx context.Context) ([]adminProviderOverviewRow, error) {
+	tenants, err := s.controlStore.GetAllTenants(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]adminProviderOverviewRow, 0)
+	for _, tenant := range tenants {
+		providers, providerErr := s.controlStore.GetAllAuthProvidersByTenant(ctx, tenant.ID)
+		if providerErr != nil {
+			s.logger.Warn("admin providers overview skip tenant", "tenant_id", tenant.ID, "error", providerErr)
+			continue
+		}
+		for _, provider := range providers {
+			rows = append(rows, adminProviderOverviewRow{
+				TenantID:    tenant.ID,
+				TenantName:  tenant.Name,
+				TenantSlug:  tenant.Slug,
+				ProviderKey: provider.ProviderKey,
+				Kind:        provider.Kind,
+				DisplayName: provider.DisplayName,
+				Enabled:     provider.Enabled,
+			})
+		}
+	}
+	return rows, nil
+}
+
+func (s *Server) loadAdminUserOverviewRows(ctx context.Context) ([]adminUserOverviewRow, error) {
+	tenants, err := s.controlStore.GetAllTenants(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]adminUserOverviewRow, 0)
+	for _, tenant := range tenants {
+		users, userErr := s.controlStore.ListTenantUsers(ctx, tenant.ID)
+		if userErr != nil {
+			s.logger.Warn("admin users overview skip tenant", "tenant_id", tenant.ID, "error", userErr)
+			continue
+		}
+		for _, user := range users {
+			row := adminUserOverviewRow{
+				TenantID:            tenant.ID,
+				TenantName:          tenant.Name,
+				TenantSlug:          tenant.Slug,
+				UserID:              user.UserID,
+				LoginName:           user.LoginName,
+				Email:               user.Email,
+				DisplayName:         user.DisplayName,
+				Role:                user.Role,
+				HasLocalCredentials: user.HasLocalCredentials,
+				HasOIDCIdentity:     user.HasOIDCIdentity,
+			}
+			if user.LastLoginAt != nil {
+				row.LastLoginAtRaw = user.LastLoginAt.UTC().Format(time.RFC3339)
+				row.LastLoginAt = row.LastLoginAtRaw
+			}
+			rows = append(rows, row)
+		}
+	}
+	return rows, nil
+}
+
+func (s *Server) loadAdminRemoteNodeOverviewRows(ctx context.Context) ([]adminRemoteNodeOverviewRow, error) {
+	tenants, err := s.controlStore.GetAllTenants(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tenantByID := make(map[int64]store.Tenant, len(tenants))
+	for _, tenant := range tenants {
+		tenantByID[tenant.ID] = tenant
+	}
+
+	nodes, err := s.controlStore.ListAllEnabledRemoteNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	rows := make([]adminRemoteNodeOverviewRow, 0, len(nodes))
+	for _, node := range nodes {
+		tenant := tenantByID[node.TenantID]
+		row := adminRemoteNodeOverviewRow{
+			TenantID:        node.TenantID,
+			TenantName:      tenant.Name,
+			TenantSlug:      tenant.Slug,
+			NodeID:          node.NodeID,
+			Name:            node.Name,
+			Online:          node.IsOnline(now),
+			HeartbeatWindow: fmt.Sprintf("%ds", node.HeartbeatTimeoutSeconds),
+		}
+		if node.LastSeenAt != nil {
+			row.LastSeenAtRaw = node.LastSeenAt.UTC().Format(time.RFC3339)
+			row.LastSeenAt = row.LastSeenAtRaw
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
 }
 
 func (s *Server) handleAdminSMTPSettingsSave(w http.ResponseWriter, r *http.Request) {
@@ -747,6 +963,10 @@ func (s *Server) handleAdminProviderForm(w http.ResponseWriter, r *http.Request)
 			http.NotFound(w, r)
 			return
 		}
+		if provider.Kind == "local" {
+			http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/providers?error=%s", tenant.ID, url.QueryEscape("Lokale Provider können nicht bearbeitet werden")), http.StatusSeeOther)
+			return
+		}
 		data.AdminProvider = provider
 		data.IsEdit = true
 	}
@@ -793,6 +1013,10 @@ func (s *Server) handleAdminProviderSave(w http.ResponseWriter, r *http.Request)
 	tenantID, err := strconv.ParseInt(id, 10, 64)
 	if err != nil {
 		http.Error(w, "invalid tenant id", http.StatusBadRequest)
+		return
+	}
+	if kind == "local" {
+		http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/providers?error=%s", tenantID, url.QueryEscape("Lokale Provider werden automatisch verwaltet und sind nicht konfigurierbar")), http.StatusSeeOther)
 		return
 	}
 
@@ -1512,4 +1736,168 @@ func (s *Server) handleSettingsLocalUserDelete(w http.ResponseWriter, r *http.Re
 
 	s.writeAudit(r, "local_user.delete", "tenant", user.TenantID, fmt.Sprintf("user_id=%d source=settings", userID))
 	http.Redirect(w, r, s.tenantAppBase(r)+"settings/users?notice="+url.QueryEscape("Lokaler Benutzer entfernt"), http.StatusSeeOther)
+}
+
+func (s *Server) handleSettingsProviders(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	user := s.currentUser(r)
+	if user == nil || user.TenantID <= 0 {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	tenant, err := s.controlStore.GetTenantByID(r.Context(), user.TenantID)
+	if err != nil {
+		s.logger.Error("settings providers load tenant failed", "tenant_id", user.TenantID, "error", err)
+		http.Error(w, "unable to load tenant", http.StatusInternalServerError)
+		return
+	}
+
+	providers, err := s.controlStore.GetAllAuthProvidersByTenant(r.Context(), user.TenantID)
+	if err != nil {
+		s.logger.Error("settings providers list failed", "tenant_id", user.TenantID, "error", err)
+		http.Error(w, "unable to load providers", http.StatusInternalServerError)
+		return
+	}
+
+	s.render(w, "settings_providers", pageData{
+		Title:          "Einstellungen · Provider · GoUp",
+		User:           user,
+		AdminTenant:    tenant,
+		AdminProviders: providers,
+		AppBase:        s.tenantAppBase(r),
+		Notice:         strings.TrimSpace(r.URL.Query().Get("notice")),
+		Error:          strings.TrimSpace(r.URL.Query().Get("error")),
+	})
+}
+
+func (s *Server) handleSettingsProviderForm(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	user := s.currentUser(r)
+	if user == nil || user.TenantID <= 0 {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	tenant, err := s.controlStore.GetTenantByID(r.Context(), user.TenantID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	appBase := s.tenantAppBase(r)
+	data := pageData{
+		Title:        "Provider · GoUp",
+		User:         user,
+		AdminTenant:  tenant,
+		FormAction:   appBase + "settings/providers/save",
+		SettingsMode: true,
+		AppBase:      appBase,
+		Notice:       strings.TrimSpace(r.URL.Query().Get("notice")),
+		Error:        strings.TrimSpace(r.URL.Query().Get("error")),
+	}
+
+	providerKey := strings.TrimSpace(r.PathValue("providerKey"))
+	if providerKey != "" {
+		provider, err := s.controlStore.GetAuthProvider(r.Context(), user.TenantID, providerKey)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		if provider.Kind == "local" {
+			http.Redirect(w, r, appBase+"settings/providers?error="+url.QueryEscape("Lokale Provider können nicht bearbeitet werden"), http.StatusSeeOther)
+			return
+		}
+		data.AdminProvider = provider
+		data.IsEdit = true
+	}
+
+	s.render(w, "settings_provider_form", data)
+}
+
+func (s *Server) handleSettingsProviderSave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+
+	user := s.currentUser(r)
+	if user == nil || user.TenantID <= 0 {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	appBase := s.tenantAppBase(r)
+	providerKey := strings.TrimSpace(r.FormValue("provider_key"))
+	displayName := strings.TrimSpace(r.FormValue("display_name"))
+	issuerURL := strings.TrimSpace(r.FormValue("issuer_url"))
+	clientID := strings.TrimSpace(r.FormValue("client_id"))
+	clientSecret := strings.TrimSpace(r.FormValue("client_secret"))
+
+	if providerKey == "" || issuerURL == "" || clientID == "" {
+		http.Redirect(w, r, appBase+"settings/providers/new?error="+url.QueryEscape("Provider Key, Issuer URL und Client ID sind erforderlich"), http.StatusSeeOther)
+		return
+	}
+	if displayName == "" {
+		displayName = providerKey
+	}
+
+	_, err := s.controlStore.UpsertAuthProvider(r.Context(), user.TenantID, providerKey, "oidc", displayName, issuerURL, clientID)
+	if err != nil {
+		s.logger.Error("settings upsert auth provider failed", "tenant_id", user.TenantID, "error", err)
+		http.Redirect(w, r, appBase+"settings/providers/new?error="+url.QueryEscape("Provider konnte nicht gespeichert werden"), http.StatusSeeOther)
+		return
+	}
+
+	if clientSecret != "" {
+		if err := s.controlStore.UpdateAuthProviderSecret(r.Context(), user.TenantID, providerKey, clientSecret); err != nil {
+			s.logger.Error("settings update auth provider secret failed", "tenant_id", user.TenantID, "provider_key", providerKey, "error", err)
+			http.Redirect(w, r, appBase+"settings/providers/"+providerKey+"/edit?error="+url.QueryEscape("Provider gespeichert, Secret konnte nicht gespeichert werden"), http.StatusSeeOther)
+			return
+		}
+	}
+
+	s.writeAudit(r, "auth_provider.upsert", "tenant", user.TenantID, fmt.Sprintf("provider=%s kind=oidc source=settings", providerKey))
+	http.Redirect(w, r, appBase+"settings/providers?notice="+url.QueryEscape("Provider gespeichert"), http.StatusSeeOther)
+}
+
+func (s *Server) handleSettingsProviderDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	user := s.currentUser(r)
+	if user == nil || user.TenantID <= 0 {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	appBase := s.tenantAppBase(r)
+	providerKey := strings.TrimSpace(r.PathValue("providerKey"))
+	if providerKey == "" {
+		http.Redirect(w, r, appBase+"settings/providers?error="+url.QueryEscape("Ungültiger Provider Key"), http.StatusSeeOther)
+		return
+	}
+
+	if err := s.controlStore.DeleteAuthProvider(r.Context(), user.TenantID, providerKey); err != nil {
+		s.logger.Error("settings delete auth provider failed", "tenant_id", user.TenantID, "provider_key", providerKey, "error", err)
+		http.Redirect(w, r, appBase+"settings/providers?error="+url.QueryEscape("Provider konnte nicht gelöscht werden"), http.StatusSeeOther)
+		return
+	}
+
+	s.writeAudit(r, "auth_provider.delete", "tenant", user.TenantID, fmt.Sprintf("provider=%s source=settings", providerKey))
+	http.Redirect(w, r, appBase+"settings/providers?notice="+url.QueryEscape("Provider gelöscht"), http.StatusSeeOther)
 }

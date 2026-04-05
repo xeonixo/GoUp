@@ -1,8 +1,11 @@
 {{define "content"}}
 <div class="admin-section">
   <nav class="admin-nav card">
-    <a href="/admin/" class="admin-nav-link">Dashboard</a>
+    <a href="/admin/" class="admin-nav-link">Allgemein</a>
     <a href="/admin/tenants" class="admin-nav-link is-active">Tenants</a>
+    <a href="/admin/providers" class="admin-nav-link">OCID-Provider</a>
+    <a href="/admin/users" class="admin-nav-link">Benutzerverwaltung</a>
+    <a href="/admin/remote-nodes" class="admin-nav-link">Remote Nodes</a>
   </nav>
 
   <h1>{{if .IsEdit}}Tenant bearbeiten{{else}}Neuen Tenant anlegen{{end}}</h1>
