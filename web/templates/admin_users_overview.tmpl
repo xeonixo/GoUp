@@ -1,11 +1,11 @@
 {{define "content"}}
 <div class="admin-section">
   <nav class="admin-nav card">
-    <a href="/admin/" class="admin-nav-link">Allgemein</a>
-    <a href="/admin/tenants" class="admin-nav-link">Tenants</a>
-    <a href="/admin/providers" class="admin-nav-link">OCID-Provider</a>
-    <a href="/admin/users" class="admin-nav-link is-active">Benutzerverwaltung</a>
-    <a href="/admin/remote-nodes" class="admin-nav-link">Remote Nodes</a>
+    <a href="/admin/" class="admin-nav-link">{{index $.Translations "admin.nav.general"}}</a>
+    <a href="/admin/tenants" class="admin-nav-link">{{index $.Translations "admin.nav.tenants"}}</a>
+    <a href="/admin/providers" class="admin-nav-link">{{index $.Translations "admin.nav.providers"}}</a>
+    <a href="/admin/users" class="admin-nav-link is-active">{{index $.Translations "admin.nav.users"}}</a>
+    <a href="/admin/remote-nodes" class="admin-nav-link">{{index $.Translations "admin.nav.remote_nodes"}}</a>
   </nav>
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
@@ -13,7 +13,7 @@
 
   <div class="admin-header">
     <div>
-      <h1>Benutzerverwaltung</h1>
+      <h1>{{index $.Translations "admin.nav.users"}}</h1>
     </div>
   </div>
 
@@ -21,14 +21,14 @@
     <table class="admin-table">
       <thead>
         <tr>
-          <th>Tenant</th>
-          <th>Login</th>
-          <th>Typ</th>
-          <th>Name</th>
-          <th>E-Mail</th>
-          <th>Rolle</th>
-          <th>Letzter Login</th>
-          <th>Aktionen</th>
+          <th>{{index $.Translations "admin.users.tenant"}}</th>
+          <th>{{index $.Translations "field.login"}}</th>
+          <th>{{index $.Translations "common.type"}}</th>
+          <th>{{index $.Translations "common.name"}}</th>
+          <th>{{index $.Translations "field.email"}}</th>
+          <th>{{index $.Translations "admin.users.role"}}</th>
+          <th>{{index $.Translations "admin.users.last_login"}}</th>
+          <th>{{index $.Translations "common.actions"}}</th>
         </tr>
       </thead>
       <tbody>
@@ -47,13 +47,13 @@
           <td><span class="status-badge">{{.Role}}</span></td>
           <td>{{if .LastLoginAtRaw}}<span class="js-local-datetime" data-utc="{{.LastLoginAtRaw}}">{{.LastLoginAt}}</span>{{else}}—{{end}}</td>
           <td class="admin-actions-inline">
-            <a href="/admin/tenants/{{.TenantID}}/local-users" class="button button-secondary button-small">Tenant öffnen</a>
+            <a href="/admin/tenants/{{.TenantID}}/local-users" class="button button-secondary button-small">{{index $.Translations "admin.users.open_tenant"}}</a>
           </td>
         </tr>
         {{end}}
         {{else}}
         <tr>
-          <td colspan="8" class="muted">Keine Benutzer vorhanden.</td>
+          <td colspan="8" class="muted">{{index $.Translations "admin.users.no_users"}}</td>
         </tr>
         {{end}}
       </tbody>

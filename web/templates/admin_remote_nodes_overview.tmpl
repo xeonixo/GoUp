@@ -1,11 +1,11 @@
 {{define "content"}}
 <div class="admin-section">
   <nav class="admin-nav card">
-    <a href="/admin/" class="admin-nav-link">Allgemein</a>
-    <a href="/admin/tenants" class="admin-nav-link">Tenants</a>
-    <a href="/admin/providers" class="admin-nav-link">OCID-Provider</a>
-    <a href="/admin/users" class="admin-nav-link">Benutzerverwaltung</a>
-    <a href="/admin/remote-nodes" class="admin-nav-link is-active">Remote Nodes</a>
+    <a href="/admin/" class="admin-nav-link">{{index $.Translations "admin.nav.general"}}</a>
+    <a href="/admin/tenants" class="admin-nav-link">{{index $.Translations "admin.nav.tenants"}}</a>
+    <a href="/admin/providers" class="admin-nav-link">{{index $.Translations "admin.nav.providers"}}</a>
+    <a href="/admin/users" class="admin-nav-link">{{index $.Translations "admin.nav.users"}}</a>
+    <a href="/admin/remote-nodes" class="admin-nav-link is-active">{{index $.Translations "admin.nav.remote_nodes"}}</a>
   </nav>
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
@@ -13,7 +13,7 @@
 
   <div class="admin-header">
     <div>
-      <h1>Remote Nodes</h1>
+      <h1>{{index $.Translations "admin.remote_nodes.title"}}</h1>
     </div>
   </div>
 
@@ -21,13 +21,13 @@
     <table class="admin-table">
       <thead>
         <tr>
-          <th>Tenant</th>
-          <th>Name</th>
-          <th>Node ID</th>
-          <th>Status</th>
-          <th>Zuletzt gesehen</th>
-          <th>Timeout</th>
-          <th>Aktionen</th>
+          <th>{{index $.Translations "admin.users.tenant"}}</th>
+          <th>{{index $.Translations "admin.remote_nodes.name_label"}}</th>
+          <th>{{index $.Translations "admin.remote_nodes.node_id_label"}}</th>
+          <th>{{index $.Translations "admin.remote_nodes.status_label"}}</th>
+          <th>{{index $.Translations "admin.remote_nodes.last_seen_label"}}</th>
+          <th>{{index $.Translations "admin.remote_nodes.timeout_label"}}</th>
+          <th>{{index $.Translations "admin.remote_nodes.actions_label"}}</th>
         </tr>
       </thead>
       <tbody>
@@ -41,13 +41,13 @@
           <td>{{if .LastSeenAtRaw}}<span class="js-relative-age" data-utc="{{.LastSeenAtRaw}}">{{.LastSeenAt}}</span>{{else}}—{{end}}</td>
           <td>{{.HeartbeatWindow}}</td>
           <td class="admin-actions-inline">
-            <a href="/admin/tenants/{{.TenantID}}/remote-nodes" class="button button-secondary button-small">Tenant öffnen</a>
+            <a href="/admin/tenants/{{.TenantID}}/remote-nodes" class="button button-secondary button-small">{{index $.Translations "admin.users.open_tenant"}}</a>
           </td>
         </tr>
         {{end}}
         {{else}}
         <tr>
-          <td colspan="7" class="muted">Noch keine Remote-Nodes vorhanden.</td>
+          <td colspan="7" class="muted">{{index $.Translations "admin.remote_nodes.no_remote_nodes"}}</td>
         </tr>
         {{end}}
       </tbody>

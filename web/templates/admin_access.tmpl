@@ -1,26 +1,26 @@
 {{define "content"}}
 <section class="login-shell">
-  <a class="login-brand" href="/" aria-label="GoUp Startseite">
+  <a class="login-brand" href="/" aria-label="{{index $.Translations "common.home"}}">
     <img class="login-brand-logo" src="/assets/logo_goup.svg" alt="GoUp Logo">
   </a>
   <article class="card login-card stack">
     <div>
-      <h1>Admin-Zugriff</h1>
+      <h1>{{index $.Translations "admin.access.title"}}</h1>
     </div>
 
     {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
     {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
 
     <form method="POST" action="/admin/access" class="stack login-form" autocomplete="on">
-      <label for="username">Benutzername</label>
+      <label for="username">{{index $.Translations "field.username"}}</label>
       <input id="username" name="username" type="text" required autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false">
-      <label for="password">Passwort</label>
+      <label for="password">{{index $.Translations "field.password"}}</label>
       <input id="password" name="password" type="password" required autocomplete="current-password">
       {{if .TOTPRequired}}
-      <label for="otp">TOTP-Code</label>
+      <label for="otp">{{index $.Translations "admin.access.totp_label"}}</label>
       <input id="otp" name="otp" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code" autocapitalize="none" autocorrect="off" spellcheck="false">
       {{end}}
-      <button type="submit" class="button">Admin-Bereich öffnen</button>
+      <button type="submit" class="button">{{index $.Translations "admin.access.login_button"}}</button>
     </form>
   </article>
 </section>

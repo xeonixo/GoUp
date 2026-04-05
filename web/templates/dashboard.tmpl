@@ -1,15 +1,15 @@
 {{define "topbar_actions"}}
 <div class="topbar-dashboard-actions">
-  <div class="live-connection-indicator is-connecting" id="live-ws-indicator" role="status" aria-live="polite" aria-label="Live-Verbindung wird aufgebaut" title="Live-Verbindung wird aufgebaut">
+  <div class="live-connection-indicator is-connecting" id="live-ws-indicator" role="status" aria-live="polite" aria-label="{{index $.Translations "dashboard.live.connecting"}}" title="{{index $.Translations "dashboard.live.connecting"}}">
     <span class="live-connection-dot" aria-hidden="true"></span>
-    <span class="live-connection-text">Live</span>
+    <span class="live-connection-text">{{index $.Translations "layout.live_indicator"}}</span>
   </div>
-  <div class="trend-range-toggle topbar-trend-range" role="tablist" aria-label="Trend-Zeitraum">
+  <div class="trend-range-toggle topbar-trend-range" role="tablist" aria-label="{{index $.Translations "dashboard.topbar.trend_range"}}">
   {{range .TrendRanges}}
   <a href="{{$.AppBase}}?trend={{.Value}}" class="button button-small {{if not .Selected}}button-secondary{{end}}" {{if .Selected}}aria-current="page"{{end}}>{{.Label}}</a>
   {{end}}
   </div>
-  {{if .IsAdmin}}<button class="button" type="button" id="open-create-monitor">+ Monitor</button>{{end}}
+  {{if .IsAdmin}}<button class="button" type="button" id="open-create-monitor">{{index $.Translations "dashboard.topbar.create_monitor"}}</button>{{end}}
 </div>
 {{end}}
 
@@ -25,15 +25,15 @@
 
 <section id="dashboard-live-stats" class="stats-grid stats-grid-wide">
   <article class="card stat-card stat-card-primary">
-    <h2>Monitore</h2>
+    <h2>{{index $.Translations "dashboard.stats.monitors_title"}}</h2>
     <div class="metric">{{.Stats.MonitorCount}}</div>
   </article>
   <article class="card stat-card">
-    <h2>Aktiv</h2>
+    <h2>{{index $.Translations "dashboard.stats.active_title"}}</h2>
     <div class="metric">{{.Stats.EnabledMonitorCount}}</div>
   </article>
   <article class="card stat-card {{if gt .Stats.OpenIncidentCount 0}}stat-card-incident{{end}}">
-    <h2>Offene Incidents</h2>
+    <h2>{{index $.Translations "dashboard.stats.incidents_title"}}</h2>
     <div class="metric {{if gt .Stats.OpenIncidentCount 0}}metric-danger{{end}}">{{.Stats.OpenIncidentCount}}</div>
   </article>
 </section>
@@ -43,51 +43,51 @@
   <form method="post" action="{{$.AppBase}}monitors/save" class="stack form-grid" id="monitor-form">
     <input type="hidden" name="id" id="monitor-id">
     <div class="modal-header">
-      <h2 id="monitor-modal-title">Monitor anlegen</h2>
-      <button class="modal-close-button" type="button" id="monitor-close" aria-label="Monitor-Dialog schließen">×</button>
+      <h2 id="monitor-modal-title">{{index $.Translations "dashboard.modal.create_title"}}</h2>
+      <button class="modal-close-button" type="button" id="monitor-close" aria-label="{{index $.Translations "dashboard.modal.close_aria"}}">×</button>
     </div>
 
     <label>
-      <span>Typ</span>
+      <span>{{index $.Translations "dashboard.modal.type_label"}}</span>
       <select name="kind" id="monitor-kind">
-        <option value="https">HTTPS</option>
-        <option value="tcp">TCP</option>
-        <option value="icmp">ICMP</option>
-        <option value="smtp">SMTP</option>
-        <option value="imap">IMAP</option>
-        <option value="dns">DNS</option>
-        <option value="udp">UDP</option>
-        <option value="whois">WHOIS (Domain-Ablauf)</option>
+        <option value="https">{{index $.Translations "dashboard.modal.type_https"}}</option>
+        <option value="tcp">{{index $.Translations "dashboard.modal.type_tcp"}}</option>
+        <option value="icmp">{{index $.Translations "dashboard.modal.type_icmp"}}</option>
+        <option value="smtp">{{index $.Translations "dashboard.modal.type_smtp"}}</option>
+        <option value="imap">{{index $.Translations "dashboard.modal.type_imap"}}</option>
+        <option value="dns">{{index $.Translations "dashboard.modal.type_dns"}}</option>
+        <option value="udp">{{index $.Translations "dashboard.modal.type_udp"}}</option>
+        <option value="whois">{{index $.Translations "dashboard.modal.type_whois"}}</option>
       </select>
     </label>
 
     <label id="tls-mode-row">
-      <span>TLS-Modus</span>
+      <span>{{index $.Translations "dashboard.modal.tls_mode"}}</span>
       <select name="tls_mode" id="monitor-tls-mode">
-        <option value="tls">TLS</option>
-        <option value="starttls">STARTTLS</option>
-        <option value="none">Kein TLS</option>
+        <option value="tls">{{index $.Translations "dashboard.modal.tls_mode_tls"}}</option>
+        <option value="starttls">{{index $.Translations "dashboard.modal.tls_mode_starttls"}}</option>
+        <option value="none">{{index $.Translations "dashboard.modal.tls_mode_none"}}</option>
       </select>
     </label>
 
     <label id="https-mode-row" class="checkbox-row" hidden>
       <input type="checkbox" id="monitor-use-https" checked>
-      <span id="monitor-use-https-label">HTTPS verwenden</span>
+      <span id="monitor-use-https-label">{{index $.Translations "dashboard.modal.https_checkbox"}}</span>
     </label>
 
     <label id="https-verify-row" class="checkbox-row" hidden>
       <input type="checkbox" id="monitor-verify-cert" checked>
-      <span id="monitor-verify-cert-label">Zertifikat prüfen</span>
+      <span id="monitor-verify-cert-label">{{index $.Translations "dashboard.modal.verify_cert_checkbox"}}</span>
     </label>
 
     <label>
-      <span>Name</span>
-      <input type="text" name="name" id="monitor-name" placeholder="Produktiv-Website" required>
+      <span>{{index $.Translations "dashboard.modal.name_label"}}</span>
+      <input type="text" name="name" id="monitor-name" placeholder="{{index $.Translations "dashboard.modal.name_placeholder"}}" required>
     </label>
 
     <label>
-      <span>Gruppe</span>
-      <input type="text" name="group" id="monitor-group" list="monitor-group-options" placeholder="z. B. Mailcow, Nextcloud oder Core">
+      <span>{{index $.Translations "dashboard.modal.group_label"}}</span>
+      <input type="text" name="group" id="monitor-group" list="monitor-group-options" placeholder="{{index $.Translations "dashboard.modal.group_placeholder"}}">
     </label>
 
     <datalist id="monitor-group-options">
@@ -98,156 +98,156 @@
 
     {{if .HasRemoteNodes}}
     <label id="monitor-executor-row">
-      <span>Ausführung</span>
+      <span>{{index $.Translations "dashboard.modal.executor_label"}}</span>
       <select name="executor" id="monitor-executor">
         {{range .MonitorExecutors}}
         <option value="{{.Value}}">{{.Label}}</option>
         {{end}}
       </select>
-      <small class="muted compact">Nur konfigurierte Remote-Nodes werden angezeigt. Ohne Auswahl läuft der Monitor auf der Control-Plane.</small>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.executor_hint"}}</small>
     </label>
     {{end}}
 
     <label id="monitor-target-row">
-      <span>Ziel</span>
-      <input type="text" name="target" id="monitor-target" placeholder="example.com/health" required>
-      <small class="muted compact" id="monitor-target-hint">Für HTTP(S): Host/Pfad ohne Protokoll (wird automatisch ergänzt).</small>
-      <small class="muted compact" id="monitor-target-warn" hidden>Hinweis für .de: DENIC stellt im WHOIS auf Port 43 kein Ablaufdatum bereit. Es wird nur der Registrierungsstatus geprüft.</small>
+      <span>{{index $.Translations "dashboard.modal.target_label"}}</span>
+      <input type="text" name="target" id="monitor-target" placeholder="{{index $.Translations "dashboard.modal.target_placeholder"}}" required>
+      <small class="muted compact" id="monitor-target-hint">{{index $.Translations "dashboard.modal.target_hint_http"}}</small>
+      <small class="muted compact" id="monitor-target-warn" hidden>{{index $.Translations "dashboard.modal.target_warn_whois_de"}}</small>
     </label>
 
     <label id="https-target-row" hidden>
-      <span>HTTP(S) Ziel</span>
+      <span>{{index $.Translations "dashboard.modal.http_target_label"}}</span>
       <div class="inline-grid">
         <label>
-          <span>IP / Hostname</span>
-          <input type="text" id="monitor-http-host" name="http_host" placeholder="example.com oder 2001:db8::1" autocomplete="off" spellcheck="false">
+          <span>{{index $.Translations "dashboard.modal.host_label"}}</span>
+          <input type="text" id="monitor-http-host" name="http_host" placeholder="{{index $.Translations "dashboard.modal.http_host_placeholder"}}" autocomplete="off" spellcheck="false">
         </label>
         <label>
-          <span>Port (optional)</span>
-          <input type="number" id="monitor-http-port" name="http_port" min="1" max="65535" placeholder="443" inputmode="numeric">
+          <span>{{index $.Translations "dashboard.modal.port_optional_label"}}</span>
+          <input type="number" id="monitor-http-port" name="http_port" min="1" max="65535" placeholder="{{index $.Translations "dashboard.modal.http_port_placeholder"}}" inputmode="numeric">
         </label>
       </div>
       <label>
-        <span>Pfad / Query (optional)</span>
-        <input type="text" id="monitor-http-path" name="http_path" placeholder="/health">
+        <span>{{index $.Translations "dashboard.modal.path_query_optional_label"}}</span>
+        <input type="text" id="monitor-http-path" name="http_path" placeholder="{{index $.Translations "dashboard.modal.http_path_placeholder"}}">
       </label>
-      <small class="muted compact">Wenn kein Port gesetzt ist: HTTPS nutzt 443, HTTP nutzt 80.</small>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.http_port_default_hint"}}</small>
     </label>
 
     <label id="https-family-row" hidden>
-      <span>IP-Familie (nur bei Hostname)</span>
+      <span>{{index $.Translations "dashboard.modal.ip_family_hostname_only"}}</span>
       <select id="monitor-https-family" name="https_family">
         <option value="ipv4">IPv4</option>
         <option value="ipv6">IPv6</option>
         <option value="dual" selected>Dual Stack (IPv4 + IPv6)</option>
       </select>
-      <small class="muted compact">Wird nur bei HTTP(S) und Hostnamen verwendet. Bei direkter IP-Adresse nicht nötig.</small>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.https_family_hint"}}</small>
     </label>
 
     <label id="tcp-target-row" hidden>
-      <span>TCP Ziel</span>
+      <span>{{index $.Translations "dashboard.modal.tcp_target_label"}}</span>
       <div class="inline-grid">
         <label>
-          <span>IP / Hostname</span>
-          <input type="text" id="monitor-tcp-host" name="tcp_host" placeholder="example.com oder 2001:db8::1" autocomplete="off" spellcheck="false">
+          <span>{{index $.Translations "dashboard.modal.host_label"}}</span>
+          <input type="text" id="monitor-tcp-host" name="tcp_host" placeholder="{{index $.Translations "dashboard.modal.tcp_host_placeholder"}}" autocomplete="off" spellcheck="false">
         </label>
         <label>
-          <span>Port</span>
-          <input type="number" id="monitor-tcp-port" name="tcp_port" min="1" max="65535" placeholder="443" inputmode="numeric">
+          <span>{{index $.Translations "dashboard.modal.port_label"}}</span>
+          <input type="number" id="monitor-tcp-port" name="tcp_port" min="1" max="65535" placeholder="{{index $.Translations "dashboard.modal.tcp_port_placeholder"}}" inputmode="numeric">
         </label>
       </div>
-      <small class="muted compact">Für TCP: IP/Hostname und Port getrennt angeben. IPv6 kann ohne Klammern eingegeben werden.</small>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.tcp_target_hint"}}</small>
     </label>
 
     <label id="tcp-family-row" hidden>
-      <span>IP-Familie (nur bei Hostname)</span>
+      <span>{{index $.Translations "dashboard.modal.ip_family_hostname_only"}}</span>
       <select id="monitor-tcp-family" name="tcp_family">
         <option value="ipv4">IPv4</option>
         <option value="ipv6">IPv6</option>
         <option value="dual" selected>Dual Stack (IPv4 + IPv6)</option>
       </select>
-      <small class="muted compact">Wird nur bei TCP und Hostnamen verwendet. Bei direkter IP-Adresse nicht nötig.</small>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.tcp_family_hint"}}</small>
     </label>
 
     <label id="udp-check-row" hidden>
-      <span>UDP-Check</span>
+      <span>{{index $.Translations "dashboard.modal.udp_check_label"}}</span>
       <select id="monitor-udp-check" name="udp_check">
-        <option value="dns">DNS Erreichbarkeit</option>
-        <option value="ntp">NTP Check</option>
+        <option value="dns">{{index $.Translations "dashboard.modal.udp_check_dns"}}</option>
+        <option value="ntp">{{index $.Translations "dashboard.modal.udp_check_ntp"}}</option>
       </select>
-      <small class="muted compact">Wählt den Probe-Typ für UDP aus.</small>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.udp_check_hint"}}</small>
     </label>
 
     <label id="udp-target-row" hidden>
-      <span>UDP Ziel</span>
+      <span>{{index $.Translations "dashboard.modal.udp_target_label"}}</span>
       <div class="inline-grid">
         <label>
-          <span>IP / Hostname</span>
-          <input type="text" id="monitor-udp-host" name="udp_host" placeholder="resolver.example.com oder 2001:db8::1" autocomplete="off" spellcheck="false">
+          <span>{{index $.Translations "dashboard.modal.host_label"}}</span>
+          <input type="text" id="monitor-udp-host" name="udp_host" placeholder="{{index $.Translations "dashboard.modal.udp_host_placeholder"}}" autocomplete="off" spellcheck="false">
         </label>
         <label>
-          <span>Port</span>
-          <input type="number" id="monitor-udp-port" name="udp_port" min="1" max="65535" placeholder="53" inputmode="numeric">
+          <span>{{index $.Translations "dashboard.modal.port_label"}}</span>
+          <input type="number" id="monitor-udp-port" name="udp_port" min="1" max="65535" placeholder="{{index $.Translations "dashboard.modal.udp_port_placeholder"}}" inputmode="numeric">
         </label>
       </div>
-      <small class="muted compact">IPv6 kann ohne Klammern eingegeben werden. Standard-Port je Probe: DNS 53, NTP 123.</small>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.udp_target_hint"}}</small>
     </label>
 
     <label id="udp-family-row" hidden>
-      <span>IP-Familie (nur bei Hostname)</span>
+      <span>{{index $.Translations "dashboard.modal.ip_family_hostname_only"}}</span>
       <select id="monitor-udp-family" name="udp_family">
         <option value="ipv4">IPv4</option>
         <option value="ipv6">IPv6</option>
         <option value="dual" selected>Dual Stack (IPv4 + IPv6)</option>
       </select>
-      <small class="muted compact">Wird nur bei UDP und Hostnamen verwendet. Bei direkter IP-Adresse nicht nötig.</small>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.udp_family_hint"}}</small>
     </label>
 
     <label id="icmp-family-row" hidden>
-      <span>IP-Familie (nur bei Hostname)</span>
+      <span>{{index $.Translations "dashboard.modal.ip_family_hostname_only"}}</span>
       <select id="monitor-icmp-family" name="icmp_family">
         <option value="ipv4">IPv4</option>
         <option value="ipv6">IPv6</option>
         <option value="dual">Dual Stack (IPv4 + IPv6)</option>
       </select>
-      <small class="muted compact">Wird nur bei ICMP und Hostnamen verwendet. Bei direkter IP-Adresse nicht nötig.</small>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.icmp_family_hint"}}</small>
     </label>
 
     <div class="inline-grid">
       <label>
-        <span>Intervall (Sekunden)</span>
+        <span>{{index $.Translations "dashboard.modal.interval_seconds_label"}}</span>
         <input type="number" name="interval_seconds" id="monitor-interval" min="15" value="60" required>
       </label>
       <label>
-        <span>Timeout (Sekunden)</span>
+        <span>{{index $.Translations "dashboard.modal.timeout_seconds_label"}}</span>
         <input type="number" name="timeout_seconds" id="monitor-timeout" min="1" value="10" required>
       </label>
     </div>
 
     <label id="expected-status-row" hidden>
-      <span>Erwarteter HTTP-Status (optional)</span>
-      <input type="number" name="expected_status_code" id="monitor-expected-status" min="100" max="599" placeholder="200">
+      <span>{{index $.Translations "dashboard.modal.expected_http_status_optional"}}</span>
+      <input type="number" name="expected_status_code" id="monitor-expected-status" min="100" max="599" placeholder="{{index $.Translations "dashboard.modal.expected_status_placeholder"}}">
     </label>
 
     <label id="expected-text-row" hidden>
-      <span id="monitor-expected-text-label">Erwartete Keywords (optional)</span>
-      <input type="text" name="expected_text" id="monitor-expected-text" placeholder="z. B. healthy, ok">
-      <small class="muted compact" id="monitor-expected-text-hint">Mehrere Keywords mit Komma trennen. Alle Keywords müssen im Body vorkommen.</small>
+      <span id="monitor-expected-text-label">{{index $.Translations "dashboard.modal.expected_keywords_optional"}}</span>
+      <input type="text" name="expected_text" id="monitor-expected-text" placeholder="{{index $.Translations "dashboard.modal.expected_text_placeholder"}}">
+      <small class="muted compact" id="monitor-expected-text-hint">{{index $.Translations "dashboard.modal.expected_keywords_hint"}}</small>
     </label>
 
     <label class="checkbox-row">
       <input type="checkbox" name="enabled" id="monitor-enabled" checked>
-      <span>Monitor aktiv</span>
+      <span>{{index $.Translations "dashboard.modal.enabled_checkbox"}}</span>
     </label>
 
     <label class="checkbox-row">
       <input type="checkbox" name="notify_on_recovery" id="monitor-notify" checked>
-      <span>Recovery-Benachrichtigung senden</span>
+      <span>{{index $.Translations "dashboard.modal.notify_recovery_checkbox"}}</span>
     </label>
 
     <div class="modal-actions">
-      <button class="button button-secondary" type="button" id="monitor-cancel">Abbrechen</button>
-      <button class="button" type="submit">Speichern</button>
+      <button class="button button-secondary" type="button" id="monitor-cancel">{{index $.Translations "dashboard.modal.cancel_button"}}</button>
+      <button class="button" type="submit">{{index $.Translations "dashboard.modal.save_button"}}</button>
     </div>
   </form>
 </dialog>
@@ -262,43 +262,43 @@
 
     <div class="modal-header">
       <div>
-        <h2 id="group-modal-title">Gruppe konfigurieren</h2>
-        <p class="muted compact">Wähle ein wiederverwendetes Icon, suche in Dashboard Icons oder lade ein eigenes Icon hoch.</p>
+        <h2 id="group-modal-title">{{index $.Translations "dashboard.group_modal.title"}}</h2>
+        <p class="muted compact">{{index $.Translations "dashboard.group_modal.subtitle"}}</p>
       </div>
-      <button class="modal-close-button" type="button" id="group-cancel" aria-label="Gruppen-Dialog schließen">×</button>
+      <button class="modal-close-button" type="button" id="group-cancel" aria-label="{{index $.Translations "dashboard.group_modal.close_aria"}}">×</button>
     </div>
 
     <div class="group-icon-preview-panel">
       <div class="group-icon-preview-frame" id="group-icon-preview-frame" hidden>
-        <img id="group-icon-preview" alt="Gruppen-Icon Vorschau">
+        <img id="group-icon-preview" alt="{{index $.Translations "dashboard.group_modal.icon_preview_alt"}}">
       </div>
-      <p class="muted compact">Quelle: lokal gecachte Dashboard Icons oder eigener Upload</p>
+      <p class="muted compact">{{index $.Translations "dashboard.group_modal.preview_source"}}</p>
     </div>
 
     <label>
-      <span>Dashboard Icons durchsuchen</span>
-      <input type="search" id="group-icon-search" placeholder="z. B. mailcow, nextcloud, postgres" autocomplete="off" spellcheck="false">
+      <span>{{index $.Translations "dashboard.group_modal.search_label"}}</span>
+      <input type="search" id="group-icon-search" placeholder="{{index $.Translations "dashboard.group_icon.search_placeholder"}}" autocomplete="off" spellcheck="false">
     </label>
 
-    <p class="muted compact" id="group-icon-search-status">Suche nach Namen, Aliasen oder Kategorien.</p>
+    <p class="muted compact" id="group-icon-search-status">{{index $.Translations "dashboard.group_modal.search_hint"}}</p>
     <div class="group-icon-results" id="group-icon-results" aria-live="polite"></div>
 
     <label>
-      <span>Eigenes Icon hochladen</span>
+      <span>{{index $.Translations "dashboard.group_modal.upload_label"}}</span>
       <input type="file" id="group-icon-upload" name="icon_upload" accept=".svg,image/svg+xml,.png,image/png,.webp,image/webp,.jpg,.jpeg,image/jpeg,.ico,image/x-icon,image/vnd.microsoft.icon">
     </label>
-    <p class="muted compact">Unterstützt SVG, PNG, WEBP, JPG und ICO. Bereits hochgeladene Dateien werden wiederverwendet.</p>
+    <p class="muted compact">{{index $.Translations "dashboard.group_modal.upload_hint"}}</p>
 
     <label>
-      <span>Eigener Dashboardicons-Slug</span>
-      <input type="text" id="group-icon-custom" placeholder="z. B. mailcow oder nextcloud">
+      <span>{{index $.Translations "dashboard.group_modal.custom_slug_label"}}</span>
+      <input type="text" id="group-icon-custom" placeholder="{{index $.Translations "dashboard.group_icon.custom_placeholder"}}">
     </label>
 
-    <p class="muted compact" id="group-icon-selection">Kein Icon ausgewählt.</p>
+    <p class="muted compact" id="group-icon-selection">{{index $.Translations "dashboard.group_modal.no_icon_selected"}}</p>
 
     <div class="modal-actions">
-      <button class="button button-secondary" type="button" id="group-reset-icon">Icon entfernen</button>
-      <button class="button" type="submit">Speichern</button>
+      <button class="button button-secondary" type="button" id="group-reset-icon">{{index $.Translations "dashboard.group_modal.remove_icon"}}</button>
+      <button class="button" type="submit">{{index $.Translations "dashboard.modal.save_button"}}</button>
     </div>
   </form>
 </dialog>
@@ -308,46 +308,46 @@
   <div class="stack">
     <div class="modal-header">
       <div>
-        <h2 id="trend-detail-title">Trenddetails</h2>
-        <p class="muted compact" id="trend-detail-subtitle">Historie</p>
+        <h2 id="trend-detail-title">{{index $.Translations "dashboard.trend_detail.title"}}</h2>
+        <p class="muted compact" id="trend-detail-subtitle">{{index $.Translations "dashboard.trend_detail.history"}}</p>
       </div>
-      <button class="modal-close-button" type="button" id="trend-detail-close" aria-label="Trenddetails schließen">×</button>
+      <button class="modal-close-button" type="button" id="trend-detail-close" aria-label="{{index $.Translations "dashboard.trend_detail.close_aria"}}">×</button>
     </div>
 
     <div class="trend-detail-meta">
       <article class="card trend-detail-card">
-        <span class="muted">Status</span>
+        <span class="muted">{{index $.Translations "common.status"}}</span>
         <strong id="trend-detail-status">—</strong>
       </article>
       <article class="card trend-detail-card">
-        <span class="muted">Uptime</span>
+        <span class="muted">{{index $.Translations "dashboard.trend_detail.uptime"}}</span>
         <strong id="trend-detail-uptime">—</strong>
       </article>
       <article class="card trend-detail-card">
-        <span class="muted">Letzter Lauf</span>
+        <span class="muted">{{index $.Translations "dashboard.trend_detail.last_check"}}</span>
         <strong id="trend-detail-last-check">—</strong>
       </article>
       <article class="card trend-detail-card">
-        <span class="muted">Ø / Min / Max</span>
+        <span class="muted">{{index $.Translations "dashboard.trend_detail.latency_triplet"}}</span>
         <strong id="trend-detail-latency">—</strong>
       </article>
       <article class="card trend-detail-card">
-        <span class="muted">Checks</span>
+        <span class="muted">{{index $.Translations "dashboard.trend_detail.checks"}}</span>
         <strong id="trend-detail-checks">—</strong>
       </article>
       <article class="card trend-detail-card">
-        <span class="muted">Ziel</span>
+        <span class="muted">{{index $.Translations "dashboard.modal.target_label"}}</span>
         <strong id="trend-detail-target">—</strong>
       </article>
     </div>
 
     <section class="card stack">
-      <h3 id="trend-detail-range-title">Verlauf</h3>
+      <h3 id="trend-detail-range-title">{{index $.Translations "dashboard.trend_detail.range"}}</h3>
       <div id="trend-detail-bars" class="trend-bars trend-bars-large"></div>
       <div class="trend-detail-latency-chart" id="trend-detail-latency-chart" hidden>
         <div class="trend-detail-latency-chart-head">
-          <strong>Latenz</strong>
-          <div class="trend-detail-latency-ranges" role="tablist" aria-label="Latenz-Zeitraum">
+          <strong>{{index $.Translations "dashboard.trend_detail.latency"}}</strong>
+          <div class="trend-detail-latency-ranges" role="tablist" aria-label="{{index $.Translations "dashboard.trend_detail.latency_range"}}">
             <button class="button button-small trend-detail-latency-range" type="button" data-range="1h" aria-pressed="true">1h</button>
             <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="6h" aria-pressed="false">6h</button>
             <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="24h" aria-pressed="false">24h</button>
@@ -373,13 +373,13 @@
     </section>
 
     <section class="card stack">
-      <h3>Historie</h3>
+      <h3>{{index $.Translations "dashboard.trend_detail.history"}}</h3>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Zeitraum</th>
-              <th>Ergebnis</th>
+              <th>{{index $.Translations "dashboard.trend_detail.period"}}</th>
+              <th>{{index $.Translations "dashboard.trend_detail.result"}}</th>
             </tr>
           </thead>
           <tbody id="trend-detail-history"></tbody>
@@ -409,21 +409,21 @@
                   </div>
                 </div>
                 <div class="service-summary-right">
-                  <span class="service-count" aria-label="{{len .Monitors}} Monitore">{{len .Monitors}}</span>
+                  <span class="service-count" aria-label="{{printf (index $.Translations "dashboard.group.monitor_count_aria") (len .Monitors)}}">{{len .Monitors}}</span>
                   <span class="status-pill {{.StatusClass}}">{{.StatusLabel}}</span>
                   {{if $.IsAdmin}}
                   <details class="action-menu">
-                  <summary class="action-menu-trigger" aria-label="Aktionen für Gruppe {{.Title}}">⋯</summary>
+                  <summary class="action-menu-trigger" aria-label="{{printf (index $.Translations "dashboard.group.actions_aria") .Title}}">⋯</summary>
                   <div class="action-menu-list">
                     <button
                       class="action-menu-item group-settings"
                       type="button"
                       data-group="{{.Title}}"
                       data-icon-slug="{{.IconSlug}}"
-                      aria-label="Gruppen-Icon für {{.Title}} konfigurieren">Icon bearbeiten</button>
-                    <form method="post" action="{{$.AppBase}}groups/delete" class="action-menu-form" data-confirm="Gruppe inklusive aller Monitore wirklich löschen?">
+                      aria-label="{{printf (index $.Translations "dashboard.group.configure_icon_aria") .Title}}">{{index $.Translations "dashboard.group.edit_icon"}}</button>
+                    <form method="post" action="{{$.AppBase}}groups/delete" class="action-menu-form" data-confirm="{{index $.Translations "dashboard.group.delete_confirm"}}">
                       <input type="hidden" name="group" value="{{.Title}}">
-                      <button class="action-menu-item action-menu-item-danger" type="submit">Gruppe löschen</button>
+                      <button class="action-menu-item action-menu-item-danger" type="submit">{{index $.Translations "dashboard.group.delete"}}</button>
                     </form>
                   </div>
                 </details>
@@ -434,23 +434,23 @@
               <button
                 class="trend-trigger service-summary-trend"
                 type="button"
-                data-monitor-name="Dienstgruppe: {{.Title}}"
-                data-monitor-kind="Service"
+                data-monitor-name="{{.Title}}"
+                data-monitor-kind="{{index $.Translations "dashboard.group.kind_service"}}"
                 data-target="{{.Title}}"
                 data-status="{{.StatusLabel}}"
                 data-uptime="{{.UptimeLabel}}"
                 data-trend-label="{{.TrendLabel}}"
                 data-last-check=""
                 data-last-message="{{.StatusInfo}}"
-                aria-label="Trenddetails für Dienstgruppe {{.Title}} öffnen">
-                <div class="trend-bars" aria-label="Trend {{.TrendLabel}}">
+                aria-label="{{printf (index $.Translations "dashboard.trend_detail.open_for") .Title}}">
+                <div class="trend-bars" aria-label="{{printf (index $.Translations "dashboard.trend.aria") .TrendLabel}}">
                   {{range .TrendPoints}}
                   <span class="trend-bar {{.Class}}" data-bucket="{{.BucketRaw}}" data-label="{{.Label}}" data-format="{{.Format}}" data-checks="{{.Checks}}" data-avg-ms="{{.AvgMS}}" data-min-ms="{{.MinMS}}" data-max-ms="{{.MaxMS}}"></span>
                   {{end}}
                 </div>
               </button>
               {{else}}
-              <p class="muted compact">Keine Monitore in dieser Gruppe.</p>
+              <p class="muted compact">{{index $.Translations "dashboard.group.no_monitors"}}</p>
               {{end}}
             </div>
           </summary>
@@ -460,7 +460,7 @@
         <div class="monitor-card-header">
           <div>
               <h5>{{.Name}}</h5>
-            <p class="muted compact">{{.Kind}}{{if .TLSMode}} / {{.TLSMode}}{{end}} · alle {{.Interval}} · Timeout {{.Timeout}}</p>
+            <p class="muted compact">{{.Kind}}{{if .TLSMode}} / {{.TLSMode}}{{end}} · {{index $.Translations "dashboard.monitor.every"}} {{.Interval}} · {{index $.Translations "dashboard.monitor.timeout"}} {{.Timeout}}</p>
           </div>
           <div class="monitor-header-right">
             {{if and $.IsAdmin (ne .ExecutorKind "remote")}}
@@ -468,15 +468,15 @@
               class="monitor-cycle-indicator monitor-cycle-trigger"
               type="button"
               data-check-monitor-id="{{.ID}}"
-              aria-label="Monitor {{.Name}} jetzt prüfen"
-              title="Monitor jetzt prüfen"></button>
+              aria-label="{{printf (index $.Translations "dashboard.monitor.check_now_aria") .Name}}"
+              title="{{index $.Translations "dashboard.monitor.check_now"}}"></button>
             {{else}}
             <span class="monitor-cycle-indicator" aria-hidden="true"></span>
             {{end}}
             <span class="status-pill {{.StatusClass}}">{{.StatusLabel}}</span>
             {{if $.IsAdmin}}
             <details class="action-menu">
-              <summary class="action-menu-trigger" aria-label="Aktionen für Monitor {{.Name}}">⋯</summary>
+              <summary class="action-menu-trigger" aria-label="{{printf (index $.Translations "dashboard.monitor.actions_aria") .Name}}">⋯</summary>
               <div class="action-menu-list">
                 <button
                   class="action-menu-item edit-monitor"
@@ -494,16 +494,16 @@
                   data-notify-on-recovery="{{if .NotifyOnRecovery}}1{{else}}0{{end}}"
                   data-expected-status="{{.ExpectedStatus}}"
                   data-expected-text="{{.ExpectedText}}">
-                  Bearbeiten
+                  {{index $.Translations "common.edit"}}
                 </button>
                 <form method="post" action="{{$.AppBase}}monitors/enabled" class="action-menu-form">
                   <input type="hidden" name="id" value="{{.ID}}">
                   <input type="hidden" name="enabled" value="{{if .Enabled}}0{{else}}1{{end}}">
-                  <button class="action-menu-item" type="submit">{{if .Enabled}}Pausieren{{else}}Aktivieren{{end}}</button>
+                  <button class="action-menu-item" type="submit">{{if .Enabled}}{{index $.Translations "dashboard.monitor.pause"}}{{else}}{{index $.Translations "dashboard.monitor.enable"}}{{end}}</button>
                 </form>
-                <form method="post" action="{{$.AppBase}}monitors/delete" class="action-menu-form" data-confirm="Monitor wirklich löschen?">
+                <form method="post" action="{{$.AppBase}}monitors/delete" class="action-menu-form" data-confirm="{{index $.Translations "dashboard.monitor.delete_confirm"}}">
                   <input type="hidden" name="id" value="{{.ID}}">
-                  <button class="action-menu-item action-menu-item-danger" type="submit">Löschen</button>
+                  <button class="action-menu-item action-menu-item-danger" type="submit">{{index $.Translations "common.delete"}}</button>
                 </form>
               </div>
             </details>
@@ -523,8 +523,8 @@
           data-trend-label="{{.TrendLabel}}"
           data-last-check="{{.LastCheckedAtRaw}}"
           data-last-message="{{.LastMessage}}"
-          aria-label="Trenddetails für {{.Name}} öffnen">
-          <div class="trend-bars" aria-label="Trend {{.TrendLabel}}">
+          aria-label="{{printf (index $.Translations "dashboard.trend_detail.open_for") .Name}}">
+          <div class="trend-bars" aria-label="{{printf (index $.Translations "dashboard.trend.aria") .TrendLabel}}">
             {{range .TrendPoints}}
             <span class="trend-bar {{.Class}}" data-bucket="{{.BucketRaw}}" data-label="{{.Label}}" data-format="{{.Format}}" data-checks="{{.Checks}}" data-avg-ms="{{.AvgMS}}" data-min-ms="{{.MinMS}}" data-max-ms="{{.MaxMS}}"></span>
             {{end}}
@@ -533,23 +533,23 @@
 
         <div class="monitor-card-body stack compact-stack">
           <div class="info-row">
-            <span class="muted">Ziel</span>
+            <span class="muted">{{index $.Translations "dashboard.modal.target_label"}}</span>
             <strong class="break-all">{{.TargetLabel}}</strong>
           </div>
           <div class="info-row">
-            <span class="muted">Status</span>
+            <span class="muted">{{index $.Translations "common.status"}}</span>
             <strong>{{.StatusSummary}}</strong>
           </div>
           {{if $.HasRemoteNodes}}
           <div class="info-row">
-            <span class="muted">Executor</span>
+            <span class="muted">{{index $.Translations "dashboard.monitor.executor"}}</span>
             <strong>{{.ExecutorLabel}}</strong>
           </div>
           {{end}}
 
           <div class="monitor-metrics">
             <div class="monitor-metric">
-              <span class="muted">Latenz</span>
+              <span class="muted">{{index $.Translations "dashboard.trend_detail.latency"}}</span>
               <strong>{{if .LastLatency}}{{.LastLatency}}{{else}}—{{end}}</strong>
             </div>
             {{if eq .KindValue "https"}}
@@ -559,20 +559,20 @@
             </div>
             {{end}}
             <div class="monitor-metric">
-              <span class="muted">Letzter Lauf</span>
+              <span class="muted">{{index $.Translations "dashboard.trend_detail.last_check"}}</span>
               <strong>{{if .LastCheckedAtRaw}}<time class="client-time" datetime="{{.LastCheckedAtRaw}}" data-format="relative-age">{{.LastCheckedAt}}</time>{{else}}—{{end}}</strong>
             </div>
             {{if eq .KindValue "https" "tcp" "smtp" "imap"}}
             <div class="monitor-metric">
-              <span class="muted">Zertifikat</span>
+              <span class="muted">{{index $.Translations "dashboard.monitor.certificate"}}</span>
               <strong>{{if .TLSNotAfterRaw}}<time class="client-time" datetime="{{.TLSNotAfterRaw}}" data-format="minute">{{.TLSNotAfter}}</time>{{else}}—{{end}}</strong>
-              {{if .TLSDaysRemaining}}<span class="muted compact">{{.TLSDaysRemaining}} verbleibend</span>{{end}}
+              {{if .TLSDaysRemaining}}<span class="muted compact">{{.TLSDaysRemaining}} {{index $.Translations "dashboard.monitor.remaining"}}</span>{{end}}
             </div>
             {{else if eq .KindValue "whois"}}
             <div class="monitor-metric">
-              <span class="muted">Domain-Ablauf</span>
+              <span class="muted">{{index $.Translations "dashboard.monitor.domain_expiry"}}</span>
               <strong>{{if .TLSNotAfterRaw}}<time class="client-time" datetime="{{.TLSNotAfterRaw}}" data-format="minute">{{.TLSNotAfter}}</time>{{else}}—{{end}}</strong>
-              {{if .TLSDaysRemaining}}<span class="muted compact">{{.TLSDaysRemaining}} verbleibend</span>{{end}}
+              {{if .TLSDaysRemaining}}<span class="muted compact">{{.TLSDaysRemaining}} {{index $.Translations "dashboard.monitor.remaining"}}</span>{{end}}
             </div>
             {{end}}
           </div>
@@ -592,17 +592,17 @@
 </section>
 
 <section id="dashboard-live-state-events" class="card stack notification-events-card">
-  <h2>Letzte Statusänderungen</h2>
+  <h2>{{index $.Translations "dashboard.state_events.title"}}</h2>
   {{if .StateEvents}}
   <div class="state-events-toolbar">
     <label>
-      <span class="sr-only">Monitor/Details durchsuchen</span>
-      <input type="search" id="state-events-search" placeholder="Monitor oder Details filtern…" autocomplete="off" spellcheck="false">
+      <span class="sr-only">{{index $.Translations "dashboard.state_events.search_sr"}}</span>
+      <input type="search" id="state-events-search" placeholder="{{index $.Translations "dashboard.state_events.search_placeholder"}}" autocomplete="off" spellcheck="false">
     </label>
     <label>
-      <span class="sr-only">Zielstatus filtern</span>
+      <span class="sr-only">{{index $.Translations "dashboard.state_events.filter_status_sr"}}</span>
       <select id="state-events-status-filter">
-        <option value="all">Alle Zielstatus</option>
+        <option value="all">{{index $.Translations "dashboard.state_events.status_all"}}</option>
         <option value="down">DOWN</option>
         <option value="degraded">DEGRADED</option>
         <option value="up">UP</option>
@@ -610,20 +610,20 @@
     </label>
     <label class="checkbox-row">
       <input type="checkbox" id="state-events-incidents-only">
-      <span>Nur Incidents</span>
+      <span>{{index $.Translations "dashboard.state_events.incidents_only"}}</span>
     </label>
-    <button class="button button-secondary button-small" type="button" id="state-events-export">CSV exportieren</button>
+    <button class="button button-secondary button-small" type="button" id="state-events-export">{{index $.Translations "dashboard.state_events.export_csv"}}</button>
   </div>
   <p class="muted compact" id="state-events-filter-status"></p>
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
-          <th>Zeitpunkt</th>
-          <th>Monitor</th>
-          <th>Von</th>
-          <th>Nach</th>
-          <th>Details</th>
+          <th>{{index $.Translations "dashboard.state_events.time"}}</th>
+          <th>{{index $.Translations "dashboard.state_events.monitor"}}</th>
+          <th>{{index $.Translations "dashboard.state_events.from"}}</th>
+          <th>{{index $.Translations "dashboard.state_events.to"}}</th>
+          <th>{{index $.Translations "dashboard.state_events.details"}}</th>
         </tr>
       </thead>
       <tbody id="state-events-body">
@@ -637,31 +637,31 @@
         </tr>
         {{end}}
         <tr id="state-events-empty-row" hidden>
-          <td colspan="5" class="muted">Keine Statusänderungen für den aktuellen Filter.</td>
+          <td colspan="5" class="muted">{{index $.Translations "dashboard.state_events.empty_filtered"}}</td>
         </tr>
       </tbody>
     </table>
   </div>
   <div class="table-pagination" id="state-events-pagination" hidden></div>
   {{else}}
-  <p class="muted">Noch keine Statusänderungen vorhanden.</p>
+  <p class="muted">{{index $.Translations "dashboard.state_events.empty"}}</p>
   {{end}}
 </section>
 
 <section id="dashboard-live-notification-events" class="card stack notification-events-card">
-  <h2>Letzte Notification-Events</h2>
+  <h2>{{index $.Translations "dashboard.notification_events.title"}}</h2>
   {{if .Events}}
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
-          <th>Zeitpunkt</th>
-          <th>Monitor</th>
-          <th>Event</th>
-          <th>Endpoint</th>
-          <th>Ergebnis</th>
-          <th>Fehler</th>
-          <th>Zugestellt</th>
+          <th>{{index $.Translations "dashboard.notification_events.time"}}</th>
+          <th>{{index $.Translations "dashboard.notification_events.monitor"}}</th>
+          <th>{{index $.Translations "dashboard.notification_events.event"}}</th>
+          <th>{{index $.Translations "dashboard.notification_events.endpoint"}}</th>
+          <th>{{index $.Translations "dashboard.notification_events.result"}}</th>
+          <th>{{index $.Translations "dashboard.notification_events.error"}}</th>
+          <th>{{index $.Translations "dashboard.notification_events.delivered"}}</th>
         </tr>
       </thead>
       <tbody id="notification-events-body">
@@ -681,12 +681,70 @@
   </div>
   <div class="table-pagination" id="notification-events-pagination" hidden></div>
   {{else}}
-  <p class="muted">Noch keine Notification-Events vorhanden.</p>
+  <p class="muted">{{index $.Translations "dashboard.notification_events.empty"}}</p>
   {{end}}
 </section>
 </div>
 {{end}}
 
 {{define "page_scripts"}}
+<script>
+  window.GOUP_DASHBOARD_I18N = {
+    liveDisconnected: {{printf "%q" (index $.Translations "dashboard.live.disconnected")}},
+    liveConnected: {{printf "%q" (index $.Translations "dashboard.live.connected")}},
+    liveConnecting: {{printf "%q" (index $.Translations "dashboard.live.connecting")}},
+    paginationSummary: {{printf "%q" (index $.Translations "dashboard.pagination.summary")}},
+    paginationPrev: {{printf "%q" (index $.Translations "dashboard.pagination.prev")}},
+    paginationNext: {{printf "%q" (index $.Translations "dashboard.pagination.next")}},
+    groupIconSelectedUpload: {{printf "%q" (index $.Translations "dashboard.group_modal.selected_upload")}},
+    groupIconSelectedSlug: {{printf "%q" (index $.Translations "dashboard.group_modal.selected_slug")}},
+    groupIconNoneSelected: {{printf "%q" (index $.Translations "dashboard.group_modal.no_icon_selected")}},
+    groupIconUseCustomSlug: {{printf "%q" (index $.Translations "dashboard.group_modal.use_custom_slug")}},
+    groupIconAlreadyPresent: {{printf "%q" (index $.Translations "dashboard.group_modal.already_present")}},
+    groupIconSearchHint: {{printf "%q" (index $.Translations "dashboard.group_modal.search_hint")}},
+    groupIconSearchResultsCount: {{printf "%q" (index $.Translations "dashboard.group_modal.search_results_count")}},
+    groupIconSearchNoResults: {{printf "%q" (index $.Translations "dashboard.group_modal.search_no_results")}},
+    groupIconSearchUnavailable: {{printf "%q" (index $.Translations "dashboard.group_modal.search_unavailable")}},
+    groupFallback: {{printf "%q" (index $.Translations "dashboard.group.fallback")}},
+    groupModalTitle: {{printf "%q" (index $.Translations "dashboard.group_modal.title_with_name")}},
+    monitorCreateTitle: {{printf "%q" (index $.Translations "dashboard.modal.create_title")}},
+    monitorEditTitle: {{printf "%q" (index $.Translations "dashboard.modal.edit_title")}},
+    monitorUseHTTPS: {{printf "%q" (index $.Translations "dashboard.modal.https_checkbox")}},
+    monitorVerifyCert: {{printf "%q" (index $.Translations "dashboard.modal.verify_cert_checkbox")}},
+    monitorTCPHandshake: {{printf "%q" (index $.Translations "dashboard.modal.tcp_tls_handshake")}},
+    monitorHintHTTPS: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_https")}},
+    monitorHintHTTP: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_http_plain")}},
+    monitorHintTCP: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_tcp")}},
+    monitorHintMail: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_mail")}},
+    monitorHintDNS: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_dns")}},
+    monitorHintWHOIS: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_whois")}},
+    monitorHintUDP: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_udp")}},
+    monitorHintICMP: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_icmp")}},
+    monitorHintICMPShort: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_icmp_short")}},
+    dnsExpectedOptional: {{printf "%q" (index $.Translations "dashboard.modal.expected_dns_response_optional")}},
+    dnsExpectedHint: {{printf "%q" (index $.Translations "dashboard.modal.expected_dns_hint")}},
+    monitorCycleChecking: {{printf "%q" (index $.Translations "dashboard.monitor.cycle.checking")}},
+    monitorCycleNextIn: {{printf "%q" (index $.Translations "dashboard.monitor.cycle.next_in")}},
+    expectedKeywordsOptional: {{printf "%q" (index $.Translations "dashboard.modal.expected_keywords_optional")}},
+    expectedKeywordsHint: {{printf "%q" (index $.Translations "dashboard.modal.expected_keywords_hint")}},
+    trendLatencyNoValues: {{printf "%q" (index $.Translations "dashboard.trend_detail.latency_no_values")}},
+    trendNoData: {{printf "%q" (index $.Translations "dashboard.trend_detail.no_data")}},
+    trendLatencySingleOnly: {{printf "%q" (index $.Translations "dashboard.trend_detail.latency_single_only")}},
+    trendLatencyLoading: {{printf "%q" (index $.Translations "dashboard.trend_detail.latency_loading")}},
+    trendLatencyLoadFailed: {{printf "%q" (index $.Translations "dashboard.trend_detail.latency_load_failed")}},
+    trendTitleFallback: {{printf "%q" (index $.Translations "dashboard.trend_detail.title")}},
+    trendNoDetailMessage: {{printf "%q" (index $.Translations "dashboard.trend_detail.no_detail_message")}},
+    statusUnknown: {{printf "%q" (index $.Translations "monitor.status.unknown")}},
+    stateEventsNone: {{printf "%q" (index $.Translations "dashboard.state_events.empty")}},
+    paginationEntries: {{printf "%q" (index $.Translations "dashboard.pagination.entries")}},
+    paginationOf: {{printf "%q" (index $.Translations "dashboard.pagination.of")}},
+    csvHeaderTime: {{printf "%q" (index $.Translations "dashboard.state_events.time")}},
+    csvHeaderMonitor: {{printf "%q" (index $.Translations "dashboard.state_events.monitor")}},
+    csvHeaderFrom: {{printf "%q" (index $.Translations "dashboard.state_events.from")}},
+    csvHeaderTo: {{printf "%q" (index $.Translations "dashboard.state_events.to")}},
+    csvHeaderDetails: {{printf "%q" (index $.Translations "dashboard.state_events.details")}},
+    csvFilenamePrefix: {{printf "%q" (index $.Translations "dashboard.state_events.csv_filename_prefix")}}
+  };
+</script>
 <script src="/static/dashboard.js" defer></script>
 {{end}}

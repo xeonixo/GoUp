@@ -1,120 +1,120 @@
 {{define "content"}}
 <div class="admin-section">
   <nav class="admin-nav card">
-    <a href="/admin/" class="admin-nav-link is-active">Allgemein</a>
-    <a href="/admin/tenants" class="admin-nav-link">Tenants</a>
-    <a href="/admin/providers" class="admin-nav-link">OCID-Provider</a>
-    <a href="/admin/users" class="admin-nav-link">Benutzerverwaltung</a>
-    <a href="/admin/remote-nodes" class="admin-nav-link">Remote Nodes</a>
+    <a href="/admin/" class="admin-nav-link is-active">{{index $.Translations "admin.nav.general"}}</a>
+    <a href="/admin/tenants" class="admin-nav-link">{{index $.Translations "admin.nav.tenants"}}</a>
+    <a href="/admin/providers" class="admin-nav-link">{{index $.Translations "admin.nav.providers"}}</a>
+    <a href="/admin/users" class="admin-nav-link">{{index $.Translations "admin.nav.users"}}</a>
+    <a href="/admin/remote-nodes" class="admin-nav-link">{{index $.Translations "admin.nav.remote_nodes"}}</a>
   </nav>
 
   <div class="admin-header">
     <div>
-      <h1>Allgemein</h1>
+      <h1>{{index $.Translations "admin.nav.general"}}</h1>
     </div>
-    <a href="/admin/tenants" class="button">Tenants verwalten</a>
+    <a href="/admin/tenants" class="button">{{index $.Translations "admin.dashboard.manage_tenants"}}</a>
   </div>
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
 
   <div class="stats-grid">
     <article class="card stat-card stat-card-primary stack">
-      <p class="muted">Tenants gesamt</p>
+      <p class="muted">{{index $.Translations "admin.dashboard.total_tenants"}}</p>
       <div class="metric">{{len .AdminTenants}}</div>
     </article>
     <article class="card stat-card stat-card-soft stack">
-      <p class="muted">Monitore</p>
+      <p class="muted">{{index $.Translations "admin.dashboard.total_monitors"}}</p>
       <div class="metric">{{.AdminMonitorCount}}</div>
     </article>
     <article class="card stat-card stat-card-soft stack">
-      <p class="muted">Remote Nodes</p>
+      <p class="muted">{{index $.Translations "admin.dashboard.total_remote_nodes"}}</p>
       <div class="metric">{{.AdminRemoteNodeCount}}</div>
     </article>
   </div>
 
   <form method="POST" action="/admin/settings/smtp/save" class="admin-form card stack">
-    <h2>Globaler E-Mail-Server (SMTP)</h2>
+    <h2>{{index $.Translations "admin.settings.global_smtp"}}</h2>
     <div class="form-group">
-      <label for="smtp-host">SMTP Host</label>
-      <input type="text" id="smtp-host" name="host" value="{{.GlobalSMTP.Host}}" placeholder="smtp.example.com">
+      <label for="smtp-host">{{index $.Translations "admin.settings.smtp_host"}}</label>
+      <input type="text" id="smtp-host" name="host" value="{{.GlobalSMTP.Host}}" placeholder="{{index $.Translations "admin.settings.smtp_host_placeholder"}}">
     </div>
     <div class="form-group">
-      <label for="smtp-port">Port</label>
+      <label for="smtp-port">{{index $.Translations "field.port"}}</label>
       <input type="number" id="smtp-port" name="port" min="1" max="65535" value="{{.GlobalSMTP.Port}}">
     </div>
     <div class="form-group">
-      <label for="smtp-username">Benutzername</label>
-      <input type="text" id="smtp-username" name="username" value="{{.GlobalSMTP.Username}}" placeholder="monitor@example.com">
+      <label for="smtp-username">{{index $.Translations "field.username"}}</label>
+      <input type="text" id="smtp-username" name="username" value="{{.GlobalSMTP.Username}}" placeholder="{{index $.Translations "admin.settings.smtp_username_placeholder"}}">
     </div>
     <div class="form-group">
-      <label for="smtp-password">Passwort {{if .GlobalSMTP.PasswordConfigured}}(leer lassen = unverändert){{end}}</label>
-      <input type="password" id="smtp-password" name="password" value="" placeholder="SMTP Passwort">
+      <label for="smtp-password">{{index $.Translations "field.password"}} {{if .GlobalSMTP.PasswordConfigured}}({{index $.Translations "admin.settings.leave_empty"}}){{end}}</label>
+      <input type="password" id="smtp-password" name="password" value="" placeholder="{{index $.Translations "admin.settings.smtp_password_placeholder"}}">
     </div>
     <div class="form-group">
-      <label for="smtp-from-email">Absender E-Mail</label>
-      <input type="email" id="smtp-from-email" name="from_email" value="{{.GlobalSMTP.FromEmail}}" placeholder="noreply@example.com">
+      <label for="smtp-from-email">{{index $.Translations "admin.settings.smtp_from_email"}}</label>
+      <input type="email" id="smtp-from-email" name="from_email" value="{{.GlobalSMTP.FromEmail}}" placeholder="{{index $.Translations "admin.settings.smtp_from_email_placeholder"}}">
     </div>
     <div class="form-group">
-      <label for="smtp-from-name">Absender Name</label>
-      <input type="text" id="smtp-from-name" name="from_name" value="{{.GlobalSMTP.FromName}}" placeholder="GoUp Monitor">
+      <label for="smtp-from-name">{{index $.Translations "admin.settings.smtp_from_name"}}</label>
+      <input type="text" id="smtp-from-name" name="from_name" value="{{.GlobalSMTP.FromName}}" placeholder="{{index $.Translations "admin.settings.smtp_from_name_placeholder"}}">
     </div>
     <div class="form-group">
-      <label for="smtp-tls-mode">Transport</label>
+      <label for="smtp-tls-mode">{{index $.Translations "admin.settings.smtp_transport"}}</label>
       <select id="smtp-tls-mode" name="tls_mode">
-        <option value="starttls" {{if eq .GlobalSMTP.TLSMode "starttls"}}selected{{end}}>STARTTLS</option>
-        <option value="tls" {{if eq .GlobalSMTP.TLSMode "tls"}}selected{{end}}>TLS (SMTPS)</option>
-        <option value="none" {{if eq .GlobalSMTP.TLSMode "none"}}selected{{end}}>Kein TLS (nur intern)</option>
+        <option value="starttls" {{if eq .GlobalSMTP.TLSMode "starttls"}}selected{{end}}>{{index $.Translations "admin.settings.smtp_transport_starttls"}}</option>
+        <option value="tls" {{if eq .GlobalSMTP.TLSMode "tls"}}selected{{end}}>{{index $.Translations "admin.settings.smtp_transport_tls"}}</option>
+        <option value="none" {{if eq .GlobalSMTP.TLSMode "none"}}selected{{end}}>{{index $.Translations "admin.settings.smtp_transport_none"}}</option>
       </select>
     </div>
     <div class="form-actions">
-      <button type="submit" class="button">SMTP speichern</button>
+      <button type="submit" class="button">{{index $.Translations "admin.settings.save_smtp"}}</button>
     </div>
   </form>
 
   <div class="card stack table-card">
     <div class="admin-header table-card-header-pad">
-      <h2>Letzte Admin-Aktionen</h2>
+      <h2>{{index $.Translations "admin.settings.recent_actions"}}</h2>
     </div>
     <form method="GET" action="/admin/" class="stack table-card-filter-pad">
       <div class="inline-grid">
         <label>
-          <span>Action</span>
+          <span>{{index $.Translations "admin.settings.action"}}</span>
           <select name="audit_action">
-            <option value="" {{if eq .AuditAction ""}}selected{{end}}>Alle Actions</option>
+            <option value="" {{if eq .AuditAction ""}}selected{{end}}>{{index $.Translations "admin.settings.all_actions"}}</option>
             {{range .AuditActions}}
             <option value="{{.}}" {{if eq $.AuditAction .}}selected{{end}}>{{.}}</option>
             {{end}}
           </select>
         </label>
         <label>
-          <span>Actor</span>
-          <input type="text" name="audit_actor" value="{{.AuditActor}}" placeholder="E-Mail oder Name">
+          <span>{{index $.Translations "admin.settings.actor"}}</span>
+          <input type="text" name="audit_actor" value="{{.AuditActor}}" placeholder="{{index $.Translations "admin.settings.actor_placeholder"}}">
         </label>
       </div>
       <div class="inline-grid">
         <label>
-          <span>Zieltyp</span>
+          <span>{{index $.Translations "admin.settings.target_type"}}</span>
           <select name="audit_target">
-            <option value="" {{if eq .AuditTargetType ""}}selected{{end}}>Alle Zieltypen</option>
+            <option value="" {{if eq .AuditTargetType ""}}selected{{end}}>{{index $.Translations "admin.settings.all_target_types"}}</option>
             {{range .AuditTargetTypes}}
             <option value="{{.}}" {{if eq $.AuditTargetType .}}selected{{end}}>{{.}}</option>
             {{end}}
           </select>
         </label>
         <div class="form-actions form-actions-align-end">
-          <button type="submit" class="button button-secondary">Filter anwenden</button>
-          <a href="/admin/" class="button button-secondary">Zurücksetzen</a>
+          <button type="submit" class="button button-secondary">{{index $.Translations "admin.settings.apply_filter"}}</button>
+          <a href="/admin/" class="button button-secondary">{{index $.Translations "common.reset"}}</a>
         </div>
       </div>
     </form>
     <table class="admin-table">
       <thead>
         <tr>
-          <th>Zeit</th>
-          <th>Actor</th>
-          <th>Action</th>
-          <th>Ziel</th>
-          <th>Details</th>
+          <th>{{index $.Translations "common.time"}}</th>
+          <th>{{index $.Translations "admin.settings.actor"}}</th>
+          <th>{{index $.Translations "admin.settings.action"}}</th>
+          <th>{{index $.Translations "admin.settings.target"}}</th>
+          <th>{{index $.Translations "common.details"}}</th>
         </tr>
       </thead>
       <tbody>
@@ -130,7 +130,7 @@
         {{end}}
         {{else}}
         <tr>
-          <td colspan="5" class="muted">Noch keine Audit-Einträge vorhanden.</td>
+          <td colspan="5" class="muted">{{index $.Translations "admin.settings.no_audit_entries"}}</td>
         </tr>
         {{end}}
       </tbody>

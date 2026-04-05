@@ -6,6 +6,10 @@
     }
 
     const appBase = page.dataset.appBase || '/';
+    const i18nOnline = page.dataset.i18nOnline || 'ONLINE';
+    const i18nOffline = page.dataset.i18nOffline || 'OFFLINE';
+    const i18nEntries = page.dataset.i18nEntries || 'entries';
+    const i18nFrom = page.dataset.i18nFrom || 'From';
     const tableBody = document.getElementById('settings-remote-nodes-body');
     if (!(tableBody instanceof HTMLElement)) {
       return;
@@ -33,7 +37,7 @@
       clearNode(cell);
       const badge = document.createElement('span');
       badge.className = online ? 'status-badge status-badge-success' : 'status-badge status-badge-muted';
-      badge.textContent = online ? 'ONLINE' : 'OFFLINE';
+      badge.textContent = online ? i18nOnline : i18nOffline;
       cell.appendChild(badge);
     };
 
@@ -66,7 +70,7 @@
       }
 
       const summary = document.createElement('summary');
-      summary.textContent = `${events.length} Einträge`;
+      summary.textContent = `${events.length} ${i18nEntries}`;
       details.appendChild(summary);
 
       const list = document.createElement('ul');
@@ -98,7 +102,7 @@
         const sourceIP = String(event?.source_ip || '').trim();
         const detailsText = String(event?.details || '').trim();
         const userAgent = String(event?.user_agent || '').trim();
-        detailsParts.push(`Von ${sourceIP || '—'}`);
+        detailsParts.push(`${i18nFrom} ${sourceIP || '—'}`);
         if (detailsText) {
           detailsParts.push(detailsText);
         }

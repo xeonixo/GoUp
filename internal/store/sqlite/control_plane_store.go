@@ -13,13 +13,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"golang.org/x/crypto/bcrypt"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"golang.org/x/crypto/pbkdf2"
 )
@@ -41,14 +42,15 @@ type Tenant struct {
 }
 
 type ResolvedUser struct {
-	UserID       int64
-	Email        string
-	DisplayName  string
-	TenantID     int64
-	TenantSlug   string
-	TenantName   string
-	TenantDBPath string
-	Role         string
+	UserID            int64
+	Email             string
+	DisplayName       string
+	PreferredLanguage string
+	TenantID          int64
+	TenantSlug        string
+	TenantName        string
+	TenantDBPath      string
+	Role              string
 }
 
 type AuthProvider struct {
@@ -80,10 +82,32 @@ type TenantUser struct {
 	LoginName           string
 	Email               string
 	DisplayName         string
+	PreferredLanguage   string
 	Role                string
 	LastLoginAt         *time.Time
 	HasLocalCredentials bool
 	HasOIDCIdentity     bool
+}
+
+func normalizePreferredLanguage(language string) string {
+	language = strings.ToLower(strings.TrimSpace(language))
+	if language == "" {
+		return ""
+	}
+	if strings.HasPrefix(language, "de") {
+		return "de"
+	}
+	if strings.HasPrefix(language, "en") {
+		return "en"
+	}
+	parts := strings.Split(language, "-")
+	if len(parts) > 0 {
+		base := strings.TrimSpace(parts[0])
+		if base != "" {
+			return base
+		}
+	}
+	return "en"
 }
 
 type UserNotificationSettings struct {
@@ -100,6 +124,11 @@ type MatrixNotificationTarget struct {
 	HomeserverURL string
 	RoomID        string
 	AccessToken   string
+}
+
+type NotificationRecipient struct {
+	Email             string
+	PreferredLanguage string
 }
 
 type GlobalSMTPSettings struct {
@@ -267,8 +296,8 @@ WHERE provider_key = ? AND provider_subject = ?
 		}
 	case sql.ErrNoRows:
 		result, err := tx.ExecContext(ctx, `
-INSERT INTO users (email, display_name, created_at, updated_at, last_login_at)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO users (email, display_name, preferred_language, created_at, updated_at, last_login_at)
+VALUES (?, ?, '', ?, ?, ?)
 `, email, displayName, now, now, now)
 		if err != nil {
 			return ResolvedUser{}, fmt.Errorf("insert user from oidc identity: %w", err)
@@ -437,6 +466,7 @@ SELECT
 	COALESCE(lc.login_name, ''),
 	u.email,
 	u.display_name,
+	COALESCE(NULLIF(u.preferred_language, ''), 'en') AS preferred_language,
 	tm.role,
 	u.last_login_at,
 	CASE WHEN lc.user_id IS NULL THEN 0 ELSE 1 END AS has_local_credentials,
@@ -492,8 +522,8 @@ func (s *ControlPlaneStore) CreateLocalUserForTenant(ctx context.Context, tenant
 
 	now := time.Now().UTC()
 	result, err := tx.ExecContext(ctx, `
-INSERT INTO users (email, display_name, created_at, updated_at, last_login_at)
-VALUES (?, ?, ?, ?, NULL)
+INSERT INTO users (email, display_name, preferred_language, created_at, updated_at, last_login_at)
+VALUES (?, ?, '', ?, ?, NULL)
 `, email, displayName, now, now)
 	if err != nil {
 		return LocalUser{}, fmt.Errorf("insert local user: %w", err)
@@ -777,9 +807,10 @@ func scanTenantUser(scanner interface{ Scan(dest ...any) error }) (TenantUser, e
 	var hasLocalCredentials int
 	var hasOIDCIdentity int
 	var lastLogin sql.NullTime
-	if err := scanner.Scan(&item.UserID, &item.TenantID, &item.LoginName, &item.Email, &item.DisplayName, &item.Role, &lastLogin, &hasLocalCredentials, &hasOIDCIdentity); err != nil {
+	if err := scanner.Scan(&item.UserID, &item.TenantID, &item.LoginName, &item.Email, &item.DisplayName, &item.PreferredLanguage, &item.Role, &lastLogin, &hasLocalCredentials, &hasOIDCIdentity); err != nil {
 		return TenantUser{}, fmt.Errorf("scan tenant user: %w", err)
 	}
+	item.PreferredLanguage = normalizePreferredLanguage(item.PreferredLanguage)
 	item.HasLocalCredentials = hasLocalCredentials == 1
 	item.HasOIDCIdentity = hasOIDCIdentity == 1
 	if lastLogin.Valid {
@@ -954,13 +985,14 @@ WHERE tenant_id = ? AND provider_key = ?
 func loadResolvedUserTx(ctx context.Context, tx *sql.Tx, userID int64) (ResolvedUser, error) {
 	var resolved ResolvedUser
 	err := tx.QueryRowContext(ctx, `
-SELECT id, email, display_name
+SELECT id, email, display_name, preferred_language
 FROM users
 WHERE id = ?
-`, userID).Scan(&resolved.UserID, &resolved.Email, &resolved.DisplayName)
+`, userID).Scan(&resolved.UserID, &resolved.Email, &resolved.DisplayName, &resolved.PreferredLanguage)
 	if err != nil {
 		return ResolvedUser{}, fmt.Errorf("load resolved user: %w", err)
 	}
+	resolved.PreferredLanguage = normalizePreferredLanguage(resolved.PreferredLanguage)
 
 	err = tx.QueryRowContext(ctx, `
 SELECT t.id, t.slug, t.name, t.db_path, tm.role
@@ -995,6 +1027,7 @@ CREATE TABLE IF NOT EXISTS users (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	email TEXT NOT NULL DEFAULT '',
 	display_name TEXT NOT NULL DEFAULT '',
+	preferred_language TEXT NOT NULL DEFAULT '',
 	created_at DATETIME NOT NULL,
 	updated_at DATETIME NOT NULL,
 	last_login_at DATETIME
@@ -1100,6 +1133,9 @@ func (s *ControlPlaneStore) initSchema(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, controlPlaneSchema); err != nil {
 		return fmt.Errorf("initialize control-plane schema: %w", err)
 	}
+	if err := s.ensureUserPreferredLanguageColumn(ctx); err != nil {
+		return err
+	}
 	if err := s.ensureUsersSuperAdminColumnRemoved(ctx); err != nil {
 		return err
 	}
@@ -1111,6 +1147,21 @@ func (s *ControlPlaneStore) initSchema(ctx context.Context) error {
 	}
 	if err := s.ensureRemoteNodesTable(ctx); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (s *ControlPlaneStore) ensureUserPreferredLanguageColumn(ctx context.Context) error {
+	hasColumn, err := s.tableHasColumn(ctx, "users", "preferred_language")
+	if err != nil {
+		return fmt.Errorf("inspect users preferred_language column: %w", err)
+	}
+	if hasColumn {
+		return nil
+	}
+
+	if _, err := s.db.ExecContext(ctx, `ALTER TABLE users ADD COLUMN preferred_language TEXT NOT NULL DEFAULT ''`); err != nil {
+		return fmt.Errorf("add users preferred_language column: %w", err)
 	}
 	return nil
 }
@@ -1871,6 +1922,50 @@ ORDER BY lower(trim(u.email)) ASC
 	return items, nil
 }
 
+func (s *ControlPlaneStore) ListTenantNotificationRecipients(ctx context.Context, tenantID int64) ([]NotificationRecipient, error) {
+	if tenantID <= 0 {
+		return nil, fmt.Errorf("tenant id is required")
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT DISTINCT trim(u.email), COALESCE(NULLIF(trim(u.preferred_language), ''), 'en')
+FROM tenant_memberships tm
+JOIN users u ON u.id = tm.user_id
+JOIN tenants t ON t.id = tm.tenant_id
+WHERE tm.tenant_id = ?
+	AND t.active = 1
+	AND tm.notifications_email_enabled = 1
+	AND trim(u.email) <> ''
+ORDER BY lower(trim(u.email)) ASC
+`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("query tenant notification recipients: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]NotificationRecipient, 0)
+	for rows.Next() {
+		var item NotificationRecipient
+		if err := rows.Scan(&item.Email, &item.PreferredLanguage); err != nil {
+			return nil, fmt.Errorf("scan tenant notification recipient: %w", err)
+		}
+		item.Email = strings.TrimSpace(item.Email)
+		if item.Email == "" {
+			continue
+		}
+		item.PreferredLanguage = normalizePreferredLanguage(item.PreferredLanguage)
+		if item.PreferredLanguage == "" {
+			item.PreferredLanguage = "en"
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate tenant notification recipients: %w", err)
+	}
+
+	return items, nil
+}
+
 func (s *ControlPlaneStore) GetTenantUser(ctx context.Context, tenantID, userID int64) (TenantUser, error) {
 	row := s.db.QueryRowContext(ctx, `
 SELECT
@@ -1879,6 +1974,7 @@ SELECT
 	COALESCE(lc.login_name, ''),
 	u.email,
 	u.display_name,
+	COALESCE(NULLIF(u.preferred_language, ''), 'en') AS preferred_language,
 	tm.role,
 	u.last_login_at,
 	CASE WHEN lc.user_id IS NULL THEN 0 ELSE 1 END AS has_local_credentials,
@@ -2127,26 +2223,59 @@ ORDER BY unc.user_id ASC
 	return items, nil
 }
 
-func (s *ControlPlaneStore) UpdateUserProfileForTenant(ctx context.Context, tenantID, userID int64, email, displayName string) error {
+func (s *ControlPlaneStore) UpdateUserProfileForTenant(ctx context.Context, tenantID, userID int64, email, displayName, preferredLanguage string) error {
 	email = strings.TrimSpace(email)
 	displayName = strings.TrimSpace(displayName)
+	preferredLanguage = normalizePreferredLanguage(preferredLanguage)
+	if preferredLanguage == "" {
+		preferredLanguage = "en"
+	}
 
 	result, err := s.db.ExecContext(ctx, `
 UPDATE users
-SET email = ?, display_name = ?, updated_at = ?
+SET email = ?, display_name = ?, preferred_language = ?, updated_at = ?
 WHERE id = ?
 	AND EXISTS (
 		SELECT 1
 		FROM tenant_memberships tm
 		WHERE tm.user_id = users.id AND tm.tenant_id = ?
 	)
-`, email, displayName, time.Now().UTC(), userID, tenantID)
+`, email, displayName, preferredLanguage, time.Now().UTC(), userID, tenantID)
 	if err != nil {
 		return fmt.Errorf("update user profile: %w", err)
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("update user profile rows affected: %w", err)
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *ControlPlaneStore) UpdateUserPreferredLanguageForTenant(ctx context.Context, tenantID, userID int64, preferredLanguage string) error {
+	preferredLanguage = normalizePreferredLanguage(preferredLanguage)
+	if preferredLanguage == "" {
+		preferredLanguage = "en"
+	}
+
+	result, err := s.db.ExecContext(ctx, `
+UPDATE users
+SET preferred_language = ?, updated_at = ?
+WHERE id = ?
+	AND EXISTS (
+		SELECT 1
+		FROM tenant_memberships tm
+		WHERE tm.user_id = users.id AND tm.tenant_id = ?
+	)
+`, preferredLanguage, time.Now().UTC(), userID, tenantID)
+	if err != nil {
+		return fmt.Errorf("update user preferred language: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update user preferred language rows affected: %w", err)
 	}
 	if affected == 0 {
 		return sql.ErrNoRows

@@ -1,12 +1,12 @@
 {{define "content"}}
 <div class="admin-section">
   <nav class="admin-nav card">
-    <a href="{{$.AppBase}}" class="admin-nav-link">Dashboard</a>
-    <a href="{{$.AppBase}}settings/profile" class="admin-nav-link">Profil</a>
+    <a href="{{$.AppBase}}" class="admin-nav-link">{{index $.Translations "settings.nav.dashboard"}}</a>
+    <a href="{{$.AppBase}}settings/profile" class="admin-nav-link">{{index $.Translations "settings.nav.profile"}}</a>
     {{if eq $.User.Role "admin"}}
-    <a href="{{$.AppBase}}settings/users" class="admin-nav-link">Benutzerverwaltung</a>
-    <a href="{{$.AppBase}}settings/providers" class="admin-nav-link is-active">OCID-Provider</a>
-    <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link">Remote Nodes</a>
+    <a href="{{$.AppBase}}settings/users" class="admin-nav-link">{{index $.Translations "settings.nav.users"}}</a>
+    <a href="{{$.AppBase}}settings/providers" class="admin-nav-link is-active">{{index $.Translations "settings.nav.oidc_providers"}}</a>
+    <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link">{{index $.Translations "settings.nav.remote_nodes"}}</a>
     {{end}}
   </nav>
 
@@ -15,10 +15,10 @@
 
   <div class="admin-header">
     <div>
-      <h1>OCID-Provider</h1>
+      <h1>{{index $.Translations "settings.providers.title"}}</h1>
     </div>
     <div class="admin-actions-inline">
-      <a href="{{$.AppBase}}settings/providers/new" class="button">+ OCID-Provider</a>
+      <a href="{{$.AppBase}}settings/providers/new" class="button">{{index $.Translations "settings.providers.new_button"}}</a>
     </div>
   </div>
 
@@ -26,11 +26,11 @@
     <table class="admin-table">
       <thead>
         <tr>
-          <th>Provider Key</th>
-          <th>Typ</th>
-          <th>Name</th>
-          <th>Status</th>
-          <th>Aktionen</th>
+          <th>{{index $.Translations "settings.providers.provider_key"}}</th>
+          <th>{{index $.Translations "settings.providers.table_type"}}</th>
+          <th>{{index $.Translations "settings.providers.table_name"}}</th>
+          <th>{{index $.Translations "settings.providers.table_status"}}</th>
+          <th>{{index $.Translations "settings.providers.table_actions"}}</th>
         </tr>
       </thead>
       <tbody>
@@ -42,24 +42,24 @@
           <td>{{.DisplayName}}</td>
           <td>
             {{if .Enabled}}
-            <span class="status-badge status-badge-success">Aktiv</span>
+            <span class="status-badge status-badge-success">{{index $.Translations "common.active"}}</span>
             {{else}}
-            <span class="status-badge status-badge-muted">Deaktiviert</span>
+            <span class="status-badge status-badge-muted">{{index $.Translations "common.inactive"}}</span>
             {{end}}
           </td>
           <td class="admin-actions-inline">
             {{if ne .Kind "local"}}
-            <a href="{{$.AppBase}}settings/providers/{{.ProviderKey}}/edit" class="button button-secondary button-small">Bearbeiten</a>
+            <a href="{{$.AppBase}}settings/providers/{{.ProviderKey}}/edit" class="button button-secondary button-small">{{index $.Translations "settings.providers.edit_button"}}</a>
             {{end}}
-            <form method="POST" action="{{$.AppBase}}settings/providers/{{.ProviderKey}}/delete" class="inline-form" data-confirm="Provider wirklich löschen?">
-              <button type="submit" class="button button-danger button-small">Löschen</button>
+            <form method="POST" action="{{$.AppBase}}settings/providers/{{.ProviderKey}}/delete" class="inline-form" data-confirm="{{index $.Translations "settings.providers.delete_confirm_plain"}}">
+              <button type="submit" class="button button-danger button-small">{{index $.Translations "settings.providers.delete_button"}}</button>
             </form>
           </td>
         </tr>
         {{end}}
         {{else}}
         <tr>
-          <td colspan="5" class="muted">Keine Provider vorhanden.</td>
+          <td colspan="5" class="muted">{{index $.Translations "settings.providers.no_providers"}}</td>
         </tr>
         {{end}}
       </tbody>

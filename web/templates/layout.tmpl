@@ -1,6 +1,6 @@
 {{define "layout"}}
 <!doctype html>
-<html lang="de">
+<html lang="{{if .UILanguage}}{{.UILanguage}}{{else}}en{{end}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -20,12 +20,12 @@
         <img class="brand-logo" src="/assets/logo_goup.svg" alt="GoUp Logo">
       </a>
       {{if .ControlPlaneAdmin}}
-      <span class="subtitle">Control Plane</span>
+      <span class="subtitle">{{index $.Translations "layout.control_plane"}}</span>
       {{else if and .User .User.TenantSlug}}
-      <span class="subtitle">Tenant: {{if .User.TenantName}}{{.User.TenantName}}{{else}}{{.User.TenantSlug}}{{end}}</span>
+      <span class="subtitle">{{index $.Translations "layout.tenant_prefix"}} {{if .User.TenantName}}{{.User.TenantName}}{{else}}{{.User.TenantSlug}}{{end}}</span>
       {{end}}
     </div>
-    <button class="topbar-hamburger" id="topbar-hamburger" type="button" aria-label="Menü öffnen" aria-expanded="false" aria-controls="topbar-collapsible">
+    <button class="topbar-hamburger" id="topbar-hamburger" type="button" aria-label="{{index $.Translations "layout.menu_open_aria"}}" data-menu-open-label="{{index $.Translations "layout.menu_open_aria"}}" data-menu-close-label="{{index $.Translations "layout.menu_close_aria"}}" aria-expanded="false" aria-controls="topbar-collapsible">
       <span class="hamburger-line"></span>
       <span class="hamburger-line"></span>
       <span class="hamburger-line"></span>
@@ -34,24 +34,24 @@
       {{block "topbar_actions" .}}{{end}}
       <nav class="topbar-nav">
         {{if .ControlPlaneAdmin}}
-        <span class="user-pill">Admin Access</span>
-        <a class="button button-secondary topbar-icon-link" href="/admin/security" aria-label="Control-Plane Sicherheit" title="Control-Plane Sicherheit">
+        <span class="user-pill">{{index $.Translations "layout.admin_access"}}</span>
+        <a class="button button-secondary topbar-icon-link" href="/admin/security" aria-label="{{index $.Translations "admin.security.title"}}" title="{{index $.Translations "admin.security.title"}}">
           <span aria-hidden="true">⚙️</span>
-          <span class="sr-only">Control-Plane Sicherheit</span>
+          <span class="sr-only">{{index $.Translations "admin.security.title"}}</span>
         </a>
-        <a class="button button-secondary topbar-icon-link" href="/admin/access?logout=1" aria-label="Control-Plane Logout" title="Control-Plane Logout">
+        <a class="button button-secondary topbar-icon-link" href="/admin/access?logout=1" aria-label="{{index $.Translations "layout.logout_aria"}}" title="{{index $.Translations "layout.logout_title"}}">
           <span aria-hidden="true">⎋</span>
-          <span class="sr-only">Abmelden</span>
+          <span class="sr-only">{{index $.Translations "layout.logout_title"}}</span>
         </a>
         {{else if .User}}
         <span class="user-pill">{{if .User.Name}}{{.User.Name}}{{else}}{{.User.Email}}{{end}}</span>
-        <a class="button button-secondary topbar-icon-link" href="{{.AppBase}}settings/profile" aria-label="Einstellungen" title="Einstellungen">
+        <a class="button button-secondary topbar-icon-link" href="{{.AppBase}}settings/profile" aria-label="{{index $.Translations "layout.settings_aria"}}" title="{{index $.Translations "layout.settings_title"}}">
           <span aria-hidden="true">⚙️</span>
-          <span class="sr-only">Einstellungen</span>
+          <span class="sr-only">{{index $.Translations "layout.settings_title"}}</span>
         </a>
-        <a class="button button-secondary topbar-icon-link" href="{{if .AppBase}}{{.AppBase}}auth/logout{{else}}/auth/logout{{end}}" aria-label="Abmelden" title="Abmelden">
+        <a class="button button-secondary topbar-icon-link" href="{{if .AppBase}}{{.AppBase}}auth/logout{{else}}/auth/logout{{end}}" aria-label="{{index $.Translations "layout.logout_aria"}}" title="{{index $.Translations "layout.logout_title"}}">
           <span aria-hidden="true">⎋</span>
-          <span class="sr-only">Abmelden</span>
+          <span class="sr-only">{{index $.Translations "layout.logout_title"}}</span>
         </a>
         {{end}}
       </nav>

@@ -1,15 +1,15 @@
 {{define "content"}}
 <section class="login-shell">
-  <a class="login-brand" href="{{if .AppBase}}{{.AppBase}}{{else}}/{{end}}" aria-label="GoUp Startseite">
+  <a class="login-brand" href="{{if .AppBase}}{{.AppBase}}{{else}}/{{end}}" aria-label="{{index $.Translations "login.title"}}">
     <img class="login-brand-logo" src="/assets/logo_goup.svg" alt="GoUp Logo">
   </a>
   <article class="card login-card stack">
     <div>
-      <h1>Anmeldung</h1>
+      <h1>{{index $.Translations "login.title"}}</h1>
       {{if .TenantSlug}}
-      <p class="muted">Tenant: <strong>{{.TenantName}}</strong> ({{.TenantSlug}})</p>
+      <p class="muted">{{index $.Translations "login.tenant_label"}} <strong>{{.TenantName}}</strong> ({{.TenantSlug}})</p>
       {{else}}
-      <p class="muted">Bitte über die Tenant-Login-URL anmelden.</p>
+      <p class="muted">{{index $.Translations "login.tenant_required"}}</p>
       {{end}}
     </div>
 
@@ -25,34 +25,34 @@
       <div class="login-actions stack">
         {{range .LoginProviders}}
           {{if eq .Kind "oidc"}}
-          <a class="button" href="/{{$.TenantSlug}}/auth/login?provider={{.ProviderKey}}">Mit {{.DisplayName}} anmelden</a>
+          <a class="button" href="/{{$.TenantSlug}}/auth/login?provider={{.ProviderKey}}">{{index $.Translations "login.oidc_button"}}</a>
           {{end}}
         {{end}}
       </div>
       {{end}}
 
       {{if and .HasLocalLogin .HasOIDCLogin}}
-      <div class="login-divider"><span>oder lokal anmelden</span></div>
+      <div class="login-divider"><span>{{index $.Translations "login.or_local"}}</span></div>
       {{end}}
 
       {{if .HasLocalLogin}}
       <form method="POST" action="/{{.TenantSlug}}/auth/local" class="stack login-form">
-        <label for="login_name">Benutzername</label>
-        <input id="login_name" name="login_name" type="text" required autocomplete="username">
-        <label for="password">Passwort</label>
-        <input id="password" name="password" type="password" required autocomplete="current-password">
-        <button type="submit" class="button">Lokal anmelden</button>
+        <label for="login_name">{{index $.Translations "login.username_label"}}</label>
+        <input id="login_name" name="login_name" type="text" placeholder="{{index $.Translations "login.username_placeholder"}}" required autocomplete="username">
+        <label for="password">{{index $.Translations "login.password_label"}}</label>
+        <input id="password" name="password" type="password" placeholder="{{index $.Translations "login.password_placeholder"}}" required autocomplete="current-password">
+        <button type="submit" class="button">{{index $.Translations "login.local_button"}}</button>
         {{if .ResetEnabled}}
-        <a class="button button-secondary" href="/{{.TenantSlug}}/password-reset">Passwort vergessen?</a>
+        <a class="button button-secondary" href="/{{.TenantSlug}}/password-reset">{{index $.Translations "login.forgot_password"}}</a>
         {{end}}
       </form>
       {{end}}
 
       {{if and (not .HasLocalLogin) (not .HasOIDCLogin)}}
-      <div class="notice warning">Für diesen Tenant ist keine Anmeldung konfiguriert.</div>
+      <div class="notice warning">{{index $.Translations "login.no_login_configured"}}</div>
       {{end}}
     {{else}}
-    <div class="notice warning">Bitte nutze die tenant-spezifische URL, z.B. <strong>/mein-tenant/login</strong>.</div>
+    <div class="notice warning">{{index $.Translations "login.tenant_required"}}</div>
     {{end}}
   </article>
 </section>

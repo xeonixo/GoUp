@@ -2,12 +2,12 @@
 {{$hasMatrix := or .ProfileNotify.MatrixEnabled .ProfileNotify.MatrixHomeserver .ProfileNotify.MatrixRoomID}}
 <div class="admin-section">
   <nav class="admin-nav card">
-    <a href="{{$.AppBase}}" class="admin-nav-link">Dashboard</a>
-    <a href="{{$.AppBase}}settings/profile" class="admin-nav-link is-active">Profil</a>
+    <a href="{{$.AppBase}}" class="admin-nav-link">{{index $.Translations "settings.nav.dashboard"}}</a>
+    <a href="{{$.AppBase}}settings/profile" class="admin-nav-link is-active">{{index $.Translations "settings.nav.profile"}}</a>
     {{if eq $.User.Role "admin"}}
-    <a href="{{$.AppBase}}settings/users" class="admin-nav-link">Benutzerverwaltung</a>
-    <a href="{{$.AppBase}}settings/providers" class="admin-nav-link">OCID-Provider</a>
-    <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link">Remote Nodes</a>
+    <a href="{{$.AppBase}}settings/users" class="admin-nav-link">{{index $.Translations "settings.nav.users"}}</a>
+    <a href="{{$.AppBase}}settings/providers" class="admin-nav-link">{{index $.Translations "settings.nav.oidc_providers"}}</a>
+    <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link">{{index $.Translations "settings.nav.remote_nodes"}}</a>
     {{end}}
   </nav>
 
@@ -16,7 +16,7 @@
 
   <div class="admin-header">
     <div>
-      <h1>Profil</h1>
+      <h1>{{index $.Translations "settings.profile.title"}}</h1>
     </div>
   </div>
 
@@ -24,30 +24,38 @@
     <section class="card stack admin-form settings-card">
       <div class="settings-card-header">
         <div>
-          <h2>Profil</h2>
-          <p class="muted compact">Deine Basisdaten für diesen Tenant.</p>
+          <h2>{{index $.Translations "settings.profile.title"}}</h2>
+          <p class="muted compact">{{index $.Translations "settings.profile.subtitle"}}</p>
         </div>
       </div>
       <div class="form-group">
-        <label for="display_name">Anzeigename</label>
+        <label for="display_name">{{index $.Translations "settings.profile.display_name_label"}}</label>
         <input id="display_name" name="display_name" type="text" value="{{.ProfileUser.DisplayName}}" required>
       </div>
       <div class="form-group">
-        <label for="email">E-Mail</label>
+        <label for="email">{{index $.Translations "settings.profile.email_label"}}</label>
         <input id="email" name="email" type="email" value="{{.ProfileUser.Email}}">
+      </div>
+      <div class="form-group">
+        <label for="preferred_language">{{index $.Translations "settings.profile.language_label"}}</label>
+        <select id="preferred_language" name="preferred_language">
+          {{range .LanguageOptions}}
+          <option value="{{.Code}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+          {{end}}
+        </select>
       </div>
     </section>
 
     <section class="card stack admin-form settings-card">
       <div class="settings-card-header">
         <div>
-          <h2>Benachrichtigungen</h2>
-          <p class="muted compact">E-Mail ist eingebaut. Zusätzliche Kanäle kannst du pro Benutzer ergänzen oder entfernen.</p>
+          <h2>{{index $.Translations "settings.notifications.title"}}</h2>
+          <p class="muted compact">{{index $.Translations "settings.notifications.subtitle"}}</p>
         </div>
         <details class="action-menu settings-add-menu">
-          <summary class="action-menu-trigger" aria-label="Benachrichtigungskanal hinzufügen">＋</summary>
+          <summary class="action-menu-trigger" aria-label="{{index $.Translations "settings.notifications.add_channel"}}">＋</summary>
           <div class="action-menu-list">
-            <button class="action-menu-item" type="button" data-add-notifier="matrix" {{if $hasMatrix}}disabled{{end}}>Matrix hinzufügen</button>
+            <button class="action-menu-item" type="button" data-add-notifier="matrix" {{if $hasMatrix}}disabled{{end}}>{{index $.Translations "settings.notifications.add_matrix"}}</button>
           </div>
         </details>
       </div>
@@ -55,14 +63,14 @@
       <section class="settings-channel-card">
         <div class="settings-channel-header">
           <div>
-            <h3>E-Mail</h3>
-            <p class="muted compact">Wird über den globalen SMTP-Server zugestellt.</p>
+            <h3>{{index $.Translations "settings.notifications.email.title"}}</h3>
+            <p class="muted compact">{{index $.Translations "settings.notifications.email.subtitle"}}</p>
           </div>
-          <span class="status-badge {{if .ProfileNotify.EmailEnabled}}status-badge-success{{else}}status-badge-muted{{end}}">{{if .ProfileNotify.EmailEnabled}}AKTIV{{else}}AUS{{end}}</span>
+          <span class="status-badge {{if .ProfileNotify.EmailEnabled}}status-badge-success{{else}}status-badge-muted{{end}}">{{if .ProfileNotify.EmailEnabled}}{{index $.Translations "settings.notifications.status.active"}}{{else}}{{index $.Translations "settings.notifications.status.off"}}{{end}}</span>
         </div>
         <label class="checkbox-row">
           <input type="checkbox" name="email_enabled" {{if .ProfileNotify.EmailEnabled}}checked{{end}}>
-          <span>E-Mail-Benachrichtigungen aktiv</span>
+          <span>{{index $.Translations "settings.notifications.email.enabled"}}</span>
         </label>
       </section>
 
@@ -70,70 +78,70 @@
         <section class="settings-channel-card" id="matrix-channel-card" {{if not $hasMatrix}}hidden{{end}}>
           <div class="settings-channel-header">
             <div>
-              <h3>Matrix</h3>
-              <p class="muted compact">Direkte Zustellung an deinen persönlichen Raum oder Channel.</p>
+              <h3>{{index $.Translations "settings.notifications.matrix.title"}}</h3>
+              <p class="muted compact">{{index $.Translations "settings.notifications.matrix.subtitle"}}</p>
             </div>
             <div class="settings-inline-actions">
-              <span class="status-badge {{if .ProfileNotify.MatrixEnabled}}status-badge-success{{else}}status-badge-muted{{end}}">{{if .ProfileNotify.MatrixEnabled}}AKTIV{{else}}ENTWURF{{end}}</span>
-              <form method="POST" action="{{$.AppBase}}settings/profile/notifiers/delete" class="inline-form" data-confirm="Matrix-Kanal wirklich entfernen?">
+              <span class="status-badge {{if .ProfileNotify.MatrixEnabled}}status-badge-success{{else}}status-badge-muted{{end}}">{{if .ProfileNotify.MatrixEnabled}}{{index $.Translations "settings.notifications.status.active"}}{{else}}{{index $.Translations "settings.notifications.status.draft"}}{{end}}</span>
+              <form method="POST" action="{{$.AppBase}}settings/profile/notifiers/delete" class="inline-form" data-confirm="{{index $.Translations "settings.notifications.matrix.remove_confirm"}}">
                 <input type="hidden" name="kind" value="matrix">
-                <button type="submit" class="button button-secondary button-small">Entfernen</button>
+                <button type="submit" class="button button-secondary button-small">{{index $.Translations "settings.notifications.matrix.remove"}}</button>
               </form>
             </div>
           </div>
           <div class="inline-grid">
             <div class="form-group">
-              <label for="matrix_homeserver_url">Homeserver URL</label>
-              <input id="matrix_homeserver_url" name="matrix_homeserver_url" type="url" value="{{.ProfileNotify.MatrixHomeserver}}" placeholder="https://matrix.example.com">
+              <label for="matrix_homeserver_url">{{index $.Translations "settings.notifications.matrix.homeserver_url"}}</label>
+              <input id="matrix_homeserver_url" name="matrix_homeserver_url" type="url" value="{{.ProfileNotify.MatrixHomeserver}}" placeholder="{{index $.Translations "settings.notifications.matrix.homeserver_url_placeholder"}}">
             </div>
             <div class="form-group">
-              <label for="matrix_room_id">Room ID</label>
-              <input id="matrix_room_id" name="matrix_room_id" type="text" value="{{.ProfileNotify.MatrixRoomID}}" placeholder="!room:id">
+              <label for="matrix_room_id">{{index $.Translations "settings.notifications.matrix.room_id"}}</label>
+              <input id="matrix_room_id" name="matrix_room_id" type="text" value="{{.ProfileNotify.MatrixRoomID}}" placeholder="{{index $.Translations "settings.notifications.matrix.room_id_placeholder"}}">
             </div>
           </div>
           <div class="form-group">
-            <label for="matrix_access_token">Access Token</label>
-            <input id="matrix_access_token" name="matrix_access_token" type="password" placeholder="leer lassen, um vorhandenen Token beizubehalten">
+            <label for="matrix_access_token">{{index $.Translations "settings.notifications.matrix.access_token"}}</label>
+            <input id="matrix_access_token" name="matrix_access_token" type="password" placeholder="{{index $.Translations "settings.notifications.matrix_access_token_placeholder"}}">
           </div>
           <label class="checkbox-row">
             <input type="checkbox" name="matrix_enabled" {{if .ProfileNotify.MatrixEnabled}}checked{{end}}>
-            <span>Matrix-Benachrichtigungen aktiv</span>
+            <span>{{index $.Translations "settings.notifications.matrix.enabled"}}</span>
           </label>
         </section>
 
         <section class="settings-empty-state" id="notifier-empty-state" {{if $hasMatrix}}hidden{{end}}>
-          <p class="muted">Noch keine zusätzlichen Benachrichtigungskanäle konfiguriert.</p>
+          <p class="muted">{{index $.Translations "settings.notifications.no_channels"}}</p>
         </section>
       </div>
 
       <div class="form-actions">
-        <button type="submit" class="button">Speichern</button>
+        <button type="submit" class="button">{{index $.Translations "common.save"}}</button>
       </div>
     </section>
   </form>
 
   {{if .ProfileNotify.HasLocalCredentials}}
   <form method="POST" action="{{$.AppBase}}settings/profile/password" class="card stack admin-form">
-    <h2>Passwort ändern</h2>
+    <h2>{{index $.Translations "settings.password.title"}}</h2>
     <div class="form-group">
-      <label for="current_password">Aktuelles Passwort</label>
+      <label for="current_password">{{index $.Translations "settings.password.current_label"}}</label>
       <input id="current_password" name="current_password" type="password" required>
     </div>
     <div class="form-group">
-      <label for="new_password">Neues Passwort</label>
+      <label for="new_password">{{index $.Translations "settings.password.new_label"}}</label>
       <input id="new_password" name="new_password" type="password" required>
     </div>
     <div class="form-group">
-      <label for="confirm_password">Neues Passwort bestätigen</label>
+      <label for="confirm_password">{{index $.Translations "settings.password.confirm_label"}}</label>
       <input id="confirm_password" name="confirm_password" type="password" required>
     </div>
     <div class="form-actions">
-      <button type="submit" class="button button-secondary">Passwort aktualisieren</button>
+      <button type="submit" class="button button-secondary">{{index $.Translations "settings.password.update_button"}}</button>
     </div>
   </form>
   {{else}}
   <div class="card notice">
-    Passwort-Änderung ist für SSO-only Konten nicht verfügbar. Bitte über deinen Identity Provider ändern.
+    {{index $.Translations "settings.password.sso_notice"}}
   </div>
   {{end}}
 </div>

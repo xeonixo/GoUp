@@ -2,21 +2,21 @@
 <div class="admin-section">
   {{if .SettingsMode}}
   <nav class="admin-nav card">
-    <a href="{{.AppBase}}" class="admin-nav-link">Dashboard</a>
-    <a href="{{.AppBase}}settings/users" class="admin-nav-link is-active">Settings · Benutzer</a>
-    <a href="{{.AppBase}}settings/remote-nodes" class="admin-nav-link">Settings · Remote Nodes</a>
+    <a href="{{.AppBase}}" class="admin-nav-link">{{index $.Translations "settings.nav.dashboard"}}</a>
+    <a href="{{.AppBase}}settings/users" class="admin-nav-link is-active">{{index $.Translations "settings.nav.users"}}</a>
+    <a href="{{.AppBase}}settings/remote-nodes" class="admin-nav-link">{{index $.Translations "settings.nav.remote_nodes"}}</a>
   </nav>
   {{else}}
   <nav class="admin-nav card">
-    <a href="/admin/" class="admin-nav-link">Allgemein</a>
-    <a href="/admin/tenants" class="admin-nav-link">Tenants</a>
-    <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link">OCID-Provider</a>
-    <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link is-active">Benutzerverwaltung</a>
-    <a href="/admin/tenants/{{.AdminTenant.ID}}/remote-nodes" class="admin-nav-link">Remote Nodes</a>
+    <a href="/admin/" class="admin-nav-link">{{index $.Translations "admin.nav.general"}}</a>
+    <a href="/admin/tenants" class="admin-nav-link">{{index $.Translations "admin.nav.tenants"}}</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link">{{index $.Translations "admin.nav.providers"}}</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link is-active">{{index $.Translations "admin.nav.users"}}</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/remote-nodes" class="admin-nav-link">{{index $.Translations "admin.nav.remote_nodes"}}</a>
   </nav>
   {{end}}
 
-  <h1>{{if .IsEdit}}Lokalen Benutzer bearbeiten{{else}}Lokalen Benutzer anlegen{{end}}</h1>
+  <h1>{{if .IsEdit}}{{index $.Translations "admin.local_user_form.title_edit"}}{{else}}{{index $.Translations "admin.local_user_form.title_new"}}{{end}}</h1>
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
@@ -25,22 +25,22 @@
     <input type="hidden" name="user_id" value="{{if .IsEdit}}{{.AdminLocalUser.UserID}}{{end}}">
 
     <div class="form-group">
-      <label for="login_name">Login-Name *</label>
-      <input type="text" id="login_name" name="login_name" required value="{{.AdminLocalUser.LoginName}}" placeholder="z.B. admin">
+      <label for="login_name">{{index $.Translations "admin.local_users.login_label"}} *</label>
+      <input type="text" id="login_name" name="login_name" required value="{{.AdminLocalUser.LoginName}}" placeholder="{{index $.Translations "admin.local_user_form.login_placeholder"}}">
     </div>
 
     <div class="form-group">
-      <label for="display_name">Anzeigename</label>
-      <input type="text" id="display_name" name="display_name" value="{{.AdminLocalUser.DisplayName}}" placeholder="z.B. Max Mustermann">
+      <label for="display_name">{{index $.Translations "admin.local_user_form.name_label"}}</label>
+      <input type="text" id="display_name" name="display_name" value="{{.AdminLocalUser.DisplayName}}" placeholder="{{index $.Translations "admin.local_user_form.name_placeholder"}}">
     </div>
 
     <div class="form-group">
-      <label for="email">E-Mail</label>
-      <input type="email" id="email" name="email" value="{{.AdminLocalUser.Email}}" placeholder="name@example.com">
+      <label for="email">{{index $.Translations "admin.local_user_form.email_label"}}</label>
+      <input type="email" id="email" name="email" value="{{.AdminLocalUser.Email}}" placeholder="{{index $.Translations "admin.local_user_form.email_placeholder"}}">
     </div>
 
     <div class="form-group">
-      <label for="role">Rolle *</label>
+      <label for="role">{{index $.Translations "admin.local_users.role_label"}} *</label>
       <select id="role" name="role" required>
         <option value="viewer" {{if eq .AdminLocalUser.Role "viewer"}}selected{{end}}>viewer</option>
         <option value="admin" {{if or (eq .AdminLocalUser.Role "admin") (not .AdminLocalUser.Role)}}selected{{end}}>admin</option>
@@ -48,13 +48,13 @@
     </div>
 
     <div class="form-group">
-      <label for="password">Passwort {{if .IsEdit}}(leer lassen = unverändert){{else}}*{{end}}</label>
-      <input type="password" id="password" name="password" {{if not .IsEdit}}required{{end}} placeholder="Sicheres Passwort">
+      <label for="password">{{index $.Translations "admin.local_user_form.password_label"}} {{if .IsEdit}}({{index $.Translations "admin.local_user_form.password_note"}}){{else}}*{{end}}</label>
+      <input type="password" id="password" name="password" {{if not .IsEdit}}required{{end}} placeholder="{{index $.Translations "admin.local_user_form.password_placeholder"}}">
     </div>
 
     <div class="form-actions">
-      <button type="submit" class="button">Speichern</button>
-      <a href="{{if .BackURL}}{{.BackURL}}{{else}}/admin/tenants/{{.AdminTenant.ID}}/local-users{{end}}" class="button button-secondary">Abbrechen</a>
+      <button type="submit" class="button">{{index $.Translations "admin.local_user_form.save_button"}}</button>
+      <a href="{{if .BackURL}}{{.BackURL}}{{else}}/admin/tenants/{{.AdminTenant.ID}}/local-users{{end}}" class="button button-secondary">{{index $.Translations "admin.local_user_form.cancel_button"}}</a>
     </div>
   </form>
 </div>

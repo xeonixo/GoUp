@@ -1,11 +1,11 @@
 {{define "content"}}
-<div class="admin-section" id="settings-remote-nodes-page" data-app-base="{{$.AppBase}}">
+<div class="admin-section" id="settings-remote-nodes-page" data-app-base="{{$.AppBase}}" data-i18n-online="{{index $.Translations "admin.remote_nodes.online"}}" data-i18n-offline="{{index $.Translations "admin.remote_nodes.offline"}}" data-i18n-entries="{{index $.Translations "admin.remote_nodes.entries"}}" data-i18n-from="{{index $.Translations "admin.remote_nodes.from"}}">
   <nav class="admin-nav card">
-    <a href="{{$.AppBase}}" class="admin-nav-link">Dashboard</a>
-    <a href="{{$.AppBase}}settings/profile" class="admin-nav-link">Profil</a>
-    <a href="{{$.AppBase}}settings/users" class="admin-nav-link">Benutzerverwaltung</a>
-    <a href="{{$.AppBase}}settings/providers" class="admin-nav-link">OCID-Provider</a>
-    <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link is-active">Remote Nodes</a>
+    <a href="{{$.AppBase}}" class="admin-nav-link">{{index $.Translations "settings.nav.dashboard"}}</a>
+    <a href="{{$.AppBase}}settings/profile" class="admin-nav-link">{{index $.Translations "settings.nav.profile"}}</a>
+    <a href="{{$.AppBase}}settings/users" class="admin-nav-link">{{index $.Translations "settings.nav.users"}}</a>
+    <a href="{{$.AppBase}}settings/providers" class="admin-nav-link">{{index $.Translations "settings.nav.oidc_providers"}}</a>
+    <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link is-active">{{index $.Translations "settings.nav.remote_nodes"}}</a>
   </nav>
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
@@ -13,23 +13,23 @@
 
   <div class="admin-header">
     <div>
-      <h1>Remote Nodes</h1>
+      <h1>{{index $.Translations "settings.remote_nodes.title"}}</h1>
     </div>
   </div>
 
   <form method="post" action="{{$.AppBase}}settings/remote-nodes/create" class="admin-form card stack">
     <div class="inline-grid">
       <label>
-        <span>Name</span>
-        <input type="text" name="name" placeholder="z. B. Werkhalle-Node" required>
+        <span>{{index $.Translations "admin.remote_nodes.name_label"}}</span>
+        <input type="text" name="name" placeholder="{{index $.Translations "admin.remote_nodes.name_placeholder"}}" required>
       </label>
       <label>
-        <span>Heartbeat Timeout (Sek.)</span>
+        <span>{{index $.Translations "admin.remote_nodes.heartbeat_timeout_label"}}</span>
         <input type="number" name="heartbeat_timeout_seconds" min="30" value="120" required>
       </label>
     </div>
     <div class="form-actions">
-      <button class="button" type="submit">+ Remote-Node erstellen</button>
+      <button class="button" type="submit">{{index $.Translations "settings.remote_nodes.new_button"}}</button>
     </div>
   </form>
 
@@ -37,14 +37,14 @@
     <table class="admin-table">
       <thead>
         <tr>
-          <th>Name</th>
-          <th>Node ID</th>
-          <th>Status</th>
-          <th>Zuletzt gesehen</th>
-          <th>Timeout</th>
-          <th>Provisioning URL</th>
-          <th>Protokoll</th>
-          <th>Aktionen</th>
+          <th>{{index $.Translations "settings.remote_nodes.table_name"}}</th>
+          <th>{{index $.Translations "admin.remote_nodes.node_id_label"}}</th>
+          <th>{{index $.Translations "settings.remote_nodes.table_status"}}</th>
+          <th>{{index $.Translations "admin.remote_nodes.last_seen_label"}}</th>
+          <th>{{index $.Translations "admin.remote_nodes.timeout_label"}}</th>
+          <th>{{index $.Translations "admin.remote_nodes.provisioning_url_label"}}</th>
+          <th>{{index $.Translations "admin.remote_nodes.protocol_label"}}</th>
+          <th>{{index $.Translations "settings.remote_nodes.table_actions"}}</th>
         </tr>
       </thead>
       <tbody id="settings-remote-nodes-body">
@@ -53,19 +53,19 @@
         <tr data-node-id="{{.NodeID}}">
           <td>{{.Name}}</td>
           <td class="break-all"><code>{{.NodeID}}</code></td>
-          <td data-role="status">{{if .Online}}<span class="status-badge status-badge-success">ONLINE</span>{{else}}<span class="status-badge status-badge-muted">OFFLINE</span>{{end}}</td>
+          <td data-role="status">{{if .Online}}<span class="status-badge status-badge-success">{{index $.Translations "admin.remote_nodes.online"}}</span>{{else}}<span class="status-badge status-badge-muted">{{index $.Translations "admin.remote_nodes.offline"}}</span>{{end}}</td>
           <td data-role="last-seen">{{if .LastSeenAtRaw}}<span class="js-relative-age" data-utc="{{.LastSeenAtRaw}}">{{.LastSeenAt}}</span>{{else}}—{{end}}</td>
           <td>{{.HeartbeatWindow}}</td>
           <td class="break-all">{{.ProvisionURL}}</td>
           <td data-role="logs">
             {{if .Events}}
             <details class="remote-node-log">
-              <summary>{{len .Events}} Einträge</summary>
+              <summary>{{len .Events}} {{index $.Translations "admin.remote_nodes.entries"}}</summary>
               <ul class="remote-node-log-list">
                 {{range .Events}}
                 <li>
                   <div><strong>{{.EventLabel}}</strong> · <span class="js-relative-age" data-utc="{{.OccurredAtRaw}}">{{.OccurredAt}}</span></div>
-                  <div class="muted compact break-all">Von {{.SourceIP}}{{if .Details}} · {{.Details}}{{end}}{{if .UserAgent}} · {{.UserAgent}}{{end}}</div>
+                  <div class="muted compact break-all">{{index $.Translations "admin.remote_nodes.from"}} {{.SourceIP}}{{if .Details}} · {{.Details}}{{end}}{{if .UserAgent}} · {{.UserAgent}}{{end}}</div>
                 </li>
                 {{end}}
               </ul>
@@ -75,18 +75,18 @@
             {{end}}
           </td>
           <td class="admin-actions-inline">
-            <form method="post" action="{{$.AppBase}}settings/remote-nodes/{{.NodeID}}/rotate-bootstrap" class="inline-form" data-confirm="Bootstrap-Key wirklich neu erstellen? Alte Deployments mit altem Key können dann nicht mehr neu bootstrappen.">
-              <button class="button button-secondary button-small" type="submit">Bootstrap-Key rotieren</button>
+            <form method="post" action="{{$.AppBase}}settings/remote-nodes/{{.NodeID}}/rotate-bootstrap" class="inline-form" data-confirm="{{index $.Translations "admin.remote_nodes.rotate_bootstrap_confirm"}}">
+              <button class="button button-secondary button-small" type="submit">{{index $.Translations "admin.remote_nodes.rotate_bootstrap_button"}}</button>
             </form>
-            <form method="post" action="{{$.AppBase}}settings/remote-nodes/{{.NodeID}}/delete" class="inline-form" data-confirm="Remote-Node wirklich löschen? Zugewiesene Monitore werden lokal ausgeführt.">
-              <button class="button button-danger button-small" type="submit">Löschen</button>
+            <form method="post" action="{{$.AppBase}}settings/remote-nodes/{{.NodeID}}/delete" class="inline-form" data-confirm="{{index $.Translations "admin.remote_nodes.delete_with_reassign_confirm"}}">
+              <button class="button button-danger button-small" type="submit">{{index $.Translations "settings.remote_nodes.delete_button"}}</button>
             </form>
           </td>
         </tr>
         {{end}}
         {{else}}
         <tr>
-          <td colspan="8" class="muted">Noch keine Remote-Nodes vorhanden.</td>
+          <td colspan="8" class="muted">{{index $.Translations "settings.remote_nodes.no_nodes"}}</td>
         </tr>
         {{end}}
       </tbody>

@@ -1,12 +1,12 @@
 {{define "content"}}
 <div class="admin-section">
   <nav class="admin-nav card">
-    <a href="{{$.AppBase}}" class="admin-nav-link">Dashboard</a>
-    <a href="{{$.AppBase}}settings/profile" class="admin-nav-link">Settings · Profil</a>
+    <a href="{{$.AppBase}}" class="admin-nav-link">{{index $.Translations "settings.nav.dashboard"}}</a>
+    <a href="{{$.AppBase}}settings/profile" class="admin-nav-link">{{index $.Translations "settings.nav.profile"}}</a>
     {{if eq $.User.Role "admin"}}
-    <a href="{{$.AppBase}}settings/users" class="admin-nav-link">Settings · Benutzer</a>
-    <a href="{{$.AppBase}}settings/providers" class="admin-nav-link is-active">Settings · Provider</a>
-    <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link">Settings · Remote Nodes</a>
+    <a href="{{$.AppBase}}settings/users" class="admin-nav-link">{{index $.Translations "settings.nav.users"}}</a>
+    <a href="{{$.AppBase}}settings/providers" class="admin-nav-link is-active">{{index $.Translations "settings.nav.oidc_providers"}}</a>
+    <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link">{{index $.Translations "settings.nav.remote_nodes"}}</a>
     {{end}}
   </nav>
 
@@ -15,45 +15,45 @@
 
   <div class="admin-header">
     <div>
-      <p class="eyebrow">Settings · Provider</p>
-      <h1>{{if .IsEdit}}OIDC-Provider bearbeiten{{else}}Neuen OIDC-Provider anlegen{{end}}</h1>
+      <p class="eyebrow">{{index $.Translations "settings.providers.title"}}</p>
+      <h1>{{if .IsEdit}}{{index $.Translations "admin.provider_form.title_edit"}}{{else}}{{index $.Translations "admin.provider_form.title_new"}}{{end}}</h1>
     </div>
-    <a href="{{$.AppBase}}settings/providers" class="button button-secondary">Zurück zu Provider</a>
+    <a href="{{$.AppBase}}settings/providers" class="button button-secondary">{{index $.Translations "settings.providers.back_button"}}</a>
   </div>
 
   <form method="POST" action="{{.FormAction}}" class="admin-form card stack">
     <div class="form-group">
-      <label for="provider_key">Provider Key *</label>
-      <input type="text" id="provider_key" name="provider_key" value="{{.AdminProvider.ProviderKey}}" required {{if .IsEdit}}readonly{{end}} placeholder="z.B. oidc-primary">
+      <label for="provider_key">{{index $.Translations "settings.providers.provider_key"}} *</label>
+      <input type="text" id="provider_key" name="provider_key" value="{{.AdminProvider.ProviderKey}}" required {{if .IsEdit}}readonly{{end}} placeholder="{{index $.Translations "admin.provider_form.provider_key_placeholder"}}">
     </div>
 
     <div class="form-group">
-      <label for="display_name">Anzeigename</label>
-      <input type="text" id="display_name" name="display_name" value="{{.AdminProvider.DisplayName}}" placeholder="z.B. Google, Keycloak">
+      <label for="display_name">{{index $.Translations "admin.provider_form.name_label"}}</label>
+      <input type="text" id="display_name" name="display_name" value="{{.AdminProvider.DisplayName}}" placeholder="{{index $.Translations "admin.provider_form.name_placeholder"}}">
     </div>
 
     <div class="form-group">
-      <label for="issuer_url">Issuer URL *</label>
-      <input type="url" id="issuer_url" name="issuer_url" value="{{.AdminProvider.IssuerURL}}" placeholder="https://auth.example.com" required>
+      <label for="issuer_url">{{index $.Translations "admin.provider_form.issuer_url_label"}} *</label>
+      <input type="url" id="issuer_url" name="issuer_url" value="{{.AdminProvider.IssuerURL}}" placeholder="{{index $.Translations "admin.provider_form.issuer_url_placeholder"}}" required>
     </div>
 
     <div class="form-group">
-      <label for="client_id">Client ID *</label>
-      <input type="text" id="client_id" name="client_id" value="{{.AdminProvider.ClientID}}" placeholder="Your client ID" required>
+      <label for="client_id">{{index $.Translations "admin.provider_form.client_id_label"}} *</label>
+      <input type="text" id="client_id" name="client_id" value="{{.AdminProvider.ClientID}}" placeholder="{{index $.Translations "admin.provider_form.client_id_placeholder"}}" required>
     </div>
 
     <div class="form-group">
-      <label for="client_secret">Client Secret {{if .IsEdit}}(leer lassen = unverändert){{else}}*{{end}}</label>
-      <input type="password" id="client_secret" name="client_secret" value="" {{if not .IsEdit}}required{{end}} placeholder="Your client secret">
+      <label for="client_secret">{{index $.Translations "admin.provider_form.client_secret_label"}} {{if .IsEdit}}({{index $.Translations "admin.settings.leave_empty"}}){{else}}*{{end}}</label>
+      <input type="password" id="client_secret" name="client_secret" value="" {{if not .IsEdit}}required{{end}} placeholder="{{index $.Translations "admin.provider_form.client_secret_placeholder"}}">
     </div>
 
     <div class="form-note">
-      <strong>Hinweis:</strong> Das Secret wird verschlüsselt im Control-Plane-Store abgelegt.
+      <strong>{{index $.Translations "common.info"}}:</strong> {{index $.Translations "admin.provider_form.secret_note"}}
     </div>
 
     <div class="form-actions">
-      <button type="submit" class="button">Speichern</button>
-      <a href="{{$.AppBase}}settings/providers" class="button button-secondary">Abbrechen</a>
+      <button type="submit" class="button">{{index $.Translations "common.save"}}</button>
+      <a href="{{$.AppBase}}settings/providers" class="button button-secondary">{{index $.Translations "common.cancel"}}</a>
     </div>
   </form>
 </div>

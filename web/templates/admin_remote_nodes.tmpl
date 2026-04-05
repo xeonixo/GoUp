@@ -1,11 +1,11 @@
 {{define "content"}}
 <div class="admin-section">
   <nav class="admin-nav card">
-    <a href="/admin/" class="admin-nav-link">Allgemein</a>
-    <a href="/admin/tenants" class="admin-nav-link">Tenants</a>
-    <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link">OCID-Provider</a>
-    <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link">Benutzerverwaltung</a>
-    <a href="/admin/tenants/{{.AdminTenant.ID}}/remote-nodes" class="admin-nav-link is-active">Remote Nodes</a>
+    <a href="/admin/" class="admin-nav-link">{{index $.Translations "admin.nav.general"}}</a>
+    <a href="/admin/tenants" class="admin-nav-link">{{index $.Translations "admin.nav.tenants"}}</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link">{{index $.Translations "admin.nav.providers"}}</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link">{{index $.Translations "admin.nav.users"}}</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/remote-nodes" class="admin-nav-link is-active">{{index $.Translations "admin.nav.remote_nodes"}}</a>
   </nav>
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
@@ -13,24 +13,24 @@
 
   <div class="admin-header">
     <div>
-      <h1>Remote Nodes · {{.AdminTenant.Name}}</h1>
+      <h1>{{index $.Translations "admin.remote_nodes.title"}} · {{.AdminTenant.Name}}</h1>
     </div>
-    <a href="/admin/tenants" class="button button-secondary">Zurück zu Tenants</a>
+    <a href="/admin/tenants" class="button button-secondary">{{index $.Translations "admin.remote_nodes.back_to_tenants"}}</a>
   </div>
 
   <form method="post" action="/admin/tenants/{{.AdminTenant.ID}}/remote-nodes/create" class="admin-form card stack">
     <div class="inline-grid">
       <label>
-        <span>Name</span>
-        <input type="text" name="name" placeholder="z. B. Werkhalle-Node" required>
+        <span>{{index $.Translations "admin.remote_nodes.name_label"}}</span>
+        <input type="text" name="name" placeholder="{{index $.Translations "admin.remote_nodes.name_placeholder"}}" required>
       </label>
       <label>
-        <span>Heartbeat Timeout (Sek.)</span>
+        <span>{{index $.Translations "admin.remote_nodes.heartbeat_timeout_label"}}</span>
         <input type="number" name="heartbeat_timeout_seconds" min="30" value="120" required>
       </label>
     </div>
     <div class="form-actions">
-      <button class="button" type="submit">+ Remote-Node erstellen</button>
+      <button class="button" type="submit">{{index $.Translations "admin.remote_nodes.create_button"}}</button>
     </div>
   </form>
 
@@ -38,14 +38,14 @@
     <table class="admin-table">
       <thead>
         <tr>
-          <th>Name</th>
-          <th>Node ID</th>
-          <th>Status</th>
-          <th>Zuletzt gesehen</th>
-          <th>Timeout</th>
-          <th>Provisioning URL</th>
-          <th>Protokoll</th>
-          <th>Aktionen</th>
+          <th>{{index $.Translations "admin.remote_nodes.name_label"}}</th>
+          <th>{{index $.Translations "admin.remote_nodes.node_id_label"}}</th>
+          <th>{{index $.Translations "admin.remote_nodes.status_label"}}</th>
+          <th>{{index $.Translations "admin.remote_nodes.last_seen_label"}}</th>
+          <th>{{index $.Translations "admin.remote_nodes.timeout_label"}}</th>
+          <th>{{index $.Translations "admin.remote_nodes.provisioning_url_label"}}</th>
+          <th>{{index $.Translations "admin.remote_nodes.protocol_label"}}</th>
+          <th>{{index $.Translations "admin.remote_nodes.actions_label"}}</th>
         </tr>
       </thead>
       <tbody>
@@ -61,12 +61,12 @@
           <td>
             {{if .Events}}
             <details class="remote-node-log">
-              <summary>{{len .Events}} Einträge</summary>
+              <summary>{{len .Events}} {{index $.Translations "admin.remote_nodes.entries"}}</summary>
               <ul class="remote-node-log-list">
                 {{range .Events}}
                 <li>
                   <div><strong>{{.EventLabel}}</strong> · <span class="js-relative-age" data-utc="{{.OccurredAtRaw}}">{{.OccurredAt}}</span></div>
-                  <div class="muted compact break-all">Von {{.SourceIP}}{{if .Details}} · {{.Details}}{{end}}{{if .UserAgent}} · {{.UserAgent}}{{end}}</div>
+                  <div class="muted compact break-all">{{index $.Translations "admin.remote_nodes.from"}} {{.SourceIP}}{{if .Details}} · {{.Details}}{{end}}{{if .UserAgent}} · {{.UserAgent}}{{end}}</div>
                 </li>
                 {{end}}
               </ul>
@@ -76,18 +76,18 @@
             {{end}}
           </td>
           <td class="admin-actions-inline">
-            <form method="post" action="/admin/tenants/{{$.AdminTenant.ID}}/remote-nodes/{{.NodeID}}/rotate-bootstrap" class="inline-form" data-confirm="Bootstrap-Key wirklich neu erstellen? Alte Deployments mit altem Key können dann nicht mehr neu bootstrappen.">
-              <button class="button button-secondary button-small" type="submit">Bootstrap-Key rotieren</button>
+            <form method="post" action="/admin/tenants/{{$.AdminTenant.ID}}/remote-nodes/{{.NodeID}}/rotate-bootstrap" class="inline-form" data-confirm="{{index $.Translations "admin.remote_nodes.rotate_bootstrap_confirm"}}">
+              <button class="button button-secondary button-small" type="submit">{{index $.Translations "admin.remote_nodes.rotate_bootstrap_button"}}</button>
             </form>
-            <form method="post" action="/admin/tenants/{{$.AdminTenant.ID}}/remote-nodes/{{.NodeID}}/delete" class="inline-form" data-confirm="Remote-Node wirklich löschen? Zugewiesene Monitore werden lokal ausgeführt.">
-              <button class="button button-danger button-small" type="submit">Löschen</button>
+            <form method="post" action="/admin/tenants/{{$.AdminTenant.ID}}/remote-nodes/{{.NodeID}}/delete" class="inline-form" data-confirm="{{index $.Translations "admin.remote_nodes.delete_with_reassign_confirm"}}">
+              <button class="button button-danger button-small" type="submit">{{index $.Translations "admin.remote_nodes.delete_button"}}</button>
             </form>
           </td>
         </tr>
         {{end}}
         {{else}}
         <tr>
-          <td colspan="8" class="muted">Noch keine Remote-Nodes vorhanden.</td>
+          <td colspan="8" class="muted">{{index $.Translations "admin.remote_nodes.no_remote_nodes"}}</td>
         </tr>
         {{end}}
       </tbody>

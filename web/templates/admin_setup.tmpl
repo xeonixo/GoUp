@@ -1,37 +1,37 @@
 {{define "content"}}
 <section class="login-shell">
-  <a class="login-brand" href="/" aria-label="GoUp Startseite">
+  <a class="login-brand" href="/" aria-label="{{index $.Translations "common.home"}}">
     <img class="login-brand-logo" src="/assets/logo_goup.svg" alt="GoUp Logo">
   </a>
   <article class="card login-card stack">
     <div>
-      <h1>Erstkonfiguration</h1>
-      <p class="muted">Lege jetzt den Admin-Benutzer an. Der Session-Key wird automatisch erzeugt und sicher gespeichert.</p>
+      <h1>{{index $.Translations "admin.setup.title"}}</h1>
+      <p class="muted">{{index $.Translations "admin.setup.subtitle"}}</p>
     </div>
 
     {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
     {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
 
     <form method="POST" action="/admin/setup" class="stack login-form">
-      <label for="username">Benutzername</label>
+      <label for="username">{{index $.Translations "field.username"}}</label>
       <input id="username" name="username" type="text" required autocomplete="username">
 
-      <label for="password">Passwort</label>
+      <label for="password">{{index $.Translations "field.password"}}</label>
       <input id="password" name="password" type="password" required minlength="12" autocomplete="new-password">
 
-      <label for="password_confirm">Passwort bestätigen</label>
+      <label for="password_confirm">{{index $.Translations "field.password_confirm"}}</label>
       <input id="password_confirm" name="password_confirm" type="password" required minlength="12" autocomplete="new-password">
 
-      <label for="totp_secret">TOTP Secret</label>
+      <label for="totp_secret">{{index $.Translations "admin.setup.totp_secret_label"}}</label>
       <input id="totp_secret" name="totp_secret" type="text" value="{{.TOTPSecret}}" readonly>
 
-      <label for="totp_uri">TOTP URI (für QR-Generator)</label>
+      <label for="totp_uri">{{index $.Translations "admin.setup.totp_uri_label"}}</label>
       <input id="totp_uri" type="text" value="{{.TOTPProvisioningURI}}" readonly>
 
-      <label for="totp_code">TOTP-Code zur Bestätigung</label>
+      <label for="totp_code">{{index $.Translations "admin.setup.totp_code_confirm_label"}}</label>
       <input id="totp_code" name="totp_code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code">
 
-      <button type="submit" class="button">Onboarding abschließen</button>
+      <button type="submit" class="button">{{index $.Translations "admin.setup.complete_button"}}</button>
     </form>
   </article>
 </section>

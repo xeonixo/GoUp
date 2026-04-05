@@ -1,31 +1,31 @@
 {{define "content"}}
 <div class="admin-section">
   <nav class="admin-nav card">
-    <a href="/admin/" class="admin-nav-link">Allgemein</a>
-    <a href="/admin/tenants" class="admin-nav-link">Tenants</a>
-    <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link is-active">OCID-Provider</a>
-    <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link">Benutzerverwaltung</a>
-    <a href="/admin/tenants/{{.AdminTenant.ID}}/remote-nodes" class="admin-nav-link">Remote Nodes</a>
+    <a href="/admin/" class="admin-nav-link">{{index $.Translations "admin.nav.general"}}</a>
+    <a href="/admin/tenants" class="admin-nav-link">{{index $.Translations "admin.nav.tenants"}}</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link is-active">{{index $.Translations "admin.nav.providers"}}</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link">{{index $.Translations "admin.nav.users"}}</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/remote-nodes" class="admin-nav-link">{{index $.Translations "admin.nav.remote_nodes"}}</a>
   </nav>
 
-  <h1>{{if .IsEdit}}OCID-Provider bearbeiten{{else}}Neuen OCID-Provider anlegen{{end}}</h1>
+  <h1>{{if .IsEdit}}{{index $.Translations "admin.provider_form.title_edit"}}{{else}}{{index $.Translations "admin.provider_form.title_new"}}{{end}}</h1>
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
   
   <form method="POST" action="{{.FormAction}}" class="admin-form card stack">
     <div class="form-group">
-      <label for="tenant_id">Tenant ID *</label>
+      <label for="tenant_id">{{index $.Translations "admin.tenants.id"}} *</label>
       <input type="number" id="tenant_id" name="tenant_id" required readonly value="{{.AdminTenant.ID}}">
     </div>
 
     <div class="form-group">
-      <label for="provider_key">Provider Key *</label>
-      <input type="text" id="provider_key" name="provider_key" value="{{.AdminProvider.ProviderKey}}" required {{if .IsEdit}}readonly{{end}} placeholder="z.B. oidc-primary">
+      <label for="provider_key">{{index $.Translations "admin.providers.provider_key"}} *</label>
+      <input type="text" id="provider_key" name="provider_key" value="{{.AdminProvider.ProviderKey}}" required {{if .IsEdit}}readonly{{end}} placeholder="{{index $.Translations "admin.provider_form.provider_key_placeholder"}}">
     </div>
 
     <div class="form-group">
-      <label for="kind">Typ *</label>
+      <label for="kind">{{index $.Translations "admin.provider_form.kind_label"}} *</label>
       <select id="kind" name="kind" required {{if .IsEdit}}disabled{{end}}>
         <option value="oidc" {{if eq .AdminProvider.Kind "oidc"}}selected{{end}}>OIDC</option>
       </select>
@@ -35,34 +35,34 @@
     </div>
 
     <div class="form-group">
-      <label for="display_name">Anzeigename</label>
-      <input type="text" id="display_name" name="display_name" value="{{.AdminProvider.DisplayName}}" placeholder="z.B. Google, Keycloak">
+      <label for="display_name">{{index $.Translations "admin.provider_form.name_label"}}</label>
+      <input type="text" id="display_name" name="display_name" value="{{.AdminProvider.DisplayName}}" placeholder="{{index $.Translations "admin.provider_form.name_placeholder"}}">
     </div>
 
     <div id="oidc-fields">
       <div class="form-group">
-        <label for="issuer_url">Issuer URL</label>
-        <input type="url" id="issuer_url" name="issuer_url" value="{{.AdminProvider.IssuerURL}}" placeholder="https://auth.example.com">
+        <label for="issuer_url">{{index $.Translations "admin.provider_form.issuer_url_label"}}</label>
+        <input type="url" id="issuer_url" name="issuer_url" value="{{.AdminProvider.IssuerURL}}" placeholder="{{index $.Translations "admin.provider_form.issuer_url_placeholder"}}">
       </div>
 
       <div class="form-group">
-        <label for="client_id">Client ID</label>
-        <input type="text" id="client_id" name="client_id" value="{{.AdminProvider.ClientID}}" placeholder="Your client ID">
+        <label for="client_id">{{index $.Translations "admin.provider_form.client_id_label"}}</label>
+        <input type="text" id="client_id" name="client_id" value="{{.AdminProvider.ClientID}}" placeholder="{{index $.Translations "admin.provider_form.client_id_placeholder"}}">
       </div>
 
       <div class="form-group">
-        <label for="client_secret">Client Secret {{if .IsEdit}}(leer lassen = unverändert){{else}}*{{end}}</label>
-        <input type="password" id="client_secret" name="client_secret" value="" {{if not .IsEdit}}required{{end}} placeholder="Your client secret">
+        <label for="client_secret">{{index $.Translations "admin.provider_form.client_secret_label"}} {{if .IsEdit}}({{index $.Translations "admin.local_user_form.password_note"}}){{else}}*{{end}}</label>
+        <input type="password" id="client_secret" name="client_secret" value="" {{if not .IsEdit}}required{{end}} placeholder="{{index $.Translations "admin.provider_form.client_secret_placeholder"}}">
       </div>
 
       <div class="form-note">
-        <strong>Hinweis:</strong> Das Secret wird verschlüsselt im Control-Plane-Store abgelegt.
+        <strong>{{index $.Translations "common.info"}}:</strong> {{index $.Translations "admin.provider_form.secret_note"}}
       </div>
     </div>
 
     <div class="form-actions">
-      <button type="submit" class="button">Speichern</button>
-      <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="button button-secondary">Abbrechen</a>
+      <button type="submit" class="button">{{index $.Translations "admin.provider_form.save_button"}}</button>
+      <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="button button-secondary">{{index $.Translations "admin.provider_form.cancel_button"}}</a>
     </div>
   </form>
 </div>

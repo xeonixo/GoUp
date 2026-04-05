@@ -412,21 +412,21 @@ func (s *Server) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 	monitorCount, remoteNodeCount := s.loadControlPlaneInstanceCounts(r.Context(), tenants)
 
 	s.render(w, "admin_dashboard", pageData{
-		Title:             "Allgemein · GoUp",
-		User:              user,
-		AdminTenants:      tenants,
-		AdminMonitorCount: monitorCount,
+		Title:                "Allgemein · GoUp",
+		User:                 user,
+		AdminTenants:         tenants,
+		AdminMonitorCount:    monitorCount,
 		AdminRemoteNodeCount: remoteNodeCount,
-		ControlPlaneAdmin: true,
-		AdminAuditEvents:  auditEvents,
-		AuditAction:       auditAction,
-		AuditActor:        auditActor,
-		AuditTargetType:   auditTargetType,
-		AuditActions:      auditActions,
-		AuditTargetTypes:  auditTargetTypes,
-		GlobalSMTP:        smtpSettings,
-		Notice:            strings.TrimSpace(r.URL.Query().Get("notice")),
-		Error:             strings.TrimSpace(r.URL.Query().Get("error")),
+		ControlPlaneAdmin:    true,
+		AdminAuditEvents:     auditEvents,
+		AuditAction:          auditAction,
+		AuditActor:           auditActor,
+		AuditTargetType:      auditTargetType,
+		AuditActions:         auditActions,
+		AuditTargetTypes:     auditTargetTypes,
+		GlobalSMTP:           smtpSettings,
+		Notice:               strings.TrimSpace(r.URL.Query().Get("notice")),
+		Error:                strings.TrimSpace(r.URL.Query().Get("error")),
 	})
 }
 
@@ -508,8 +508,8 @@ func (s *Server) loadControlPlaneInstanceCounts(ctx context.Context, tenants []s
 
 		var (
 			tenantStore *store.Store
-			err        error
-			closeStore bool
+			err         error
+			closeStore  bool
 		)
 
 		if tenant.Active {
@@ -1386,14 +1386,16 @@ func (s *Server) handleSettingsProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "settings_profile", pageData{
-		Title:         "Einstellungen · Profil · GoUp",
-		User:          user,
-		AdminTenant:   tenant,
-		ProfileUser:   profileUser,
-		ProfileNotify: notify,
-		AppBase:       s.tenantAppBase(r),
-		Notice:        strings.TrimSpace(r.URL.Query().Get("notice")),
-		Error:         strings.TrimSpace(r.URL.Query().Get("error")),
+		Title:           "Einstellungen · Profil · GoUp",
+		UILanguage:      normalizeUILanguage(profileUser.PreferredLanguage),
+		User:            user,
+		AdminTenant:     tenant,
+		ProfileUser:     profileUser,
+		ProfileNotify:   notify,
+		LanguageOptions: languageOptions(profileUser.PreferredLanguage),
+		AppBase:         s.tenantAppBase(r),
+		Notice:          strings.TrimSpace(r.URL.Query().Get("notice")),
+		Error:           strings.TrimSpace(r.URL.Query().Get("error")),
 	})
 }
 
@@ -1415,13 +1417,14 @@ func (s *Server) handleSettingsProfileSave(w http.ResponseWriter, r *http.Reques
 
 	email := strings.TrimSpace(r.FormValue("email"))
 	displayName := strings.TrimSpace(r.FormValue("display_name"))
+	preferredLanguage := normalizeUILanguage(r.FormValue("preferred_language"))
 	emailEnabled := r.FormValue("email_enabled") == "on"
 	matrixEnabled := r.FormValue("matrix_enabled") == "on"
 	matrixHomeserver := strings.TrimSpace(r.FormValue("matrix_homeserver_url"))
 	matrixRoomID := strings.TrimSpace(r.FormValue("matrix_room_id"))
 	matrixAccessToken := strings.TrimSpace(r.FormValue("matrix_access_token"))
 
-	if err := s.controlStore.UpdateUserProfileForTenant(r.Context(), user.TenantID, user.UserID, email, displayName); err != nil {
+	if err := s.controlStore.UpdateUserProfileForTenant(r.Context(), user.TenantID, user.UserID, email, displayName, preferredLanguage); err != nil {
 		s.logger.Error("settings profile update user failed", "tenant_id", user.TenantID, "user_id", user.UserID, "error", err)
 		http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?error="+url.QueryEscape("Profil konnte nicht gespeichert werden"), http.StatusSeeOther)
 		return
@@ -1436,6 +1439,7 @@ func (s *Server) handleSettingsProfileSave(w http.ResponseWriter, r *http.Reques
 	if session, err := s.sessionForRequest(r); err == nil {
 		session.Email = email
 		session.Name = displayName
+		session.PreferredLanguage = preferredLanguage
 		_ = s.sessions.Set(w, *session)
 	}
 

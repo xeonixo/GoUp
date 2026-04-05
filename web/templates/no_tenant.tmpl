@@ -1,12 +1,12 @@
 {{define "content"}}
 <section class="login-shell no-tenant-shell">
-  <a class="login-brand" href="/" aria-label="GoUp Startseite">
+  <a class="login-brand" href="/" aria-label="{{index $.Translations "no_tenant.title"}}">
     <img class="login-brand-logo no-tenant-brand-logo" src="/assets/logo_goup.svg" alt="GoUp Logo">
   </a>
   <article class="card login-card stack no-tenant-card">
     <div>
-      <h1>Kein gültiger Tenant</h1>
-      <p class="muted">Bitte gib den Tenant-Namen direkt in der URL an, z. B. <strong>/mein-tenant/</strong>.</p>
+      <h1>{{index $.Translations "no_tenant.title"}}</h1>
+      <p class="muted">{{index $.Translations "no_tenant.subtitle"}} <strong>{{index $.Translations "no_tenant.example"}}</strong></p>
     </div>
   </article>
 </section>

@@ -213,6 +213,14 @@
     let stateEventsPage = 1;
     let notificationEventsPage = 1;
     const tablePageSize = 10;
+    const i18n = window.GOUP_DASHBOARD_I18N || {};
+    const tr = (key, fallback, values = {}) => {
+      let text = (typeof i18n[key] === 'string' && i18n[key].trim() !== '') ? i18n[key] : fallback;
+      Object.entries(values).forEach(([name, value]) => {
+        text = text.replaceAll(`{${name}}`, String(value ?? ''));
+      });
+      return text;
+    };
 
     const setLiveConnectionState = (state) => {
       if (!(liveConnectionIndicator instanceof HTMLElement)) {
@@ -220,13 +228,13 @@
       }
       liveConnectionIndicator.classList.remove('is-connected', 'is-connecting', 'is-disconnected');
 
-      let label = 'Live-Verbindung getrennt';
+      let label = tr('liveDisconnected', 'Live connection disconnected');
       if (state === 'connected') {
         liveConnectionIndicator.classList.add('is-connected');
-        label = 'Live-Verbindung aktiv';
+        label = tr('liveConnected', 'Live connection active');
       } else if (state === 'connecting') {
         liveConnectionIndicator.classList.add('is-connecting');
-        label = 'Live-Verbindung wird aufgebaut';
+        label = tr('liveConnecting', 'Live connection is being established');
       } else {
         liveConnectionIndicator.classList.add('is-disconnected');
       }
@@ -269,7 +277,11 @@
 
       const summary = document.createElement('div');
       summary.className = 'table-pagination-summary';
-      summary.textContent = `Seite ${currentPage} von ${pageCount} · ${totalItems} Einträge`;
+      summary.textContent = tr('paginationSummary', 'Page {current} of {totalPages} · {totalItems} entries', {
+        current: currentPage,
+        totalPages: pageCount,
+        totalItems
+      });
 
       const actions = document.createElement('div');
       actions.className = 'table-pagination-actions';
@@ -277,7 +289,7 @@
       const prev = document.createElement('button');
       prev.className = 'button button-secondary button-small';
       prev.type = 'button';
-      prev.textContent = '← Zurück';
+      prev.textContent = tr('paginationPrev', '← Previous');
       prev.disabled = currentPage <= 1;
       prev.addEventListener('click', () => {
         if (currentPage > 1) {
@@ -288,7 +300,7 @@
       const next = document.createElement('button');
       next.className = 'button button-secondary button-small';
       next.type = 'button';
-      next.textContent = 'Weiter →';
+      next.textContent = tr('paginationNext', 'Next →');
       next.disabled = currentPage >= pageCount;
       next.addEventListener('click', () => {
         if (currentPage < pageCount) {
@@ -534,7 +546,7 @@
           groupIconPreview.src = groupIconUploadPreviewURL;
         }
         if (groupIconSelection) {
-          groupIconSelection.textContent = 'Ausgewählt: eigenes Upload-Icon';
+          groupIconSelection.textContent = tr('groupIconSelectedUpload', 'Selected: custom uploaded icon');
         }
         return;
       }
@@ -548,8 +560,10 @@
       }
       if (groupIconSelection) {
         groupIconSelection.textContent = slug
-          ? (isUploadedIconRef(slug) ? 'Ausgewählt: eigenes Upload-Icon' : `Ausgewählt: ${slug}`)
-          : 'Kein Icon ausgewählt.';
+          ? (isUploadedIconRef(slug)
+            ? tr('groupIconSelectedUpload', 'Selected: custom uploaded icon')
+            : tr('groupIconSelectedSlug', 'Selected: {slug}', { slug }))
+          : tr('groupIconNoneSelected', 'No icon selected.');
       }
       const iconUrl = buildIconUrl(slug);
       if (!iconUrl) {
@@ -589,7 +603,7 @@
         const customBody = document.createElement('div');
         customBody.className = 'group-icon-result-body';
         const customTitle = document.createElement('strong');
-        customTitle.textContent = 'Eigenen Slug verwenden';
+        customTitle.textContent = tr('groupIconUseCustomSlug', 'Use custom slug');
         const customSlug = document.createElement('span');
         customSlug.className = 'muted compact';
         customSlug.textContent = normalizedQuery;
@@ -630,7 +644,7 @@
         if (result.preferred) {
           const badge = document.createElement('span');
           badge.className = 'muted compact';
-          badge.textContent = 'Bereits vorhanden';
+          badge.textContent = tr('groupIconAlreadyPresent', 'Already present');
           body.appendChild(badge);
         }
         button.appendChild(previewImage);
@@ -654,11 +668,11 @@
 
       if (groupIconSearchStatus) {
         if (!normalizedQuery) {
-          groupIconSearchStatus.textContent = 'Suche nach Namen, Aliasen oder Kategorien.';
+          groupIconSearchStatus.textContent = tr('groupIconSearchHint', 'Search by name, aliases, or categories.');
         } else if (results.length > 0) {
-          groupIconSearchStatus.textContent = `${results.length} passende Icons gefunden.`;
+          groupIconSearchStatus.textContent = tr('groupIconSearchResultsCount', '{count} matching icons found.', { count: results.length });
         } else {
-          groupIconSearchStatus.textContent = 'Keine Treffer gefunden. Du kannst den Slug direkt verwenden.';
+          groupIconSearchStatus.textContent = tr('groupIconSearchNoResults', 'No matches found. You can use the slug directly.');
         }
       }
     };
@@ -686,7 +700,7 @@
         }
         renderIconResults([], normalizedQuery);
         if (groupIconSearchStatus) {
-          groupIconSearchStatus.textContent = 'Icon-Suche gerade nicht erreichbar. Du kannst den Slug trotzdem direkt setzen.';
+          groupIconSearchStatus.textContent = tr('groupIconSearchUnavailable', 'Icon search is currently unavailable. You can still set the slug directly.');
         }
       }
     };
@@ -702,9 +716,9 @@
       if (!groupModalTitle || !groupNameField || !groupIconCustom || !groupIconSearch || !groupIconSlugField || !groupDialog) {
         return;
       }
-      const groupName = button.dataset.group || 'Gruppe';
+      const groupName = button.dataset.group || tr('groupFallback', 'Group');
       const iconValue = String(button.dataset.iconSlug || '').trim();
-      groupModalTitle.textContent = `Gruppe konfigurieren · ${groupName}`;
+      groupModalTitle.textContent = tr('groupModalTitle', 'Configure group · {name}', { name: groupName });
       groupNameField.value = groupName;
       clearGroupIconUploadSelection();
       groupIconCustom.value = isUploadedIconRef(iconValue) ? '' : normalizeIconSlug(iconValue);
@@ -993,10 +1007,10 @@
 
       if (isHTTPMonitor) {
         if (useHTTPSLabelField) {
-          useHTTPSLabelField.textContent = 'HTTPS verwenden';
+          useHTTPSLabelField.textContent = tr('monitorUseHTTPS', 'Use HTTPS');
         }
         if (verifyCertLabelField) {
-          verifyCertLabelField.textContent = 'Zertifikat prüfen';
+          verifyCertLabelField.textContent = tr('monitorVerifyCert', 'Verify certificate');
         }
         if (!useHTTPSField.checked) {
           verifyCertField.checked = false;
@@ -1018,22 +1032,22 @@
         }
         if (targetHintField) {
           targetHintField.textContent = useHTTPSField.checked
-            ? 'Für HTTPS: Host/Pfad ohne Protokoll (https:// wird automatisch ergänzt).'
-            : 'Für HTTP: Host/Pfad ohne Protokoll (http:// wird automatisch ergänzt).';
+            ? tr('monitorHintHTTPS', 'For HTTPS: host/path without protocol (https:// is added automatically).')
+            : tr('monitorHintHTTP', 'For HTTP: host/path without protocol (http:// is added automatically).');
         }
         if (expectedTextLabelField) {
-          expectedTextLabelField.textContent = 'Erwartete Keywords (optional)';
+          expectedTextLabelField.textContent = tr('expectedKeywordsOptional', 'Expected keywords (optional)');
         }
         if (expectedTextHintField) {
-          expectedTextHintField.textContent = 'Mehrere Keywords mit Komma trennen. Alle Keywords müssen im Body vorkommen.';
+          expectedTextHintField.textContent = tr('expectedKeywordsHint', 'Separate multiple keywords with commas. All keywords must appear in the body.');
         }
         syncHTTPSFamilyMode();
       } else if (isTCPMonitor) {
         if (useHTTPSLabelField) {
-          useHTTPSLabelField.textContent = 'TLS Handshake prüfen';
+          useHTTPSLabelField.textContent = tr('monitorTCPHandshake', 'Check TLS handshake');
         }
         if (verifyCertLabelField) {
-          verifyCertLabelField.textContent = 'Zertifikat prüfen';
+          verifyCertLabelField.textContent = tr('monitorVerifyCert', 'Verify certificate');
         }
         expectedStatusField.value = '';
         expectedTextField.value = '';
@@ -1053,7 +1067,7 @@
           tcpPortField.placeholder = '443';
         }
         if (targetHintField) {
-          targetHintField.textContent = 'Für TCP: host:port';
+          targetHintField.textContent = tr('monitorHintTCP', 'For TCP: host:port');
         }
         syncTCPFamilyMode();
       } else if (isMail) {
@@ -1066,7 +1080,7 @@
           targetField.placeholder = 'mail.example.com:587';
         }
         if (targetHintField) {
-          targetHintField.textContent = 'Für Mail-Monitore: host:port';
+          targetHintField.textContent = tr('monitorHintMail', 'For mail monitors: host:port');
         }
       } else if (isDNS) {
         useHTTPSField.checked = false;
@@ -1077,16 +1091,16 @@
           targetField.placeholder = 'example.com';
         }
         if (targetHintField) {
-          targetHintField.textContent = 'Hostname, der aufgelöst werden soll (z. B. example.com).';
+          targetHintField.textContent = tr('monitorHintDNS', 'Hostname to resolve (e.g. example.com).');
         }
         if (expectedTextField) {
           expectedTextField.placeholder = '1.2.3.4';
         }
         if (expectedTextLabelField) {
-          expectedTextLabelField.textContent = 'Erwartete DNS-Antwort (optional)';
+          expectedTextLabelField.textContent = tr('dnsExpectedOptional', 'Expected DNS response (optional)');
         }
         if (expectedTextHintField) {
-          expectedTextHintField.textContent = 'Optionaler Teilstring, der in den aufgelösten IP-Adressen vorkommen muss.';
+          expectedTextHintField.textContent = tr('dnsExpectedHint', 'Optional substring that must appear in the resolved IP addresses.');
         }
       } else if (isUDP) {
         useHTTPSField.checked = false;
@@ -1105,7 +1119,7 @@
         }
         syncUDPPortSuggestion();
         if (targetHintField) {
-          targetHintField.textContent = 'Für UDP: IP/Hostname + Port (DNS 53, NTP 123).';
+          targetHintField.textContent = tr('monitorHintUDP', 'For UDP: IP/hostname + port (DNS 53, NTP 123).');
         }
         syncUDPFamilyMode();
       } else if (isWhois) {
@@ -1118,7 +1132,7 @@
           targetField.placeholder = 'example.com';
         }
         if (targetHintField) {
-          targetHintField.textContent = 'Domain ohne Protokoll (z. B. example.com). Prüft Ablaufdatum bzw. Registrierungsstatus (TLD-abhängig).';
+          targetHintField.textContent = tr('monitorHintWHOIS', 'Domain without protocol (e.g. example.com). Checks expiry date or registration status (TLD-dependent).');
         }
       } else if (isICMPMonitor) {
         useHTTPSField.checked = false;
@@ -1129,7 +1143,7 @@
           targetField.placeholder = '1.1.1.1 oder host.example.com';
         }
         if (targetHintField) {
-          targetHintField.textContent = 'Für ICMP: IPv4/IPv6-Adresse oder Hostname ohne Port.';
+          targetHintField.textContent = tr('monitorHintICMP', 'For ICMP: IPv4/IPv6 address or hostname without port.');
         }
         syncICMPFamilyMode();
       } else {
@@ -1143,14 +1157,14 @@
             targetField.placeholder = 'example.com:443';
           }
           if (targetHintField) {
-            targetHintField.textContent = 'Für TCP: host:port';
+            targetHintField.textContent = tr('monitorHintTCP', 'For TCP: host:port');
           }
         } else if (kind === 'icmp') {
           if (targetField) {
             targetField.placeholder = '1.1.1.1';
           }
           if (targetHintField) {
-            targetHintField.textContent = 'Für ICMP: IPv4/IPv6-Adresse';
+            targetHintField.textContent = tr('monitorHintICMPShort', 'For ICMP: IPv4/IPv6 address');
           }
         }
       }
@@ -1175,7 +1189,7 @@
       if (!title || !idField || !nameField || !groupField || !kindField || !tlsModeField || !targetField || !intervalField || !timeoutField || !expectedStatusField || !expectedTextField || !enabledField || !notifyField || !dialog) {
         return;
       }
-      title.textContent = 'Monitor anlegen';
+      title.textContent = tr('monitorCreateTitle', 'Create monitor');
       idField.value = '';
       nameField.value = '';
       groupField.value = '';
@@ -1237,7 +1251,7 @@
       if (!title || !idField || !nameField || !groupField || !kindField || !tlsModeField || !targetField || !intervalField || !timeoutField || !expectedStatusField || !expectedTextField || !enabledField || !notifyField || !dialog) {
         return;
       }
-      title.textContent = 'Monitor bearbeiten';
+      title.textContent = tr('monitorEditTitle', 'Edit monitor');
       idField.value = button.dataset.id || '';
       nameField.value = button.dataset.name || '';
       groupField.value = button.dataset.group || '';
@@ -1871,7 +1885,7 @@
       month: new Intl.DateTimeFormat(undefined, { month: 'short', year: 'numeric' })
     };
 
-    const languageTag = ((navigator.languages && navigator.languages[0]) || navigator.language || 'en').toLowerCase();
+    const languageTag = ((document.documentElement && document.documentElement.lang) || (navigator.languages && navigator.languages[0]) || navigator.language || 'en').toLowerCase();
     const durationUnits = (() => {
       if (languageTag.startsWith('de')) {
         return { day: 'T', hour: 'Std.', minute: 'Min.', second: 'Sek.' };
@@ -1884,18 +1898,10 @@
       }
       return { day: 'd', hour: 'h', minute: 'min.', second: 'sec.' };
     })();
-    const cycleLabels = (() => {
-      if (languageTag.startsWith('de')) {
-        return { checking: 'Prüfung läuft …', nextIn: 'Nächste Prüfung in' };
-      }
-      if (languageTag.startsWith('fr')) {
-        return { checking: 'Vérification en cours…', nextIn: 'Prochaine vérification dans' };
-      }
-      if (languageTag.startsWith('es')) {
-        return { checking: 'Comprobación en curso…', nextIn: 'Próxima comprobación en' };
-      }
-      return { checking: 'Checking…', nextIn: 'Next check in' };
-    })();
+    const cycleLabels = {
+      checking: tr('monitorCycleChecking', 'Checking…'),
+      nextIn: tr('monitorCycleNextIn', 'Next check in')
+    };
 
     const formatDurationCompact = (totalSeconds) => {
       const safeSeconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
@@ -2726,7 +2732,9 @@
       trendDetailLatencyXEnd.textContent = formatDateValue(timeline.endDate.toISOString(), timeline.config.format || 'minute');
 
       if (slotsWithValues.length === 0 && downSlots.length === 0) {
-        trendDetailLatencyCaption.textContent = `Keine Latenzwerte für ${latencyRangeLabels[selectedRange] || '1h'} vorhanden.`;
+        trendDetailLatencyCaption.textContent = tr('trendLatencyNoValues', 'No latency values available for {range}.', {
+          range: latencyRangeLabels[selectedRange] || '1h'
+        });
         return;
       }
 
@@ -2756,7 +2764,7 @@
           bindLatencySlotTooltip(item, tooltipText, item);
         } else {
           item.classList.add('latency-slot-empty');
-          const tooltipText = `${formatDateValue(slotDate, timeline.config.format || 'minute')} · Keine Daten`;
+          const tooltipText = `${formatDateValue(slotDate, timeline.config.format || 'minute')} · ${tr('trendNoData', 'No data')}`;
           item.title = tooltipText;
           bindLatencySlotTooltip(item, tooltipText);
         }
@@ -2828,13 +2836,15 @@
           trendDetailLatencyXEnd.textContent = '—';
         }
         setLatencyRangeButtonsState(selectedRange, true);
-        trendDetailLatencyCaption.textContent = 'Latenz-Graph ist nur für einzelne Monitore verfügbar.';
+        trendDetailLatencyCaption.textContent = tr('trendLatencySingleOnly', 'Latency chart is only available for individual monitors.');
         return;
       }
 
       trendDetailLatencyChart.hidden = false;
       setLatencyRangeButtonsState(selectedRange, true);
-      trendDetailLatencyCaption.textContent = `Lade Latenz (${latencyRangeLabels[selectedRange] || '1h'}) …`;
+      trendDetailLatencyCaption.textContent = tr('trendLatencyLoading', 'Loading latency ({range}) …', {
+        range: latencyRangeLabels[selectedRange] || '1h'
+      });
 
       try {
         const response = await fetch(`${appBase}monitors/latency-history?monitor_id=${encodeURIComponent(String(monitorID))}&range=${encodeURIComponent(selectedRange)}`, {
@@ -2856,7 +2866,7 @@
           }
         }
         hideLatencyTooltip();
-        trendDetailLatencyCaption.textContent = 'Latenz-Graph konnte nicht geladen werden.';
+        trendDetailLatencyCaption.textContent = tr('trendLatencyLoadFailed', 'Could not load latency chart.');
         setLatencyRangeButtonsState(selectedRange, false);
       } finally {
       }
@@ -2869,9 +2879,9 @@
       const monitorID = Number.parseInt(trigger.dataset.monitorId || '', 10);
       const bars = Array.from(trigger.querySelectorAll('.trend-bar'));
       const barsDescending = [...bars].reverse();
-      trendDetailTitle.textContent = trigger.dataset.monitorName || 'Trenddetails';
-      trendDetailSubtitle.textContent = `${trigger.dataset.monitorKind || ''} · ${trigger.dataset.lastMessage || 'Keine Detailmeldung'}`;
-      trendDetailStatus.textContent = trigger.dataset.status || 'UNKNOWN';
+      trendDetailTitle.textContent = trigger.dataset.monitorName || tr('trendTitleFallback', 'Trend details');
+      trendDetailSubtitle.textContent = `${trigger.dataset.monitorKind || ''} · ${trigger.dataset.lastMessage || tr('trendNoDetailMessage', 'No detail message')}`;
+      trendDetailStatus.textContent = trigger.dataset.status || tr('statusUnknown', 'Unknown');
       trendDetailUptime.textContent = trigger.dataset.uptime || '—';
       const lastCheckDate = new Date(trigger.dataset.lastCheck || '');
       if (Number.isNaN(lastCheckDate.getTime())) {
@@ -2932,7 +2942,7 @@
         if (checks > 0) {
           result.textContent = `${bar.dataset.label || '—'} · Ø ${formatLatency(bar.dataset.avgMs)} · Min ${formatLatency(bar.dataset.minMs)} · Max ${formatLatency(bar.dataset.maxMs)}`;
         } else {
-          result.textContent = bar.dataset.label || 'Keine Daten';
+          result.textContent = bar.dataset.label || tr('trendNoData', 'No data');
         }
         row.appendChild(when);
         row.appendChild(result);
@@ -2958,14 +2968,18 @@
         return;
       }
       if (total <= 0) {
-        filterStatus.textContent = 'Keine Statusänderungen vorhanden.';
+        filterStatus.textContent = tr('stateEventsNone', 'No status changes yet.');
         return;
       }
       if (pageCount <= 1) {
-        filterStatus.textContent = `${total} Einträge`;
+        filterStatus.textContent = `${total} ${tr('paginationEntries', 'entries')}`;
         return;
       }
-      filterStatus.textContent = `${visible} von ${total} Einträgen · Seite ${page} von ${pageCount}`;
+      filterStatus.textContent = tr('paginationSummary', 'Page {current} of {totalPages} · {totalItems} entries', {
+        current: page,
+        totalPages: pageCount,
+        totalItems: `${visible} ${tr('paginationOf', 'of')} ${total}`
+      });
     };
 
     const applyStateEventFilters = (requestedPage = stateEventsPage) => {
@@ -3082,7 +3096,7 @@
       };
 
       const lines = [
-        ['Zeitpunkt', 'Monitor', 'Von', 'Nach', 'Details'],
+        [tr('csvHeaderTime', 'Time'), tr('csvHeaderMonitor', 'Monitor'), tr('csvHeaderFrom', 'From'), tr('csvHeaderTo', 'To'), tr('csvHeaderDetails', 'Details')],
         ...visibleRows.map((row) => [
           row.dataset.when || '',
           row.dataset.monitor || '',
@@ -3096,7 +3110,7 @@
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `goup-statusaenderungen-${new Date().toISOString().replace(/[:]/g, '-').slice(0, 19)}.csv`;
+      link.download = `${tr('csvFilenamePrefix', 'goup-status-changes')}-${new Date().toISOString().replace(/[:]/g, '-').slice(0, 19)}.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

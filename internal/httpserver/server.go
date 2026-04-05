@@ -32,14 +32,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
-	"golang.org/x/net/html"
 	webassets "goup/assets"
 	"goup/internal/auth"
 	"goup/internal/config"
 	"goup/internal/monitor"
 	store "goup/internal/store/sqlite"
 	"goup/web"
+
+	"github.com/gorilla/websocket"
+	"golang.org/x/net/html"
 )
 
 type Dependencies struct {
@@ -59,6 +60,7 @@ type Server struct {
 	logger              *slog.Logger
 	store               *store.Store
 	controlStore        *store.ControlPlaneStore
+	i18n                translationCatalog
 	adminCookieKey      string
 	tenantStores        *store.TenantStoreManager
 	defaultTenant       store.Tenant
@@ -92,68 +94,77 @@ type localLoginAttempt struct {
 }
 
 type pageData struct {
-	Title               string
-	HideTopbar          bool
-	User                *auth.UserSession
-	IsAdmin             bool
-	Stats               store.DashboardStats
-	Error               string
-	Notice              string
-	FormAction          string
-	BackURL             string
-	IsEdit              bool
-	SettingsMode        bool
-	AuthEnabled         bool
-	AuthDisabled        bool
-	OIDCTenantOnly      bool
-	TrendValue          string
-	TrendLabel          string
-	TrendRanges         []trendRangeOptionView
-	Monitors            []monitorView
-	MonitorGroups       []monitorGroupView
-	AvailableGroups     []string
-	RemoteNodes         []remoteNodeView
-	HasRemoteNodes      bool
-	MonitorExecutors    []monitorExecutorOptionView
-	Events              []notificationEventView
-	StateEvents         []monitorStateEventView
-	AdminTenants        []store.Tenant
-	AdminMonitorCount   int
+	Title                string
+	UILanguage           string
+	Translations         map[string]string
+	HideTopbar           bool
+	User                 *auth.UserSession
+	IsAdmin              bool
+	Stats                store.DashboardStats
+	Error                string
+	Notice               string
+	FormAction           string
+	BackURL              string
+	IsEdit               bool
+	SettingsMode         bool
+	AuthEnabled          bool
+	AuthDisabled         bool
+	OIDCTenantOnly       bool
+	TrendValue           string
+	TrendLabel           string
+	TrendRanges          []trendRangeOptionView
+	Monitors             []monitorView
+	MonitorGroups        []monitorGroupView
+	AvailableGroups      []string
+	RemoteNodes          []remoteNodeView
+	HasRemoteNodes       bool
+	MonitorExecutors     []monitorExecutorOptionView
+	Events               []notificationEventView
+	StateEvents          []monitorStateEventView
+	AdminTenants         []store.Tenant
+	AdminMonitorCount    int
 	AdminRemoteNodeCount int
-	AdminTenant         store.Tenant
-	AdminProviders      []store.AuthProvider
-	AdminProviderRows   []adminProviderOverviewRow
-	AdminProvider       store.AuthProvider
-	AdminLocalUsers     []store.LocalUser
-	AdminTenantUsers    []store.TenantUser
-	AdminUserRows       []adminUserOverviewRow
-	AdminLocalUser      store.LocalUser
-	AdminRemoteNodeRows []adminRemoteNodeOverviewRow
-	ProfileUser         store.TenantUser
-	ProfileNotify       store.UserNotificationSettings
-	AdminAuditEvents    []store.AuditEvent
-	AuditAction         string
-	AuditActor          string
-	AuditTargetType     string
-	AuditActions        []string
-	AuditTargetTypes    []string
-	GlobalSMTP          store.GlobalSMTPSettings
-	ControlPlaneAdmin   bool
-	AutoDBPath          string
-	TenantSlug          string
-	TenantName          string
-	AppBase             string
-	LoginProviders      []store.AuthProvider
-	HasLocalLogin       bool
-	HasOIDCLogin        bool
-	ResetEnabled        bool
-	ResetToken          string
-	AdminSetup          bool
-	AdminUsername       string
-	TOTPRequired        bool
-	TOTPEnabled         bool
-	TOTPSecret          string
-	TOTPProvisioningURI string
+	AdminTenant          store.Tenant
+	AdminProviders       []store.AuthProvider
+	AdminProviderRows    []adminProviderOverviewRow
+	AdminProvider        store.AuthProvider
+	AdminLocalUsers      []store.LocalUser
+	AdminTenantUsers     []store.TenantUser
+	AdminUserRows        []adminUserOverviewRow
+	AdminLocalUser       store.LocalUser
+	AdminRemoteNodeRows  []adminRemoteNodeOverviewRow
+	ProfileUser          store.TenantUser
+	ProfileNotify        store.UserNotificationSettings
+	AdminAuditEvents     []store.AuditEvent
+	AuditAction          string
+	AuditActor           string
+	AuditTargetType      string
+	AuditActions         []string
+	AuditTargetTypes     []string
+	GlobalSMTP           store.GlobalSMTPSettings
+	ControlPlaneAdmin    bool
+	AutoDBPath           string
+	TenantSlug           string
+	TenantName           string
+	AppBase              string
+	LoginProviders       []store.AuthProvider
+	HasLocalLogin        bool
+	HasOIDCLogin         bool
+	ResetEnabled         bool
+	ResetToken           string
+	AdminSetup           bool
+	AdminUsername        string
+	TOTPRequired         bool
+	TOTPEnabled          bool
+	TOTPSecret           string
+	TOTPProvisioningURI  string
+	LanguageOptions      []languageOptionView
+}
+
+type languageOptionView struct {
+	Code     string
+	Label    string
+	Selected bool
 }
 
 const (
@@ -226,13 +237,13 @@ type remoteNodeEventView struct {
 }
 
 type adminProviderOverviewRow struct {
-	TenantID     int64
-	TenantName   string
-	TenantSlug   string
-	ProviderKey  string
-	Kind         string
-	DisplayName  string
-	Enabled      bool
+	TenantID    int64
+	TenantName  string
+	TenantSlug  string
+	ProviderKey string
+	Kind        string
+	DisplayName string
+	Enabled     bool
 }
 
 type adminUserOverviewRow struct {
@@ -412,12 +423,17 @@ func New(deps Dependencies) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	i18n, err := loadTranslationCatalog(web.FS, "i18n")
+	if err != nil {
+		return nil, err
+	}
 
 	s := &Server{
 		cfg:                 deps.Config,
 		logger:              deps.Logger,
 		store:               deps.Store,
 		controlStore:        deps.ControlStore,
+		i18n:                i18n,
 		adminCookieKey:      strings.TrimSpace(deps.AdminCookieKey),
 		tenantStores:        deps.TenantStores,
 		defaultTenant:       deps.DefaultTenant,
@@ -983,18 +999,26 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unable to persist user", http.StatusInternalServerError)
 		return
 	}
+	preferredLanguage := normalizeUILanguage(resolvedUser.PreferredLanguage)
+	if strings.TrimSpace(resolvedUser.PreferredLanguage) == "" {
+		preferredLanguage = detectPreferredLanguage(r)
+		if err := s.controlStore.UpdateUserPreferredLanguageForTenant(r.Context(), resolvedUser.TenantID, resolvedUser.UserID, preferredLanguage); err != nil {
+			s.logger.Warn("persist preferred language failed", "user_id", resolvedUser.UserID, "tenant_id", resolvedUser.TenantID, "error", err)
+		}
+	}
 
 	session := auth.UserSession{
-		UserID:       resolvedUser.UserID,
-		Subject:      identity.Subject,
-		Email:        resolvedUser.Email,
-		Name:         resolvedUser.DisplayName,
-		TenantID:     resolvedUser.TenantID,
-		TenantSlug:   resolvedUser.TenantSlug,
-		TenantName:   resolvedUser.TenantName,
-		Role:         resolvedUser.Role,
-		AuthProvider: "oidc-primary",
-		ExpiresAt:    time.Now().Add(12 * time.Hour),
+		UserID:            resolvedUser.UserID,
+		Subject:           identity.Subject,
+		Email:             resolvedUser.Email,
+		Name:              resolvedUser.DisplayName,
+		PreferredLanguage: preferredLanguage,
+		TenantID:          resolvedUser.TenantID,
+		TenantSlug:        resolvedUser.TenantSlug,
+		TenantName:        resolvedUser.TenantName,
+		Role:              resolvedUser.Role,
+		AuthProvider:      "oidc-primary",
+		ExpiresAt:         time.Now().Add(12 * time.Hour),
 	}
 	if err := s.sessions.Set(w, session); err != nil {
 		http.Error(w, "unable to create session", http.StatusInternalServerError)
@@ -3272,6 +3296,18 @@ func (s *Server) render(w http.ResponseWriter, name string, data pageData) {
 	case "login", "admin_access", "admin_setup", "no_tenant":
 		data.HideTopbar = true
 	}
+	if strings.TrimSpace(data.UILanguage) == "" {
+		if data.User != nil {
+			data.UILanguage = normalizeUILanguage(data.User.PreferredLanguage)
+		} else {
+			data.UILanguage = defaultUILanguage
+		}
+	}
+	if data.Translations == nil {
+		data.Translations = s.translationsForLanguage(data.UILanguage)
+	}
+	data.Error = localizeFlashMessage(data.Translations, data.Error)
+	data.Notice = localizeFlashMessage(data.Translations, data.Notice)
 
 	tmpl, ok := s.templates[name]
 	if !ok {
@@ -5151,20 +5187,29 @@ func (s *Server) handleTenantPasswordResetRequest(w http.ResponseWriter, r *http
 	}
 
 	resetLink := s.cfg.BaseURL + "/" + tenantSlug + "/password-reset/confirm?token=" + url.QueryEscape(token)
-	body := "Hallo " + strings.TrimSpace(localUser.DisplayName) + ",\n\n" +
-		"für dein Konto wurde eine Passwort-Zurücksetzung angefordert.\n" +
-		"Link: " + resetLink + "\n\n" +
-		"Dieser Link ist 30 Minuten gültig.\n" +
-		"Falls du das nicht angefordert hast, ignoriere diese E-Mail."
-	if strings.TrimSpace(localUser.DisplayName) == "" {
-		body = "Hallo,\n\n" +
-			"für dein Konto wurde eine Passwort-Zurücksetzung angefordert.\n" +
-			"Link: " + resetLink + "\n\n" +
-			"Dieser Link ist 30 Minuten gültig.\n" +
-			"Falls du das nicht angefordert hast, ignoriere diese E-Mail."
+	preferredLanguage := defaultUILanguage
+	if tenantUser, err := s.controlStore.GetTenantUser(r.Context(), tenant.ID, localUser.UserID); err == nil {
+		preferredLanguage = normalizeUILanguage(tenantUser.PreferredLanguage)
 	}
+	translations := s.translationsForLanguage(preferredLanguage)
 
-	if err := sendSMTPMail(deliveryCfg, localUser.Email, "GoUp Passwort zurücksetzen", body); err != nil {
+	greeting := translateFlashMessage(translations, "email.password_reset.greeting_generic", "Hello,", nil)
+	if displayName := strings.TrimSpace(localUser.DisplayName); displayName != "" {
+		greeting = translateFlashMessage(translations, "email.password_reset.greeting_named", "Hello {name},", map[string]string{"name": displayName})
+	}
+	bodyLines := []string{
+		greeting,
+		"",
+		translateFlashMessage(translations, "email.password_reset.requested", "A password reset has been requested for your account.", nil),
+		translateFlashMessage(translations, "email.password_reset.link_line", "Link: {reset_link}", map[string]string{"reset_link": resetLink}),
+		"",
+		translateFlashMessage(translations, "email.password_reset.valid_for", "This link is valid for 30 minutes.", nil),
+		translateFlashMessage(translations, "email.password_reset.ignore", "If you did not request this, you can ignore this email.", nil),
+	}
+	body := strings.Join(bodyLines, "\n")
+	subject := translateFlashMessage(translations, "email.password_reset.subject", "GoUp reset password", nil)
+
+	if err := sendSMTPMail(deliveryCfg, localUser.Email, subject, body); err != nil {
 		s.logger.Error("send password reset mail failed", "tenant_id", tenant.ID, "user_id", localUser.UserID, "error", err)
 	}
 
@@ -5372,18 +5417,26 @@ func (s *Server) handleTenantAuthCallback(w http.ResponseWriter, r *http.Request
 		http.Error(w, "unable to persist user", http.StatusInternalServerError)
 		return
 	}
+	preferredLanguage := normalizeUILanguage(resolvedUser.PreferredLanguage)
+	if strings.TrimSpace(resolvedUser.PreferredLanguage) == "" {
+		preferredLanguage = detectPreferredLanguage(r)
+		if err := s.controlStore.UpdateUserPreferredLanguageForTenant(r.Context(), resolvedUser.TenantID, resolvedUser.UserID, preferredLanguage); err != nil {
+			s.logger.Warn("persist preferred language failed", "tenant_id", tenant.ID, "user_id", resolvedUser.UserID, "error", err)
+		}
+	}
 
 	session := auth.UserSession{
-		UserID:       resolvedUser.UserID,
-		Subject:      identity.Subject,
-		Email:        resolvedUser.Email,
-		Name:         resolvedUser.DisplayName,
-		TenantID:     resolvedUser.TenantID,
-		TenantSlug:   resolvedUser.TenantSlug,
-		TenantName:   resolvedUser.TenantName,
-		Role:         resolvedUser.Role,
-		AuthProvider: provider.ProviderKey,
-		ExpiresAt:    time.Now().Add(12 * time.Hour),
+		UserID:            resolvedUser.UserID,
+		Subject:           identity.Subject,
+		Email:             resolvedUser.Email,
+		Name:              resolvedUser.DisplayName,
+		PreferredLanguage: preferredLanguage,
+		TenantID:          resolvedUser.TenantID,
+		TenantSlug:        resolvedUser.TenantSlug,
+		TenantName:        resolvedUser.TenantName,
+		Role:              resolvedUser.Role,
+		AuthProvider:      provider.ProviderKey,
+		ExpiresAt:         time.Now().Add(12 * time.Hour),
 	}
 	if err := s.sessions.Set(w, session); err != nil {
 		http.Error(w, "unable to create session", http.StatusInternalServerError)
@@ -5463,18 +5516,26 @@ func (s *Server) handleTenantLocalLogin(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.clearLocalLoginAttempts(key)
+	preferredLanguage := normalizeUILanguage(resolvedUser.PreferredLanguage)
+	if strings.TrimSpace(resolvedUser.PreferredLanguage) == "" {
+		preferredLanguage = detectPreferredLanguage(r)
+		if err := s.controlStore.UpdateUserPreferredLanguageForTenant(r.Context(), resolvedUser.TenantID, resolvedUser.UserID, preferredLanguage); err != nil {
+			s.logger.Warn("persist preferred language failed", "tenant_id", tenant.ID, "user_id", resolvedUser.UserID, "error", err)
+		}
+	}
 
 	session := auth.UserSession{
-		UserID:       resolvedUser.UserID,
-		Subject:      "local:" + strings.ToLower(loginName),
-		Email:        resolvedUser.Email,
-		Name:         resolvedUser.DisplayName,
-		TenantID:     resolvedUser.TenantID,
-		TenantSlug:   resolvedUser.TenantSlug,
-		TenantName:   resolvedUser.TenantName,
-		Role:         resolvedUser.Role,
-		AuthProvider: "local",
-		ExpiresAt:    time.Now().Add(12 * time.Hour),
+		UserID:            resolvedUser.UserID,
+		Subject:           "local:" + strings.ToLower(loginName),
+		Email:             resolvedUser.Email,
+		Name:              resolvedUser.DisplayName,
+		PreferredLanguage: preferredLanguage,
+		TenantID:          resolvedUser.TenantID,
+		TenantSlug:        resolvedUser.TenantSlug,
+		TenantName:        resolvedUser.TenantName,
+		Role:              resolvedUser.Role,
+		AuthProvider:      "local",
+		ExpiresAt:         time.Now().Add(12 * time.Hour),
 	}
 	if err := s.sessions.Set(w, session); err != nil {
 		http.Error(w, "unable to create session", http.StatusInternalServerError)

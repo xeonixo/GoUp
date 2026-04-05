@@ -14,16 +14,17 @@ import (
 const sessionCookieName = "goup_session"
 
 type UserSession struct {
-	UserID       int64     `json:"uid,omitempty"`
-	Subject      string    `json:"sub"`
-	Email        string    `json:"email"`
-	Name         string    `json:"name"`
-	TenantID     int64     `json:"tenant_id,omitempty"`
-	TenantSlug   string    `json:"tenant_slug,omitempty"`
-	TenantName   string    `json:"tenant_name,omitempty"`
-	Role         string    `json:"role,omitempty"`
-	AuthProvider string    `json:"auth_provider,omitempty"`
-	ExpiresAt    time.Time `json:"exp"`
+	UserID            int64     `json:"uid,omitempty"`
+	Subject           string    `json:"sub"`
+	Email             string    `json:"email"`
+	Name              string    `json:"name"`
+	PreferredLanguage string    `json:"preferred_language,omitempty"`
+	TenantID          int64     `json:"tenant_id,omitempty"`
+	TenantSlug        string    `json:"tenant_slug,omitempty"`
+	TenantName        string    `json:"tenant_name,omitempty"`
+	Role              string    `json:"role,omitempty"`
+	AuthProvider      string    `json:"auth_provider,omitempty"`
+	ExpiresAt         time.Time `json:"exp"`
 }
 
 type SessionManager struct {

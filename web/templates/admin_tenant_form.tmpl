@@ -1,14 +1,14 @@
 {{define "content"}}
 <div class="admin-section">
   <nav class="admin-nav card">
-    <a href="/admin/" class="admin-nav-link">Allgemein</a>
-    <a href="/admin/tenants" class="admin-nav-link is-active">Tenants</a>
-    <a href="/admin/providers" class="admin-nav-link">OCID-Provider</a>
-    <a href="/admin/users" class="admin-nav-link">Benutzerverwaltung</a>
-    <a href="/admin/remote-nodes" class="admin-nav-link">Remote Nodes</a>
+    <a href="/admin/" class="admin-nav-link">{{index $.Translations "admin.nav.general"}}</a>
+    <a href="/admin/tenants" class="admin-nav-link is-active">{{index $.Translations "admin.nav.tenants"}}</a>
+    <a href="/admin/providers" class="admin-nav-link">{{index $.Translations "admin.nav.providers"}}</a>
+    <a href="/admin/users" class="admin-nav-link">{{index $.Translations "admin.nav.users"}}</a>
+    <a href="/admin/remote-nodes" class="admin-nav-link">{{index $.Translations "admin.nav.remote_nodes"}}</a>
   </nav>
 
-  <h1>{{if .IsEdit}}Tenant bearbeiten{{else}}Neuen Tenant anlegen{{end}}</h1>
+  <h1>{{if .IsEdit}}{{index $.Translations "admin.tenant_form.title_edit"}}{{else}}{{index $.Translations "admin.tenant_form.title_new"}}{{end}}</h1>
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
@@ -19,38 +19,38 @@
     </div>
 
     <div class="form-group">
-      <label for="slug">Slug *</label>
-      <input type="text" id="slug" name="slug" value="{{.AdminTenant.Slug}}" {{if .IsEdit}}readonly{{else}}required{{end}} placeholder="z.B. default, tenant-a">
-      {{if .IsEdit}}<small class="muted">Slug kann nach Erstellung nicht geändert werden.</small>{{end}}
+      <label for="slug">{{index $.Translations "admin.tenant_form.slug_label"}} *</label>
+      <input type="text" id="slug" name="slug" value="{{.AdminTenant.Slug}}" {{if .IsEdit}}readonly{{else}}required{{end}} placeholder="{{index $.Translations "admin.tenant_form.slug_placeholder"}}">
+      {{if .IsEdit}}<small class="muted">{{index $.Translations "admin.tenant_form.slug_readonly_note"}}</small>{{end}}
     </div>
 
     <div class="form-group">
-      <label for="name">Name *</label>
-      <input type="text" id="name" name="name" value="{{.AdminTenant.Name}}" required placeholder="z.B. Default, Tenant A">
+      <label for="name">{{index $.Translations "admin.tenant_form.name_label"}} *</label>
+      <input type="text" id="name" name="name" value="{{.AdminTenant.Name}}" required placeholder="{{index $.Translations "admin.tenant_form.name_placeholder"}}">
     </div>
 
     <div class="form-group">
-      <label>Datenbank</label>
+      <label>{{index $.Translations "admin.tenant_form.database_label"}}</label>
       <div class="notice">
         {{if .IsEdit}}
         {{.AdminTenant.DBPath}}
         {{else}}
-        Wird automatisch erzeugt: {{.AutoDBPath}}
+        {{index $.Translations "admin.tenant_form.database_auto_created"}}: {{.AutoDBPath}}
         {{end}}
       </div>
-      <p class="muted compact">Der Pfad wird automatisch aus Tenant-Slug und `GOUP_DATA_DIR` abgeleitet.</p>
+      <p class="muted compact">{{index $.Translations "admin.tenant_form.database_derived_note"}}</p>
     </div>
 
     <div class="form-group">
       <label for="active">
         <input type="checkbox" id="active" name="active" value="1" {{if .IsEdit}}{{if .AdminTenant.Active}}checked{{end}}{{else}}checked{{end}}>
-        Aktiv
+        {{index $.Translations "admin.tenant_form.active_checkbox"}}
       </label>
     </div>
 
     <div class="form-actions">
-      <button type="submit" class="button">Speichern</button>
-      <a href="/admin/tenants" class="button button-secondary">Abbrechen</a>
+      <button type="submit" class="button">{{index $.Translations "admin.tenant_form.save_button"}}</button>
+      <a href="/admin/tenants" class="button button-secondary">{{index $.Translations "admin.tenant_form.cancel_button"}}</a>
     </div>
   </form>
 </div>

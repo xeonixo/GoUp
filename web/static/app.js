@@ -9,7 +9,7 @@
   });
 
   window.addEventListener('DOMContentLoaded', () => {
-    const languageTag = ((navigator.languages && navigator.languages[0]) || navigator.language || 'en').toLowerCase();
+    const languageTag = ((document.documentElement && document.documentElement.lang) || (navigator.languages && navigator.languages[0]) || navigator.language || 'en').toLowerCase();
     const durationUnits = (() => {
       if (languageTag.startsWith('de')) {
         return { day: 'T', hour: 'Std.', minute: 'Min.', second: 'Sek.' };
@@ -143,15 +143,17 @@
     const hamburger = document.getElementById('topbar-hamburger');
     const collapsible = document.getElementById('topbar-collapsible');
     if (hamburger && collapsible) {
+      const menuOpenLabel = String(hamburger.getAttribute('data-menu-open-label') || hamburger.getAttribute('aria-label') || 'Open menu');
+      const menuCloseLabel = String(hamburger.getAttribute('data-menu-close-label') || 'Close menu');
       const openMenu = () => {
         collapsible.classList.add('is-open');
         hamburger.setAttribute('aria-expanded', 'true');
-        hamburger.setAttribute('aria-label', 'Menü schließen');
+        hamburger.setAttribute('aria-label', menuCloseLabel);
       };
       const closeMenu = () => {
         collapsible.classList.remove('is-open');
         hamburger.setAttribute('aria-expanded', 'false');
-        hamburger.setAttribute('aria-label', 'Menü öffnen');
+        hamburger.setAttribute('aria-label', menuOpenLabel);
       };
       hamburger.addEventListener('click', (e) => {
         e.stopPropagation();
