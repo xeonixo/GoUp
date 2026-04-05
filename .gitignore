@@ -11,3 +11,4 @@ coverage.out
 .tmp*
 tmp_*
 .vscode/
+codeql-custom-queries-go/
