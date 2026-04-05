@@ -70,5 +70,42 @@
         event.preventDefault();
       }
     });
+
+    // Mobile hamburger menu
+    const hamburger = document.getElementById('topbar-hamburger');
+    const collapsible = document.getElementById('topbar-collapsible');
+    if (hamburger && collapsible) {
+      const openMenu = () => {
+        collapsible.classList.add('is-open');
+        hamburger.setAttribute('aria-expanded', 'true');
+        hamburger.setAttribute('aria-label', 'Menü schließen');
+      };
+      const closeMenu = () => {
+        collapsible.classList.remove('is-open');
+        hamburger.setAttribute('aria-expanded', 'false');
+        hamburger.setAttribute('aria-label', 'Menü öffnen');
+      };
+      hamburger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (collapsible.classList.contains('is-open')) {
+          closeMenu();
+        } else {
+          openMenu();
+        }
+      });
+      document.addEventListener('click', (e) => {
+        if (collapsible.classList.contains('is-open') &&
+            !collapsible.contains(e.target) &&
+            !hamburger.contains(e.target)) {
+          closeMenu();
+        }
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && collapsible.classList.contains('is-open')) {
+          closeMenu();
+          hamburger.focus();
+        }
+      });
+    }
   });
 })();

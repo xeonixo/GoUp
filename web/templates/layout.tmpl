@@ -25,30 +25,37 @@
       <span class="subtitle">Tenant: {{if .User.TenantName}}{{.User.TenantName}}{{else}}{{.User.TenantSlug}}{{end}}</span>
       {{end}}
     </div>
-    {{block "topbar_actions" .}}{{end}}
-    <nav class="topbar-nav">
-      {{if .ControlPlaneAdmin}}
-      <span class="user-pill">Admin Access</span>
-      <a class="button button-secondary topbar-icon-link" href="/admin/security" aria-label="Control-Plane Sicherheit" title="Control-Plane Sicherheit">
-        <span aria-hidden="true">⚙️</span>
-        <span class="sr-only">Control-Plane Sicherheit</span>
-      </a>
-      <a class="button button-secondary topbar-icon-link" href="/admin/access?logout=1" aria-label="Control-Plane Logout" title="Control-Plane Logout">
-        <span aria-hidden="true">⎋</span>
-        <span class="sr-only">Control-Plane Logout</span>
-      </a>
-      {{else if .User}}
-      <span class="user-pill">{{if .User.Name}}{{.User.Name}}{{else}}{{.User.Email}}{{end}}</span>
-      <a class="button button-secondary topbar-icon-link" href="{{.AppBase}}settings/profile" aria-label="Settings" title="Settings">
-        <span aria-hidden="true">⚙️</span>
-        <span class="sr-only">Settings</span>
-      </a>
-      <a class="button button-secondary topbar-icon-link" href="/auth/logout" aria-label="Logout" title="Logout">
-        <span aria-hidden="true">⎋</span>
-        <span class="sr-only">Logout</span>
-      </a>
-      {{end}}
-    </nav>
+    <button class="topbar-hamburger" id="topbar-hamburger" type="button" aria-label="Menü öffnen" aria-expanded="false" aria-controls="topbar-collapsible">
+      <span class="hamburger-line"></span>
+      <span class="hamburger-line"></span>
+      <span class="hamburger-line"></span>
+    </button>
+    <div class="topbar-collapsible" id="topbar-collapsible">
+      {{block "topbar_actions" .}}{{end}}
+      <nav class="topbar-nav">
+        {{if .ControlPlaneAdmin}}
+        <span class="user-pill">Admin Access</span>
+        <a class="button button-secondary topbar-icon-link" href="/admin/security" aria-label="Control-Plane Sicherheit" title="Control-Plane Sicherheit">
+          <span aria-hidden="true">⚙️</span>
+          <span class="sr-only">Control-Plane Sicherheit</span>
+        </a>
+        <a class="button button-secondary topbar-icon-link" href="/admin/access?logout=1" aria-label="Control-Plane Logout" title="Control-Plane Logout">
+          <span aria-hidden="true">⎋</span>
+          <span class="sr-only">Abmelden</span>
+        </a>
+        {{else if .User}}
+        <span class="user-pill">{{if .User.Name}}{{.User.Name}}{{else}}{{.User.Email}}{{end}}</span>
+        <a class="button button-secondary topbar-icon-link" href="{{.AppBase}}settings/profile" aria-label="Einstellungen" title="Einstellungen">
+          <span aria-hidden="true">⚙️</span>
+          <span class="sr-only">Einstellungen</span>
+        </a>
+        <a class="button button-secondary topbar-icon-link" href="/auth/logout" aria-label="Abmelden" title="Abmelden">
+          <span aria-hidden="true">⎋</span>
+          <span class="sr-only">Abmelden</span>
+        </a>
+        {{end}}
+      </nav>
+    </div>
   </header>
   {{end}}
   <main class="container">

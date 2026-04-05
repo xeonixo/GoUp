@@ -126,6 +126,63 @@ h3 {
   text-align: center;
 }
 
+/* ── topbar collapsible & mobile hamburger ─────────────────────────── */
+.topbar-collapsible {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.topbar-collapsible .topbar-nav {
+  margin-left: 0.1rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--border);
+}
+
+.topbar-hamburger {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0.44rem 0.5rem;
+  margin-left: auto;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: #72cdf8;
+  color: #07111f;
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  cursor: pointer;
+}
+
+.topbar-hamburger:hover {
+  filter: brightness(1.06);
+}
+
+.hamburger-line {
+  display: block;
+  width: 1.05rem;
+  height: 2px;
+  background: currentColor;
+  border-radius: 2px;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.topbar-hamburger[aria-expanded="true"] .hamburger-line:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+
+.topbar-hamburger[aria-expanded="true"] .hamburger-line:nth-child(2) {
+  opacity: 0;
+  transform: scaleX(0);
+}
+
+.topbar-hamburger[aria-expanded="true"] .hamburger-line:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
 .brand {
   display: inline-flex;
   align-items: center;
@@ -194,7 +251,7 @@ h3 {
 }
 
 .stats-grid-wide {
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .split-grid {
@@ -213,7 +270,22 @@ h3 {
 }
 
 .stat-card {
-  min-height: 110px;
+  min-height: 0;
+  padding: 0.65rem 0.8rem;
+}
+
+.stat-card h2 {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 0.2rem;
+}
+
+.stat-card .metric {
+  font-size: 1.35rem;
+  line-height: 1.2;
 }
 
 .stat-card-primary {
@@ -1236,8 +1308,7 @@ li + li {
 @media (max-width: 880px) {
   .hero,
   .split-grid,
-  .inline-grid,
-  .topbar {
+  .inline-grid {
     grid-template-columns: 1fr;
     flex-direction: column;
   }
@@ -1256,17 +1327,101 @@ li + li {
     min-height: 0;
   }
 
-  .topbar-main,
-  .topbar-dashboard-actions {
+  .state-events-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar-hamburger {
+    display: flex;
+  }
+
+  .topbar-collapsible {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: rgba(11, 16, 32, 0.98);
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.38);
+    z-index: 29;
+  }
+
+  .topbar-collapsible.is-open {
+    display: flex;
+  }
+
+  /* Dashboard trend + monitor button in dropdown */
+  .topbar-collapsible .topbar-dashboard-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
     width: 100%;
   }
 
-  .topbar-dashboard-actions {
-    justify-content: space-between;
+  .topbar-collapsible .topbar-trend-range {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.4rem;
+    width: 100%;
   }
 
-  .state-events-toolbar {
-    grid-template-columns: 1fr 1fr;
+  .topbar-collapsible .topbar-trend-range .button {
+    text-align: center;
+    justify-content: center;
+    min-width: 0;
+  }
+
+  .topbar-collapsible #open-create-monitor {
+    width: 100%;
+  }
+
+  /* User nav section in dropdown */
+  .topbar-collapsible .topbar-nav {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.4rem;
+    margin-left: 0;
+    padding-left: 0;
+    border-left: none;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+    width: 100%;
+  }
+
+  .topbar-collapsible .user-pill {
+    display: block;
+    margin: 0 0 0.15rem;
+    padding: 0.1rem 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+    font-size: 0.95rem;
+  }
+
+  .topbar-collapsible .topbar-icon-link {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 0.65rem;
+    min-height: 0;
+    padding: 0.7rem 0.85rem;
+  }
+
+  /* Reveal sr-only label text inside the mobile dropdown */
+  .topbar-collapsible .topbar-icon-link .sr-only {
+    position: static;
+    width: auto;
+    height: auto;
+    padding: 0;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
   }
 }
 
