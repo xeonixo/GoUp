@@ -64,6 +64,7 @@ var whoisExpiryDateFormats = []string{
 func (c WhoisChecker) Check(ctx context.Context, item Monitor) Result {
 	start := time.Now()
 	domain := strings.ToLower(strings.TrimSpace(item.Target))
+	isDEDomain := tldOf(domain) == "de"
 	timeout := item.Timeout
 	if timeout <= 0 {
 		timeout = 15 * time.Second
@@ -104,6 +105,36 @@ func (c WhoisChecker) Check(ctx context.Context, item Monitor) Result {
 	expiry, err := parseWhoisExpiry(domainResp)
 	latency = time.Since(start)
 	if err != nil {
+		if isDEDomain {
+			if whoisResponseIndicatesNoMatch(domainResp) {
+				return Result{
+					MonitorID: item.ID,
+					CheckedAt: time.Now().UTC(),
+					Status:    StatusDown,
+					Latency:   latency,
+					Message:   "DENIC WHOIS liefert kein Ablaufdatum; Domain scheint nicht registriert (keine WHOIS-Einträge)",
+				}
+			}
+
+			if status, ok := parseWhoisStatus(domainResp); ok {
+				return Result{
+					MonitorID: item.ID,
+					CheckedAt: time.Now().UTC(),
+					Status:    StatusUp,
+					Latency:   latency,
+					Message:   fmt.Sprintf("DENIC WHOIS liefert kein Ablaufdatum; nur eingeschränkte Daten. Domain-Status: %s", status),
+				}
+			}
+
+			return Result{
+				MonitorID: item.ID,
+				CheckedAt: time.Now().UTC(),
+				Status:    StatusDegraded,
+				Latency:   latency,
+				Message:   "DENIC WHOIS liefert kein Ablaufdatum; Ablaufprüfung für .de nicht möglich",
+			}
+		}
+
 		return Result{
 			MonitorID: item.ID,
 			CheckedAt: time.Now().UTC(),
@@ -243,4 +274,43 @@ func parseWhoisDate(raw string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, fmt.Errorf("cannot parse date %q", raw)
+}
+
+func parseWhoisStatus(response string) (string, bool) {
+	scanner := bufio.NewScanner(strings.NewReader(response))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(line), "status:") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			status := strings.TrimSpace(parts[1])
+			if status == "" {
+				continue
+			}
+			return status, true
+		}
+	}
+	return "", false
+}
+
+func whoisResponseIndicatesNoMatch(response string) bool {
+	lower := strings.ToLower(response)
+	markers := []string{
+		"no entries found",
+		"no match",
+		"not found",
+		"domain not found",
+		"status: free",
+	}
+	for _, marker := range markers {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }

@@ -59,6 +59,7 @@
     const tlsModeField = document.getElementById('monitor-tls-mode');
     const targetField = document.getElementById('monitor-target');
     const targetHintField = document.getElementById('monitor-target-hint');
+    const targetWarnField = document.getElementById('monitor-target-warn');
     const icmpFamilyRow = document.getElementById('icmp-family-row');
     const icmpFamilyField = document.getElementById('monitor-icmp-family');
     const intervalField = document.getElementById('monitor-interval');
@@ -664,6 +665,19 @@
         }
       };
 
+      const isDEWhoisTarget = (value) => {
+        const domain = String(value || '').trim().toLowerCase().replace(/\.$/, '');
+        return domain.length > 3 && domain.endsWith('.de');
+      };
+
+      const syncWhoisTargetDisclaimer = () => {
+        if (!targetWarnField) {
+          return;
+        }
+        const isWhoisMonitor = kindField?.value === 'whois';
+        targetWarnField.hidden = !(isWhoisMonitor && isDEWhoisTarget(targetField?.value));
+      };
+
       const kind = kindField.value;
       const isHTTPMonitor = kind === 'https';
       const isTCPMonitor = kind === 'tcp';
@@ -770,7 +784,7 @@
           targetField.placeholder = 'example.com';
         }
         if (targetHintField) {
-          targetHintField.textContent = 'Domain ohne Protokoll (z. B. example.com). Prüft Ablaufdatum via WHOIS.';
+          targetHintField.textContent = 'Domain ohne Protokoll (z. B. example.com). Prüft Ablaufdatum bzw. Registrierungsstatus (TLD-abhängig).';
         }
       } else if (isICMPMonitor) {
         useHTTPSField.checked = false;
@@ -810,6 +824,8 @@
       if (!isICMPMonitor && icmpFamilyRow) {
         icmpFamilyRow.hidden = true;
       }
+
+      syncWhoisTargetDisclaimer();
     };
 
     const openCreate = () => {
@@ -899,7 +915,7 @@
     });
     kindField?.addEventListener('change', applyKindRules);
     targetField?.addEventListener('input', () => {
-      if (kindField?.value === 'icmp') {
+      if (kindField?.value === 'icmp' || kindField?.value === 'whois') {
         applyKindRules();
       }
     });
