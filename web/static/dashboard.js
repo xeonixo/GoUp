@@ -56,6 +56,7 @@
     const nameField = document.getElementById('monitor-name');
     const kindField = document.getElementById('monitor-kind');
     const groupField = document.getElementById('monitor-group');
+    const monitorExecutorField = document.getElementById('monitor-executor');
     const monitorForm = document.getElementById('monitor-form');
     const tlsModeField = document.getElementById('monitor-tls-mode');
     const targetRow = document.getElementById('monitor-target-row');
@@ -1101,6 +1102,9 @@
       nameField.value = '';
       groupField.value = '';
       kindField.value = 'https';
+      if (monitorExecutorField) {
+        monitorExecutorField.value = 'local';
+      }
       tlsModeField.value = 'tls';
       if (icmpFamilyField) {
         icmpFamilyField.value = 'ipv4';
@@ -1160,6 +1164,9 @@
       nameField.value = button.dataset.name || '';
       groupField.value = button.dataset.group || '';
       kindField.value = button.dataset.kind || 'https';
+      if (monitorExecutorField) {
+        monitorExecutorField.value = button.dataset.executor || 'local';
+      }
       tlsModeField.value = button.dataset.tlsMode || 'tls';
       if (icmpFamilyField) {
         if (tlsModeField.value === 'starttls') {
@@ -2154,7 +2161,7 @@
         const currentTrendTrigger = currentSummary.querySelector('.service-summary-trend');
         const nextTrendTrigger = nextSummary.querySelector('.service-summary-trend');
         if (currentTrendTrigger && nextTrendTrigger) {
-          ['data-monitor-name', 'data-monitor-kind', 'data-target', 'data-status', 'data-uptime', 'data-trend-label', 'data-last-check', 'data-last-message', 'aria-label'].forEach((attributeName) => {
+          ['data-monitor-name', 'data-monitor-kind', 'data-target', 'data-status', 'data-uptime', 'data-trend-label', 'data-last-check', 'data-last-message', 'data-executor', 'aria-label'].forEach((attributeName) => {
             if (patchAttr(currentTrendTrigger, nextTrendTrigger, attributeName)) {
               changed = true;
             }

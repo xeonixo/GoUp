@@ -1,0 +1,80 @@
+{{define "content"}}
+<div class="admin-section">
+  <nav class="admin-nav card">
+    <a href="/admin/" class="admin-nav-link">Dashboard</a>
+    <a href="/admin/tenants" class="admin-nav-link">Tenants</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link">Provider</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link">Benutzer</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/remote-nodes" class="admin-nav-link is-active">Remote Nodes</a>
+  </nav>
+
+  {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
+  {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+
+  <div class="admin-header">
+    <div>
+      <p class="eyebrow">Remote Ausführung</p>
+      <h1>Remote Nodes für {{.AdminTenant.Name}} ({{.AdminTenant.Slug}})</h1>
+    </div>
+    <a href="/admin/tenants" class="button button-secondary">Zurück zu Tenants</a>
+  </div>
+
+  <form method="post" action="/admin/tenants/{{.AdminTenant.ID}}/remote-nodes/create" class="admin-form card stack">
+    <div class="inline-grid">
+      <label>
+        <span>Name</span>
+        <input type="text" name="name" placeholder="z. B. Werkhalle-Node" required>
+      </label>
+      <label>
+        <span>Heartbeat Timeout (Sek.)</span>
+        <input type="number" name="heartbeat_timeout_seconds" min="30" value="120" required>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="button" type="submit">+ Remote-Node erstellen</button>
+    </div>
+  </form>
+
+  <div class="card table-card">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Node ID</th>
+          <th>Status</th>
+          <th>Zuletzt gesehen</th>
+          <th>Timeout</th>
+          <th>Provisioning URL</th>
+          <th>Aktionen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{if .RemoteNodes}}
+        {{range .RemoteNodes}}
+        <tr>
+          <td>{{.Name}}</td>
+          <td class="break-all"><code>{{.NodeID}}</code></td>
+          <td>{{if .Online}}<span class="status-badge status-badge-success">ONLINE</span>{{else}}<span class="status-badge status-badge-muted">OFFLINE</span>{{end}}</td>
+          <td>{{if .LastSeenAtRaw}}<span class="js-local-datetime" data-utc="{{.LastSeenAtRaw}}">{{.LastSeenAt}}</span>{{else}}—{{end}}</td>
+          <td>{{.HeartbeatWindow}}</td>
+          <td class="break-all">{{.ProvisionURL}}</td>
+          <td class="admin-actions-inline">
+            <form method="post" action="/admin/tenants/{{$.AdminTenant.ID}}/remote-nodes/{{.NodeID}}/rotate-bootstrap" class="inline-form" data-confirm="Bootstrap-Key wirklich neu erstellen? Alte Deployments mit altem Key können dann nicht mehr neu bootstrappen.">
+              <button class="button button-secondary button-small" type="submit">Bootstrap-Key rotieren</button>
+            </form>
+            <form method="post" action="/admin/tenants/{{$.AdminTenant.ID}}/remote-nodes/{{.NodeID}}/delete" class="inline-form" data-confirm="Remote-Node wirklich löschen? Zugewiesene Monitore werden lokal ausgeführt.">
+              <button class="button button-danger button-small" type="submit">Löschen</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+        {{else}}
+        <tr>
+          <td colspan="7" class="muted">Noch keine Remote-Nodes vorhanden.</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

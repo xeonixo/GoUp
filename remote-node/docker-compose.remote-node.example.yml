@@ -1,0 +1,12 @@
+services:
+  goup-remote-node:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    command: ["/usr/local/bin/remote-node"]
+    environment:
+      - REMOTE_NODE_CONTROL_PLANE_URL=https://your-goup.example.com
+      - REMOTE_NODE_ID=rn_replace_me
+      - REMOTE_NODE_BOOTSTRAP_KEY=replace_me
+      - REMOTE_NODE_POLL_SECONDS=20
+    restart: unless-stopped

@@ -175,6 +175,9 @@ func (s *Store) initSchema(ctx context.Context) error {
 	if err := s.ensureMonitorSortColumn(ctx); err != nil {
 		return err
 	}
+	if err := s.ensureMonitorExecutorColumns(ctx); err != nil {
+		return err
+	}
 	if err := s.ensureMonitorGroupsTable(ctx); err != nil {
 		return err
 	}
@@ -393,6 +396,58 @@ ORDER BY enabled DESC, name COLLATE NOCASE ASC, id ASC
 	return nil
 }
 
+func (s *Store) ensureMonitorExecutorColumns(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(monitors)`)
+	if err != nil {
+		return fmt.Errorf("inspect monitor columns for executor: %w", err)
+	}
+
+	hasExecutorKind := false
+	hasExecutorRef := false
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan monitor executor column: %w", err)
+		}
+		switch name {
+		case "executor_kind":
+			hasExecutorKind = true
+		case "executor_ref":
+			hasExecutorRef = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("iterate monitor columns for executor: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close monitor executor inspection: %w", err)
+	}
+
+	if !hasExecutorKind {
+		if _, err := s.db.ExecContext(ctx, `ALTER TABLE monitors ADD COLUMN executor_kind TEXT NOT NULL DEFAULT 'local'`); err != nil {
+			return fmt.Errorf("add monitor executor_kind column: %w", err)
+		}
+	}
+	if !hasExecutorRef {
+		if _, err := s.db.ExecContext(ctx, `ALTER TABLE monitors ADD COLUMN executor_ref TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("add monitor executor_ref column: %w", err)
+		}
+	}
+
+	if _, err := s.db.ExecContext(ctx, `UPDATE monitors SET executor_kind = 'local' WHERE TRIM(executor_kind) = ''`); err != nil {
+		return fmt.Errorf("normalize monitor executor_kind values: %w", err)
+	}
+
+	return nil
+}
+
 func (s *Store) ensureMonitorGroupsTable(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `
 CREATE TABLE IF NOT EXISTS monitor_groups (
@@ -481,6 +536,8 @@ CREATE TABLE IF NOT EXISTS monitors (
     name TEXT NOT NULL,
 	group_name TEXT NOT NULL DEFAULT '',
 	sort_order INTEGER NOT NULL DEFAULT 0,
+	executor_kind TEXT NOT NULL DEFAULT 'local',
+	executor_ref TEXT NOT NULL DEFAULT '',
     kind TEXT NOT NULL,
     target TEXT NOT NULL,
     interval_seconds INTEGER NOT NULL DEFAULT 60,

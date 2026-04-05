@@ -26,6 +26,7 @@ type App struct {
 	tenantStores *store.TenantStoreManager
 	server       *httpserver.Server
 	runners      []*monitorrunner.Runner
+	remoteNodeUp map[string]bool
 }
 
 func New(ctx context.Context) (*App, error) {
@@ -201,6 +202,7 @@ func New(ctx context.Context) (*App, error) {
 		tenantStores: tenantStores,
 		server:       server,
 		runners:      runners,
+		remoteNodeUp: make(map[string]bool),
 	}, nil
 }
 
@@ -208,11 +210,94 @@ func (a *App) Run(ctx context.Context) error {
 	for _, r := range a.runners {
 		go r.Run(ctx)
 	}
+	if a.controlStore != nil {
+		go a.runRemoteNodeHeartbeatWatch(ctx)
+	}
 	if a.store != nil {
 		go a.runMaintenance(ctx)
 	}
 	a.logger.Info("starting server", "addr", a.config.Addr)
 	return a.server.Run(ctx)
+}
+
+func (a *App) runRemoteNodeHeartbeatWatch(ctx context.Context) {
+	a.checkRemoteNodesHeartbeat(ctx)
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			a.checkRemoteNodesHeartbeat(ctx)
+		}
+	}
+}
+
+func (a *App) checkRemoteNodesHeartbeat(ctx context.Context) {
+	nodes, err := a.controlStore.ListAllEnabledRemoteNodes(ctx)
+	if err != nil {
+		a.logger.Warn("list remote nodes for heartbeat watch failed", "error", err)
+		return
+	}
+	now := time.Now().UTC()
+	for _, node := range nodes {
+		currentUp := node.IsOnline(now)
+		previousUp, seen := a.remoteNodeUp[node.NodeID]
+		a.remoteNodeUp[node.NodeID] = currentUp
+		if !seen || previousUp == currentUp {
+			continue
+		}
+
+		appStore, storeErr := a.tenantStores.StoreForTenant(ctx, node.TenantID)
+		if storeErr != nil {
+			a.logger.Warn("resolve tenant store for remote node heartbeat failed", "tenant_id", node.TenantID, "node_id", node.NodeID, "error", storeErr)
+			continue
+		}
+		matrixEndpointID, endpointErr := appStore.EnsureSystemNotificationEndpoint(ctx, "matrix", "user-matrix", `{}`, true)
+		if endpointErr != nil {
+			continue
+		}
+		emailEndpointID, endpointErr := appStore.EnsureSystemNotificationEndpoint(ctx, "email", "user-email", `{}`, true)
+		if endpointErr != nil {
+			continue
+		}
+		tenant, tenantErr := a.controlStore.GetTenantByID(ctx, node.TenantID)
+		if tenantErr != nil {
+			continue
+		}
+		transition := monitorrunner.Transition{
+			Monitor: monitorrunner.Monitor{
+				Name:   "Remote Node " + strings.TrimSpace(node.Name),
+				Kind:   monitorrunner.Kind("remote-node"),
+				Target: node.NodeID,
+			},
+			CheckedAt:    now,
+			ResultDetail: fmt.Sprintf("last_seen=%v timeout=%ds", node.LastSeenAt, node.HeartbeatTimeoutSeconds),
+		}
+		if previousUp {
+			transition.Previous = monitorrunner.StatusUp
+			transition.Current = monitorrunner.StatusDown
+		} else {
+			transition.Previous = monitorrunner.StatusDown
+			transition.Current = monitorrunner.StatusUp
+		}
+		notifiers := []monitorrunner.Notifier{
+			matrixnotify.NewTenantNotifier(a.controlStore, matrixEndpointID, node.TenantID),
+			emailnotify.NewNotifier(a.controlStore, emailEndpointID, node.TenantID, a.config.BaseURL, tenant.Slug),
+		}
+		for _, notifier := range notifiers {
+			if notifier == nil || !notifier.Enabled() {
+				continue
+			}
+			notifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			err := notifier.Notify(notifyCtx, transition)
+			cancel()
+			if err != nil && err != monitorrunner.ErrNoRecipients {
+				a.logger.Warn("remote node heartbeat notification failed", "node_id", node.NodeID, "endpoint_id", notifier.EndpointID(), "error", err)
+			}
+		}
+	}
 }
 
 func (a *App) runMaintenance(ctx context.Context) {

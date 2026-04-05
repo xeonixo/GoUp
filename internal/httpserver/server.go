@@ -76,6 +76,8 @@ type Server struct {
 	localLoginAttempts  map[string]localLoginAttempt
 	adminAccessMu       sync.Mutex
 	adminAccessAttempts map[string]localLoginAttempt
+	bootstrapMu         sync.Mutex
+	bootstrapAttempts   map[string]localLoginAttempt
 }
 
 type dashboardIconAsset struct {
@@ -110,6 +112,9 @@ type pageData struct {
 	Monitors            []monitorView
 	MonitorGroups       []monitorGroupView
 	AvailableGroups     []string
+	RemoteNodes         []remoteNodeView
+	HasRemoteNodes      bool
+	MonitorExecutors    []monitorExecutorOptionView
 	Events              []notificationEventView
 	StateEvents         []monitorStateEventView
 	AdminTenants        []store.Tenant
@@ -153,6 +158,9 @@ const (
 	adminAccessMaxFailures = 10
 	adminAccessWindow      = 5 * time.Minute
 	adminAccessLockout     = 30 * time.Minute
+	bootstrapMaxFailures   = 8
+	bootstrapWindow        = 5 * time.Minute
+	bootstrapLockout       = 15 * time.Minute
 	passwordResetTTL       = 30 * time.Minute
 	controlPlaneAdminTTL   = 12 * time.Hour
 	controlPlaneCookie     = "goup_cp_admin"
@@ -187,6 +195,22 @@ type monitorServiceGroupView struct {
 }
 
 type trendRangeOptionView struct {
+	Value    string
+	Label    string
+	Selected bool
+}
+
+type remoteNodeView struct {
+	NodeID          string
+	Name            string
+	LastSeenAt      string
+	LastSeenAtRaw   string
+	Online          bool
+	HeartbeatWindow string
+	ProvisionURL    string
+}
+
+type monitorExecutorOptionView struct {
 	Value    string
 	Label    string
 	Selected bool
@@ -245,6 +269,10 @@ type monitorView struct {
 	Timeout          string
 	TimeoutSeconds   int
 	Enabled          bool
+	ExecutorKind     string
+	ExecutorRef      string
+	ExecutorValue    string
+	ExecutorLabel    string
 	NotifyOnRecovery bool
 	ExpectedStatus   string
 	ExpectedText     string
@@ -348,6 +376,7 @@ func New(deps Dependencies) (*Server, error) {
 		iconAssets:          make(map[string]dashboardIconAsset),
 		localLoginAttempts:  make(map[string]localLoginAttempt),
 		adminAccessAttempts: make(map[string]localLoginAttempt),
+		bootstrapAttempts:   make(map[string]localLoginAttempt),
 	}
 	s.appMux = s.buildAppMux()
 	s.handler = s.routes()
@@ -420,6 +449,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/auth/login", s.handleGlobalAuthDisabled)
 	mux.HandleFunc("/auth/callback", s.handleGlobalAuthDisabled)
 	mux.HandleFunc("/auth/logout", s.handleLogout)
+	mux.HandleFunc("/node/bootstrap", s.handleRemoteNodeBootstrap)
+	mux.HandleFunc("/node/poll", s.handleRemoteNodePoll)
+	mux.HandleFunc("/node/report", s.handleRemoteNodeReport)
 
 	// Control-plane admin routes (separate access mechanism, no tenant session required)
 	mux.HandleFunc("/admin/setup", s.handleAdminSetup)
@@ -443,6 +475,10 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("/admin/tenants/{id}/local-users/{userID}/edit", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUserForm)))
 	mux.Handle("/admin/tenants/{id}/local-users/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUserSave)))
 	mux.Handle("/admin/tenants/{id}/local-users/{userID}/delete", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUserDelete)))
+	mux.Handle("/admin/tenants/{id}/remote-nodes", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminRemoteNodesList)))
+	mux.Handle("/admin/tenants/{id}/remote-nodes/create", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminCreateRemoteNode)))
+	mux.Handle("/admin/tenants/{id}/remote-nodes/{nodeID}/rotate-bootstrap", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminRotateRemoteNodeBootstrapKey)))
+	mux.Handle("/admin/tenants/{id}/remote-nodes/{nodeID}/delete", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminDeleteRemoteNode)))
 	mux.Handle("/admin/tenants/{id}/users/{userID}/remove", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantUserRemove)))
 	mux.Handle("/admin/settings/smtp/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSMTPSettingsSave)))
 
@@ -492,6 +528,11 @@ func (s *Server) requireSameOrigin(next http.Handler) http.Handler {
 	expectedPort := strings.TrimSpace(expected.Port())
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/node/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		switch r.Method {
 		case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
 		default:
@@ -765,12 +806,16 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/settings/profile/notifiers/delete", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileNotifierDelete)))
 	mux.Handle("/settings/profile/password", s.requireAuth(http.HandlerFunc(s.handleSettingsProfilePassword)))
 	mux.Handle("/settings/users", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUsers)))
+	mux.Handle("/settings/remote-nodes", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSettingsRemoteNodes))))
 	mux.Handle("/settings/local-users/new", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserForm)))
 	mux.Handle("/settings/local-users/{userID}/edit", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserForm)))
 	mux.Handle("/settings/local-users/save", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserSave)))
 	mux.Handle("/settings/local-users/{userID}/delete", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserDelete)))
 	mux.Handle("/settings/users/{userID}/role", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUserRoleSave)))
 	mux.Handle("/settings/users/{userID}/remove", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUserRemove)))
+	mux.Handle("/settings/remote-nodes/create", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleCreateRemoteNode))))
+	mux.Handle("/settings/remote-nodes/{nodeID}/rotate-bootstrap", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleRotateRemoteNodeBootstrapKey))))
+	mux.Handle("/settings/remote-nodes/{nodeID}/delete", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleDeleteRemoteNode))))
 	return mux
 }
 
@@ -1099,26 +1144,37 @@ func (s *Server) loadDashboardPageData(r *http.Request, appStore *store.Store, t
 	monitorViews := buildMonitorViews(snapshots, rollups, now, selectedTrend)
 	availableGroups := buildAvailableGroups(groupMetadata)
 	availableGroups = mergeAvailableGroups(availableGroups, monitorViews)
+	tenantID := tenantIDFromRequest(r)
+	remoteNodes, err := s.controlStore.ListRemoteNodesByTenant(r.Context(), tenantID)
+	if err != nil {
+		s.logger.Warn("load remote nodes failed", "tenant_id", tenantID, "error", err)
+		remoteNodes = nil
+	}
+	remoteNodeViews := buildRemoteNodeViews(remoteNodes, now, s.cfg.BaseURL)
+	executorOptions := buildMonitorExecutorOptions(remoteNodes)
 
 	curUser := s.currentUser(r)
 	return pageData{
-		Title:           "Dashboard · GoUp",
-		User:            curUser,
-		IsAdmin:         curUser == nil || strings.EqualFold(strings.TrimSpace(curUser.Role), "admin"),
-		Stats:           stats,
-		Notice:          noticeText,
-		Error:           errorText,
-		AuthEnabled:     s.cfg.Auth.Mode == config.AuthModeOIDC,
-		AuthDisabled:    s.cfg.Auth.Mode != config.AuthModeOIDC,
-		TrendValue:      selectedTrend.Value,
-		TrendLabel:      selectedTrend.Label,
-		TrendRanges:     buildTrendRangeOptions(selectedTrend),
-		Monitors:        monitorViews,
-		MonitorGroups:   buildMonitorGroups(s.tenantAppBase(r), monitorViews, groupMetadata),
-		AvailableGroups: availableGroups,
-		Events:          buildNotificationEventViews(events),
-		StateEvents:     buildMonitorStateEventViews(stateEvents),
-		AppBase:         s.tenantAppBase(r),
+		Title:            "Dashboard · GoUp",
+		User:             curUser,
+		IsAdmin:          curUser == nil || strings.EqualFold(strings.TrimSpace(curUser.Role), "admin"),
+		Stats:            stats,
+		Notice:           noticeText,
+		Error:            errorText,
+		AuthEnabled:      s.cfg.Auth.Mode == config.AuthModeOIDC,
+		AuthDisabled:     s.cfg.Auth.Mode != config.AuthModeOIDC,
+		TrendValue:       selectedTrend.Value,
+		TrendLabel:       selectedTrend.Label,
+		TrendRanges:      buildTrendRangeOptions(selectedTrend),
+		Monitors:         monitorViews,
+		MonitorGroups:    buildMonitorGroups(s.tenantAppBase(r), monitorViews, groupMetadata),
+		AvailableGroups:  availableGroups,
+		RemoteNodes:      remoteNodeViews,
+		HasRemoteNodes:   len(executorOptions) > 1,
+		MonitorExecutors: executorOptions,
+		Events:           buildNotificationEventViews(events),
+		StateEvents:      buildMonitorStateEventViews(stateEvents),
+		AppBase:          s.tenantAppBase(r),
 	}, nil
 }
 
@@ -2086,9 +2142,24 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	executorKind, executorRef := parseMonitorExecutorSelection(strings.TrimSpace(r.FormValue("executor")))
+	if executorKind == "remote" {
+		tenantID := tenantIDFromRequest(r)
+		if tenantID <= 0 {
+			http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
+			return
+		}
+		if _, err := s.controlStore.GetRemoteNodeByTenantAndNodeID(r.Context(), tenantID, executorRef); err != nil {
+			http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Ausgewählte Remote-Node ist nicht verfügbar"), http.StatusSeeOther)
+			return
+		}
+	}
+
 	params := store.CreateMonitorParams{
 		Name:               strings.TrimSpace(r.FormValue("name")),
 		Group:              strings.TrimSpace(r.FormValue("group")),
+		ExecutorKind:       executorKind,
+		ExecutorRef:        executorRef,
 		Kind:               kind,
 		Target:             target,
 		Interval:           time.Duration(intervalSeconds) * time.Second,
@@ -2745,6 +2816,50 @@ func (s *Server) clearAdminAccessAttempts(key string) {
 	delete(s.adminAccessAttempts, key)
 }
 
+func (s *Server) bootstrapAttemptKey(r *http.Request, nodeID string) string {
+	return "node-bootstrap|" + strings.ToLower(strings.TrimSpace(nodeID)) + "|" + s.clientIP(r)
+}
+
+func (s *Server) bootstrapAllowed(key string, now time.Time) (bool, time.Duration) {
+	s.bootstrapMu.Lock()
+	defer s.bootstrapMu.Unlock()
+	attempt, ok := s.bootstrapAttempts[key]
+	if !ok {
+		return true, 0
+	}
+	if !attempt.LockedUntil.IsZero() && attempt.LockedUntil.After(now) {
+		return false, time.Until(attempt.LockedUntil)
+	}
+	if !attempt.WindowStart.IsZero() && now.Sub(attempt.WindowStart) > bootstrapWindow {
+		delete(s.bootstrapAttempts, key)
+	}
+	return true, 0
+}
+
+func (s *Server) registerBootstrapFailure(key string, now time.Time) {
+	s.bootstrapMu.Lock()
+	defer s.bootstrapMu.Unlock()
+	attempt := s.bootstrapAttempts[key]
+	if attempt.WindowStart.IsZero() || now.Sub(attempt.WindowStart) > bootstrapWindow {
+		attempt = localLoginAttempt{Failures: 1, WindowStart: now}
+		s.bootstrapAttempts[key] = attempt
+		return
+	}
+	attempt.Failures++
+	if attempt.Failures >= bootstrapMaxFailures {
+		attempt.Failures = 0
+		attempt.WindowStart = now
+		attempt.LockedUntil = now.Add(bootstrapLockout)
+	}
+	s.bootstrapAttempts[key] = attempt
+}
+
+func (s *Server) clearBootstrapAttempts(key string) {
+	s.bootstrapMu.Lock()
+	defer s.bootstrapMu.Unlock()
+	delete(s.bootstrapAttempts, key)
+}
+
 func (s *Server) currentUser(r *http.Request) *auth.UserSession {
 	session, err := s.sessionForRequest(r)
 	if err != nil {
@@ -3143,7 +3258,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 }
 
 func parseTemplates() (map[string]*template.Template, error) {
-	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_provider_form", "admin_local_users", "admin_local_user_form", "settings_users", "settings_profile", "admin_access", "admin_setup", "admin_security", "no_tenant"}
+	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_provider_form", "admin_local_users", "admin_local_user_form", "admin_remote_nodes", "settings_users", "settings_profile", "settings_remote_nodes", "admin_access", "admin_setup", "admin_security", "no_tenant"}
 	parsed := make(map[string]*template.Template, len(pages))
 	for _, page := range pages {
 		tmpl, err := template.ParseFS(web.FS, "templates/layout.tmpl", "templates/"+page+".tmpl")
@@ -3352,6 +3467,8 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 			Name:             item.Monitor.Name,
 			Group:            effectiveMonitorGroup(strings.TrimSpace(item.Monitor.Group), item.Monitor.Name, item.Monitor.Target),
 			SortOrder:        item.Monitor.SortOrder,
+			ExecutorKind:     strings.TrimSpace(item.Monitor.ExecutorKind),
+			ExecutorRef:      strings.TrimSpace(item.Monitor.ExecutorRef),
 			KindValue:        string(item.Monitor.Kind),
 			Kind:             kindLabel,
 			TLSMode:          tlsLabel,
@@ -3366,6 +3483,18 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 			NotifyOnRecovery: item.Monitor.NotifyOnRecovery,
 			TrendLabel:       selectedTrend.Label,
 			TrendPoints:      buildTrendPoints(rollupsByMonitor[item.Monitor.ID], now, selectedTrend),
+		}
+		if view.ExecutorKind == "" {
+			view.ExecutorKind = "local"
+		}
+		if view.ExecutorKind == "remote" && view.ExecutorRef != "" {
+			view.ExecutorValue = "remote:" + view.ExecutorRef
+			view.ExecutorLabel = "Remote: " + view.ExecutorRef
+		} else {
+			view.ExecutorKind = "local"
+			view.ExecutorRef = ""
+			view.ExecutorValue = "local"
+			view.ExecutorLabel = "Control-Plane (lokal)"
 		}
 		view.UptimeLabel = summarizeTrend(view.TrendPoints, selectedTrend)
 		view.StatusLabel = "UNKNOWN"
@@ -3456,6 +3585,38 @@ func mergeAvailableGroups(existing []string, monitors []monitorView) []string {
 		groups = append(groups, group)
 	}
 	return groups
+}
+
+func buildRemoteNodeViews(items []store.RemoteNode, now time.Time, baseURL string) []remoteNodeView {
+	views := make([]remoteNodeView, 0, len(items))
+	bootstrapURL := strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/node/bootstrap"
+	for _, item := range items {
+		view := remoteNodeView{
+			NodeID:          item.NodeID,
+			Name:            item.Name,
+			Online:          item.IsOnline(now),
+			HeartbeatWindow: fmt.Sprintf("%ds", item.HeartbeatTimeoutSeconds),
+			ProvisionURL:    bootstrapURL,
+		}
+		if item.LastSeenAt != nil {
+			view.LastSeenAtRaw = item.LastSeenAt.UTC().Format(time.RFC3339)
+			view.LastSeenAt = view.LastSeenAtRaw
+		}
+		views = append(views, view)
+	}
+	return views
+}
+
+func buildMonitorExecutorOptions(nodes []store.RemoteNode) []monitorExecutorOptionView {
+	options := make([]monitorExecutorOptionView, 0, len(nodes)+1)
+	options = append(options, monitorExecutorOptionView{Value: "local", Label: "Control-Plane (lokal)", Selected: true})
+	for _, node := range nodes {
+		options = append(options, monitorExecutorOptionView{
+			Value: "remote:" + node.NodeID,
+			Label: strings.TrimSpace(node.Name),
+		})
+	}
+	return options
 }
 
 func buildMonitorGroups(appBase string, monitors []monitorView, metadata []store.MonitorGroup) []monitorGroupView {
@@ -4511,6 +4672,21 @@ func normalizeTLSMode(kind monitor.Kind, requested monitor.TLSMode) monitor.TLSM
 	default:
 		return requested
 	}
+}
+
+func parseMonitorExecutorSelection(raw string) (executorKind string, executorRef string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.EqualFold(raw, "local") {
+		return "local", ""
+	}
+	if strings.HasPrefix(strings.ToLower(raw), "remote:") {
+		ref := strings.TrimSpace(raw[len("remote:"):])
+		if ref == "" {
+			return "local", ""
+		}
+		return "remote", ref
+	}
+	return "local", ""
 }
 
 func monitorTargetLabel(item monitor.Monitor) string {

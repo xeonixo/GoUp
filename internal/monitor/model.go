@@ -36,6 +36,8 @@ type Monitor struct {
 	Name               string
 	Group              string
 	SortOrder          int
+	ExecutorKind       string
+	ExecutorRef        string
 	Kind               Kind
 	Target             string
 	Interval           time.Duration
@@ -69,6 +71,9 @@ type Snapshot struct {
 
 func (s Snapshot) IsDue(now time.Time) bool {
 	if !s.Monitor.Enabled {
+		return false
+	}
+	if s.Monitor.ExecutorKind == "remote" {
 		return false
 	}
 	if s.LastResult == nil {

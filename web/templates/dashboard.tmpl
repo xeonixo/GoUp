@@ -93,6 +93,18 @@
       {{end}}
     </datalist>
 
+    {{if .HasRemoteNodes}}
+    <label id="monitor-executor-row">
+      <span>Ausführung</span>
+      <select name="executor" id="monitor-executor">
+        {{range .MonitorExecutors}}
+        <option value="{{.Value}}">{{.Label}}</option>
+        {{end}}
+      </select>
+      <small class="muted compact">Nur konfigurierte Remote-Nodes werden angezeigt. Ohne Auswahl läuft der Monitor auf der Control-Plane.</small>
+    </label>
+    {{end}}
+
     <label id="monitor-target-row">
       <span>Ziel</span>
       <input type="text" name="target" id="monitor-target" placeholder="example.com/health" required>
@@ -473,6 +485,7 @@
                   data-kind="{{.KindValue}}"
                   data-tls-mode="{{.TLSModeValue}}"
                   data-target="{{.Target}}"
+                  data-executor="{{.ExecutorValue}}"
                   data-interval="{{.IntervalSeconds}}"
                   data-timeout="{{.TimeoutSeconds}}"
                   data-enabled="{{if .Enabled}}1{{else}}0{{end}}"
@@ -525,6 +538,12 @@
             <span class="muted">Status</span>
             <strong>{{.StatusSummary}}</strong>
           </div>
+          {{if $.HasRemoteNodes}}
+          <div class="info-row">
+            <span class="muted">Executor</span>
+            <strong>{{.ExecutorLabel}}</strong>
+          </div>
+          {{end}}
 
           <div class="monitor-metrics">
             <div class="monitor-metric">

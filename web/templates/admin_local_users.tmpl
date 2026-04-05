@@ -5,6 +5,7 @@
     <a href="/admin/tenants" class="admin-nav-link">Tenants</a>
     <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link">Provider</a>
     <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link is-active">Benutzer</a>
+    <a href="/admin/tenants/{{.AdminTenant.ID}}/remote-nodes" class="admin-nav-link">Remote Nodes</a>
   </nav>
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}

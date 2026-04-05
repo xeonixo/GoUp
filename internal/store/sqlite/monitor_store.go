@@ -16,6 +16,8 @@ import (
 type CreateMonitorParams struct {
 	Name               string
 	Group              string
+	ExecutorKind       string
+	ExecutorRef        string
 	Kind               monitor.Kind
 	Target             string
 	Interval           time.Duration
@@ -61,6 +63,7 @@ func (s *Store) CreateMonitor(ctx context.Context, params CreateMonitorParams) (
 	if err := validateCreateMonitorParams(params); err != nil {
 		return 0, err
 	}
+	executorKind, executorRef := normalizeMonitorExecutor(params.ExecutorKind, params.ExecutorRef)
 
 	now := time.Now().UTC()
 	if err := s.ensureMonitorGroupExists(ctx, strings.TrimSpace(params.Group)); err != nil {
@@ -72,11 +75,11 @@ func (s *Store) CreateMonitor(ctx context.Context, params CreateMonitorParams) (
 	}
 	result, err := s.db.ExecContext(ctx, `
 INSERT INTO monitors (
-	name, group_name, sort_order, kind, target, interval_seconds, timeout_seconds, enabled,
+	name, group_name, sort_order, executor_kind, executor_ref, kind, target, interval_seconds, timeout_seconds, enabled,
     tls_mode, expected_status_code, expected_text, notify_on_recovery,
     created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, params.Name, strings.TrimSpace(params.Group), nextSortOrder, string(params.Kind), params.Target, int(params.Interval.Seconds()), int(params.Timeout.Seconds()), boolToInt(params.Enabled), string(params.TLSMode), params.ExpectedStatusCode, strings.TrimSpace(params.ExpectedText), boolToInt(params.NotifyOnRecovery), now, now)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, params.Name, strings.TrimSpace(params.Group), nextSortOrder, executorKind, executorRef, string(params.Kind), params.Target, int(params.Interval.Seconds()), int(params.Timeout.Seconds()), boolToInt(params.Enabled), string(params.TLSMode), params.ExpectedStatusCode, strings.TrimSpace(params.ExpectedText), boolToInt(params.NotifyOnRecovery), now, now)
 	if err != nil {
 		return 0, fmt.Errorf("create monitor: %w", err)
 	}
@@ -97,6 +100,7 @@ func (s *Store) UpdateMonitor(ctx context.Context, params UpdateMonitorParams) e
 	if err := validateCreateMonitorParams(params.CreateMonitorParams); err != nil {
 		return err
 	}
+	executorKind, executorRef := normalizeMonitorExecutor(params.ExecutorKind, params.ExecutorRef)
 
 	now := time.Now().UTC()
 	if err := s.ensureMonitorGroupExists(ctx, strings.TrimSpace(params.Group)); err != nil {
@@ -107,6 +111,8 @@ UPDATE monitors
 SET
     name = ?,
 	group_name = ?,
+	executor_kind = ?,
+	executor_ref = ?,
     kind = ?,
     target = ?,
     interval_seconds = ?,
@@ -121,6 +127,8 @@ WHERE id = ?
 `,
 		params.Name,
 		strings.TrimSpace(params.Group),
+		executorKind,
+		executorRef,
 		string(params.Kind),
 		params.Target,
 		int(params.Interval.Seconds()),
@@ -265,6 +273,22 @@ WHERE id = ?
 	return nil
 }
 
+func (s *Store) ReassignRemoteNodeMonitorsToLocal(ctx context.Context, nodeID string) error {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return errors.New("node id is required")
+	}
+	_, err := s.db.ExecContext(ctx, `
+UPDATE monitors
+SET executor_kind = 'local', executor_ref = '', updated_at = ?
+WHERE executor_kind = 'remote' AND executor_ref = ?
+`, time.Now().UTC(), nodeID)
+	if err != nil {
+		return fmt.Errorf("reassign remote node monitors: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) ListMonitorSnapshots(ctx context.Context) ([]monitor.Snapshot, error) {
 	snapshots, err := s.listMonitorSnapshotsWithResults(ctx)
 	if err == nil {
@@ -277,6 +301,96 @@ func (s *Store) ListMonitorSnapshots(ctx context.Context) ([]monitor.Snapshot, e
 	return s.listMonitorSnapshotsWithoutResults(ctx)
 }
 
+func (s *Store) ListMonitorsByExecutor(ctx context.Context, executorKind, executorRef string) ([]monitor.Monitor, error) {
+	executorKind = strings.ToLower(strings.TrimSpace(executorKind))
+	if executorKind == "" {
+		executorKind = "local"
+	}
+	executorRef = strings.TrimSpace(executorRef)
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT
+	id,
+	name,
+	group_name,
+	sort_order,
+	executor_kind,
+	executor_ref,
+	kind,
+	target,
+	interval_seconds,
+	timeout_seconds,
+	enabled,
+	tls_mode,
+	expected_status_code,
+	expected_text,
+	notify_on_recovery,
+	created_at,
+	updated_at
+FROM monitors
+WHERE executor_kind = ?
+	AND executor_ref = ?
+	AND enabled = 1
+ORDER BY sort_order ASC, id ASC
+`, executorKind, executorRef)
+	if err != nil {
+		return nil, fmt.Errorf("list monitors by executor: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]monitor.Monitor, 0)
+	for rows.Next() {
+		var item monitor.Monitor
+		var intervalSeconds int
+		var timeoutSeconds int
+		var enabledRaw int
+		var notifyOnRecovery int
+		var kindRaw string
+		var tlsModeRaw string
+		var expectedStatusCode sql.NullInt64
+		if err := rows.Scan(
+			&item.ID,
+			&item.Name,
+			&item.Group,
+			&item.SortOrder,
+			&item.ExecutorKind,
+			&item.ExecutorRef,
+			&kindRaw,
+			&item.Target,
+			&intervalSeconds,
+			&timeoutSeconds,
+			&enabledRaw,
+			&tlsModeRaw,
+			&expectedStatusCode,
+			&item.ExpectedText,
+			&notifyOnRecovery,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan monitor by executor: %w", err)
+		}
+		item.Kind = monitor.Kind(strings.TrimSpace(kindRaw))
+		item.TLSMode = monitor.TLSMode(strings.TrimSpace(tlsModeRaw))
+		item.Interval = time.Duration(intervalSeconds) * time.Second
+		item.Timeout = time.Duration(timeoutSeconds) * time.Second
+		item.Enabled = enabledRaw == 1
+		item.NotifyOnRecovery = notifyOnRecovery == 1
+		if item.ExecutorKind == "" {
+			item.ExecutorKind = "local"
+		}
+		if expectedStatusCode.Valid {
+			value := int(expectedStatusCode.Int64)
+			item.ExpectedStatusCode = &value
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate monitors by executor: %w", err)
+	}
+
+	return items, nil
+}
+
 func (s *Store) listMonitorSnapshotsWithResults(ctx context.Context) ([]monitor.Snapshot, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT
@@ -284,6 +398,8 @@ SELECT
     m.name,
 	m.group_name,
 	m.sort_order,
+	m.executor_kind,
+	m.executor_ref,
     m.kind,
     m.target,
     m.interval_seconds,
@@ -341,6 +457,8 @@ SELECT
     name,
     group_name,
     sort_order,
+	executor_kind,
+	executor_ref,
     kind,
     target,
     interval_seconds,
@@ -378,6 +496,8 @@ ORDER BY sort_order ASC, id ASC
 			&item.Monitor.Name,
 			&item.Monitor.Group,
 			&item.Monitor.SortOrder,
+			&item.Monitor.ExecutorKind,
+			&item.Monitor.ExecutorRef,
 			&kindRaw,
 			&item.Monitor.Target,
 			&intervalSeconds,
@@ -394,6 +514,9 @@ ORDER BY sort_order ASC, id ASC
 		}
 
 		item.Monitor.Kind = monitor.Kind(kindRaw)
+		if strings.TrimSpace(item.Monitor.ExecutorKind) == "" {
+			item.Monitor.ExecutorKind = "local"
+		}
 		item.Monitor.TLSMode = monitor.TLSMode(tlsModeRaw)
 		item.Monitor.Interval = time.Duration(intervalSeconds) * time.Second
 		item.Monitor.Timeout = time.Duration(timeoutSeconds) * time.Second
@@ -1095,6 +1218,13 @@ func validateCreateMonitorParams(params CreateMonitorParams) error {
 	if strings.TrimSpace(params.Name) == "" {
 		return errors.New("monitor name is required")
 	}
+	executorKind, executorRef := normalizeMonitorExecutor(params.ExecutorKind, params.ExecutorRef)
+	if executorKind != "local" && executorKind != "remote" {
+		return errors.New("monitor executor must be local or remote")
+	}
+	if executorKind == "remote" && executorRef == "" {
+		return errors.New("remote executor requires a node id")
+	}
 	if len([]rune(strings.TrimSpace(params.Group))) > 80 {
 		return errors.New("monitor group must not exceed 80 characters")
 	}
@@ -1112,6 +1242,18 @@ func validateCreateMonitorParams(params CreateMonitorParams) error {
 		return errors.New("expected value is only valid for HTTPS, DNS and UDP monitors")
 	}
 	return validateMonitorKindSettings(params.Kind, params.Target, params.TLSMode, params.ExpectedStatusCode)
+}
+
+func normalizeMonitorExecutor(kind, ref string) (string, string) {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	ref = strings.TrimSpace(ref)
+	if kind == "" || kind == "local" {
+		return "local", ""
+	}
+	if kind != "remote" {
+		return kind, ref
+	}
+	return "remote", ref
 }
 
 func validateMonitorKindSettings(kind monitor.Kind, target string, tlsMode monitor.TLSMode, expectedStatusCode *int) error {
@@ -1234,6 +1376,8 @@ func scanMonitorSnapshot(scanner interface{ Scan(dest ...any) error }) (monitor.
 	var enabled int
 	var notifyOnRecovery int
 	var sortOrder int
+	var executorKind string
+	var executorRef string
 	var kind string
 	var tlsMode string
 	var expectedStatusCode sql.NullInt64
@@ -1253,6 +1397,8 @@ func scanMonitorSnapshot(scanner interface{ Scan(dest ...any) error }) (monitor.
 		&item.Monitor.Name,
 		&item.Monitor.Group,
 		&sortOrder,
+		&executorKind,
+		&executorRef,
 		&kind,
 		&item.Monitor.Target,
 		&intervalSeconds,
@@ -1279,6 +1425,11 @@ func scanMonitorSnapshot(scanner interface{ Scan(dest ...any) error }) (monitor.
 
 	item.Monitor.Kind = monitor.Kind(kind)
 	item.Monitor.SortOrder = sortOrder
+	item.Monitor.ExecutorKind = strings.TrimSpace(executorKind)
+	if item.Monitor.ExecutorKind == "" {
+		item.Monitor.ExecutorKind = "local"
+	}
+	item.Monitor.ExecutorRef = strings.TrimSpace(executorRef)
 	item.Monitor.Interval = time.Duration(intervalSeconds) * time.Second
 	item.Monitor.Timeout = time.Duration(timeoutSeconds) * time.Second
 	item.Monitor.Enabled = enabled == 1

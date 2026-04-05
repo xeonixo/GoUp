@@ -12,7 +12,8 @@ RUN set -eux; \
     export CGO_ENABLED=0; \
     export GOOS=${TARGETOS:-linux}; \
     if [ -n "${TARGETARCH:-}" ]; then export GOARCH="${TARGETARCH}"; fi; \
-    go build -trimpath -ldflags='-s -w' -o /out/goup ./cmd/goup
+    go build -trimpath -ldflags='-s -w' -o /out/goup ./cmd/goup; \
+    go build -trimpath -ldflags='-s -w' -o /out/remote-node ./cmd/remote-node
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates libcap-utils \
@@ -22,6 +23,7 @@ RUN apk add --no-cache ca-certificates libcap-utils \
     && chown -R goup:goup /data
 WORKDIR /app
 COPY --from=build /out/goup /usr/local/bin/goup
+COPY --from=build /out/remote-node /usr/local/bin/remote-node
 RUN setcap cap_net_raw=+ep /usr/local/bin/goup
 USER goup
 EXPOSE 8080
