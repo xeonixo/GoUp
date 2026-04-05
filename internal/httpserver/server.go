@@ -208,6 +208,16 @@ type remoteNodeView struct {
 	Online          bool
 	HeartbeatWindow string
 	ProvisionURL    string
+	Events          []remoteNodeEventView
+}
+
+type remoteNodeEventView struct {
+	EventLabel    string
+	SourceIP      string
+	UserAgent     string
+	Details       string
+	OccurredAt    string
+	OccurredAtRaw string
 }
 
 type monitorExecutorOptionView struct {
@@ -1141,16 +1151,16 @@ func (s *Server) loadDashboardPageData(r *http.Request, appStore *store.Store, t
 		rollups = nil
 	}
 
-	monitorViews := buildMonitorViews(snapshots, rollups, now, selectedTrend)
-	availableGroups := buildAvailableGroups(groupMetadata)
-	availableGroups = mergeAvailableGroups(availableGroups, monitorViews)
 	tenantID := tenantIDFromRequest(r)
 	remoteNodes, err := s.controlStore.ListRemoteNodesByTenant(r.Context(), tenantID)
 	if err != nil {
 		s.logger.Warn("load remote nodes failed", "tenant_id", tenantID, "error", err)
 		remoteNodes = nil
 	}
-	remoteNodeViews := buildRemoteNodeViews(remoteNodes, now, s.cfg.BaseURL)
+	monitorViews := buildMonitorViews(snapshots, rollups, now, selectedTrend, buildRemoteNodeNameMap(remoteNodes))
+	availableGroups := buildAvailableGroups(groupMetadata)
+	availableGroups = mergeAvailableGroups(availableGroups, monitorViews)
+	remoteNodeViews := buildRemoteNodeViews(remoteNodes, now, s.cfg.BaseURL, nil)
 	executorOptions := buildMonitorExecutorOptions(remoteNodes)
 
 	curUser := s.currentUser(r)
@@ -1795,7 +1805,7 @@ func (s *Server) handleReorderMonitor(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitore konnten nicht geladen werden"), http.StatusSeeOther)
 			return
 		}
-		monitorViews := buildMonitorViews(snapshots, nil, time.Now().UTC(), supportedTrendRanges[0])
+		monitorViews := buildMonitorViews(snapshots, nil, time.Now().UTC(), supportedTrendRanges[0], nil)
 		groupName := strings.TrimSpace(r.FormValue("group"))
 		draggedGroupName := ""
 		targetGroupName := ""
@@ -1853,7 +1863,7 @@ func (s *Server) handleReorderMonitor(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitore konnten nicht geladen werden"), http.StatusSeeOther)
 		return
 	}
-	monitorViews := buildMonitorViews(snapshots, nil, time.Now().UTC(), supportedTrendRanges[0])
+	monitorViews := buildMonitorViews(snapshots, nil, time.Now().UTC(), supportedTrendRanges[0], nil)
 	groupItems := make([]monitorView, 0)
 	for _, item := range monitorViews {
 		if monitorServiceLabel(item) == groupName {
@@ -2337,6 +2347,10 @@ func (s *Server) handleCheckMonitorNow(w http.ResponseWriter, r *http.Request) {
 	}
 	if selected == nil {
 		http.Error(w, "monitor not found", http.StatusNotFound)
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(selected.Monitor.ExecutorKind), "remote") {
+		http.Error(w, "manual checks are disabled for remote-node monitors", http.StatusConflict)
 		return
 	}
 
@@ -3451,7 +3465,7 @@ func sendSMTPMail(cfg store.GlobalSMTPDeliveryConfig, to, subject, body string) 
 	}
 }
 
-func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRollup, now time.Time, selectedTrend trendRange) []monitorView {
+func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRollup, now time.Time, selectedTrend trendRange, remoteNodeNames map[string]string) []monitorView {
 	rollupsByMonitor := groupRollupsByMonitor(rollups)
 	views := make([]monitorView, 0, len(items))
 	for _, item := range items {
@@ -3490,6 +3504,11 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 		if view.ExecutorKind == "remote" && view.ExecutorRef != "" {
 			view.ExecutorValue = "remote:" + view.ExecutorRef
 			view.ExecutorLabel = "Remote: " + view.ExecutorRef
+			if remoteNodeNames != nil {
+				if remoteName := strings.TrimSpace(remoteNodeNames[view.ExecutorRef]); remoteName != "" {
+					view.ExecutorLabel = "Remote: " + remoteName + " (" + view.ExecutorRef + ")"
+				}
+			}
 		} else {
 			view.ExecutorKind = "local"
 			view.ExecutorRef = ""
@@ -3587,7 +3606,7 @@ func mergeAvailableGroups(existing []string, monitors []monitorView) []string {
 	return groups
 }
 
-func buildRemoteNodeViews(items []store.RemoteNode, now time.Time, baseURL string) []remoteNodeView {
+func buildRemoteNodeViews(items []store.RemoteNode, now time.Time, baseURL string, eventsByNode map[string][]store.RemoteNodeEvent) []remoteNodeView {
 	views := make([]remoteNodeView, 0, len(items))
 	bootstrapURL := strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/node/bootstrap"
 	for _, item := range items {
@@ -3602,9 +3621,75 @@ func buildRemoteNodeViews(items []store.RemoteNode, now time.Time, baseURL strin
 			view.LastSeenAtRaw = item.LastSeenAt.UTC().Format(time.RFC3339)
 			view.LastSeenAt = view.LastSeenAtRaw
 		}
+		if eventsByNode != nil {
+			events := eventsByNode[item.NodeID]
+			if len(events) > 0 {
+				view.Events = make([]remoteNodeEventView, 0, len(events))
+				for _, event := range events {
+					eventTime := event.CreatedAt.UTC().Format(time.RFC3339)
+					view.Events = append(view.Events, remoteNodeEventView{
+						EventLabel:    remoteNodeEventLabel(event.EventType),
+						SourceIP:      strings.TrimSpace(event.RemoteIP),
+						UserAgent:     strings.TrimSpace(event.UserAgent),
+						Details:       strings.TrimSpace(event.Details),
+						OccurredAt:    eventTime,
+						OccurredAtRaw: eventTime,
+					})
+				}
+			}
+		}
 		views = append(views, view)
 	}
 	return views
+}
+
+func buildRemoteNodeNameMap(nodes []store.RemoteNode) map[string]string {
+	if len(nodes) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(nodes))
+	for _, node := range nodes {
+		nodeID := strings.TrimSpace(node.NodeID)
+		if nodeID == "" {
+			continue
+		}
+		result[nodeID] = strings.TrimSpace(node.Name)
+	}
+	return result
+}
+
+func groupRemoteNodeEventsByNode(items []store.RemoteNodeEvent, perNodeLimit int) map[string][]store.RemoteNodeEvent {
+	if len(items) == 0 {
+		return nil
+	}
+	if perNodeLimit <= 0 {
+		perNodeLimit = 6
+	}
+	grouped := make(map[string][]store.RemoteNodeEvent)
+	for _, item := range items {
+		nodeID := strings.TrimSpace(item.NodeID)
+		if nodeID == "" {
+			continue
+		}
+		if len(grouped[nodeID]) >= perNodeLimit {
+			continue
+		}
+		grouped[nodeID] = append(grouped[nodeID], item)
+	}
+	return grouped
+}
+
+func remoteNodeEventLabel(eventType string) string {
+	switch strings.TrimSpace(strings.ToLower(eventType)) {
+	case "bootstrap":
+		return "Bootstrap"
+	case "poll":
+		return "Poll"
+	case "report":
+		return "Report"
+	default:
+		return strings.TrimSpace(eventType)
+	}
 }
 
 func buildMonitorExecutorOptions(nodes []store.RemoteNode) []monitorExecutorOptionView {

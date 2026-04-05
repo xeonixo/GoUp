@@ -1110,12 +1110,17 @@ func (s *Server) handleSettingsRemoteNodes(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "unable to load remote nodes", http.StatusInternalServerError)
 		return
 	}
+	events, err := s.controlStore.ListRecentRemoteNodeEventsByTenant(r.Context(), user.TenantID, 200)
+	if err != nil {
+		s.logger.Warn("settings remote node events list failed", "tenant_id", user.TenantID, "error", err)
+		events = nil
+	}
 
 	s.render(w, "settings_remote_nodes", pageData{
 		Title:        "Einstellungen · Remote Nodes · GoUp",
 		User:         user,
 		AdminTenant:  tenant,
-		RemoteNodes:  buildRemoteNodeViews(nodes, time.Now().UTC(), s.cfg.BaseURL),
+		RemoteNodes:  buildRemoteNodeViews(nodes, time.Now().UTC(), s.cfg.BaseURL, groupRemoteNodeEventsByNode(events, 8)),
 		AppBase:      s.tenantAppBase(r),
 		Notice:       strings.TrimSpace(r.URL.Query().Get("notice")),
 		Error:        strings.TrimSpace(r.URL.Query().Get("error")),

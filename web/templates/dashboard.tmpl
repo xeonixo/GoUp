@@ -461,7 +461,7 @@
             <p class="muted compact">{{.Kind}}{{if .TLSMode}} / {{.TLSMode}}{{end}} · alle {{.Interval}} · Timeout {{.Timeout}}</p>
           </div>
           <div class="monitor-header-right">
-            {{if $.IsAdmin}}
+            {{if and $.IsAdmin (ne .ExecutorKind "remote")}}
             <button
               class="monitor-cycle-indicator monitor-cycle-trigger"
               type="button"

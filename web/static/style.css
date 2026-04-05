@@ -1904,6 +1904,30 @@ li + li {
   margin: 0;
 }
 
+.remote-node-log {
+  border: 1px solid rgba(73, 91, 134, 0.42);
+  border-radius: 10px;
+  padding: 0.35rem 0.55rem;
+  background: rgba(11, 16, 32, 0.35);
+}
+
+.remote-node-log > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.remote-node-log-list {
+  margin: 0.45rem 0 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.remote-node-log-list li {
+  margin: 0;
+}
+
 .admin-form {
   max-width: 760px;
   background: linear-gradient(180deg, rgba(20, 31, 56, 0.7), rgba(17, 23, 42, 0.92));

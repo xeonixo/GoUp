@@ -172,13 +172,18 @@ func (s *Server) handleAdminRemoteNodesList(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "unable to list remote nodes", http.StatusInternalServerError)
 		return
 	}
+	events, err := s.controlStore.ListRecentRemoteNodeEventsByTenant(r.Context(), tenantID, 200)
+	if err != nil {
+		s.logger.Warn("admin remote node events list failed", "tenant_id", tenantID, "error", err)
+		events = nil
+	}
 
 	s.render(w, "admin_remote_nodes", pageData{
 		Title:             fmt.Sprintf("Remote Nodes für %s · GoUp", tenant.Name),
 		User:              s.currentUser(r),
 		ControlPlaneAdmin: true,
 		AdminTenant:       tenant,
-		RemoteNodes:       buildRemoteNodeViews(nodes, time.Now().UTC(), s.cfg.BaseURL),
+		RemoteNodes:       buildRemoteNodeViews(nodes, time.Now().UTC(), s.cfg.BaseURL, groupRemoteNodeEventsByNode(events, 8)),
 		Notice:            strings.TrimSpace(r.URL.Query().Get("notice")),
 		Error:             strings.TrimSpace(r.URL.Query().Get("error")),
 	})
@@ -314,6 +319,7 @@ func (s *Server) handleRemoteNodeBootstrap(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	_ = s.controlStore.TouchRemoteNodeLastSeen(r.Context(), node.ID, time.Now().UTC())
+	_ = s.controlStore.InsertRemoteNodeEvent(r.Context(), node.TenantID, node.NodeID, "bootstrap", s.clientIP(r), strings.TrimSpace(r.UserAgent()), "bootstrap successful", time.Now().UTC())
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -364,6 +370,7 @@ func (s *Server) handleRemoteNodePoll(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unable to rotate access token", http.StatusInternalServerError)
 		return
 	}
+	_ = s.controlStore.InsertRemoteNodeEvent(r.Context(), node.TenantID, node.NodeID, "poll", s.clientIP(r), strings.TrimSpace(r.UserAgent()), fmt.Sprintf("assigned_monitors=%d", len(monitors)), time.Now().UTC())
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -446,6 +453,7 @@ func (s *Server) handleRemoteNodeReport(w http.ResponseWriter, r *http.Request) 
 		previousByID[monitorConfig.ID] = &resultCopy
 		accepted++
 	}
+	_ = s.controlStore.InsertRemoteNodeEvent(r.Context(), node.TenantID, node.NodeID, "report", s.clientIP(r), strings.TrimSpace(r.UserAgent()), fmt.Sprintf("accepted=%d received=%d", accepted, len(payload.Results)), time.Now().UTC())
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{

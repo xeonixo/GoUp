@@ -1,10 +1,15 @@
 services:
   goup-remote-node:
     image: ghcr.io/xeonixo/goup:latest
+    container_name: goup-remote-node
     environment:
       - GOUP_MODE=remote-node
       - REMOTE_NODE_CONTROL_PLANE_URL=https://your-goup.example.com
       - REMOTE_NODE_ID=rn_replace_me
       - REMOTE_NODE_BOOTSTRAP_KEY=replace_me
       - REMOTE_NODE_POLL_SECONDS=20
+    ## Needed for ICMP checks
+    cap_add:
+      - NET_RAW
     restart: unless-stopped
+  

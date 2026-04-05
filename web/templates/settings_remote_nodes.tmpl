@@ -44,6 +44,7 @@
           <th>Zuletzt gesehen</th>
           <th>Timeout</th>
           <th>Provisioning URL</th>
+          <th>Protokoll</th>
           <th>Aktionen</th>
         </tr>
       </thead>
@@ -54,9 +55,26 @@
           <td>{{.Name}}</td>
           <td class="break-all"><code>{{.NodeID}}</code></td>
           <td>{{if .Online}}<span class="status-badge status-badge-success">ONLINE</span>{{else}}<span class="status-badge status-badge-muted">OFFLINE</span>{{end}}</td>
-          <td>{{if .LastSeenAtRaw}}<span class="js-local-datetime" data-utc="{{.LastSeenAtRaw}}">{{.LastSeenAt}}</span>{{else}}—{{end}}</td>
+          <td>{{if .LastSeenAtRaw}}<span class="js-relative-age" data-utc="{{.LastSeenAtRaw}}">{{.LastSeenAt}}</span>{{else}}—{{end}}</td>
           <td>{{.HeartbeatWindow}}</td>
           <td class="break-all">{{.ProvisionURL}}</td>
+          <td>
+            {{if .Events}}
+            <details class="remote-node-log">
+              <summary>{{len .Events}} Einträge</summary>
+              <ul class="remote-node-log-list">
+                {{range .Events}}
+                <li>
+                  <div><strong>{{.EventLabel}}</strong> · <span class="js-relative-age" data-utc="{{.OccurredAtRaw}}">{{.OccurredAt}}</span></div>
+                  <div class="muted compact break-all">Von {{.SourceIP}}{{if .Details}} · {{.Details}}{{end}}{{if .UserAgent}} · {{.UserAgent}}{{end}}</div>
+                </li>
+                {{end}}
+              </ul>
+            </details>
+            {{else}}
+            <span class="muted">—</span>
+            {{end}}
+          </td>
           <td class="admin-actions-inline">
             <form method="post" action="{{$.AppBase}}settings/remote-nodes/{{.NodeID}}/rotate-bootstrap" class="inline-form" data-confirm="Bootstrap-Key wirklich neu erstellen? Alte Deployments mit altem Key können dann nicht mehr neu bootstrappen.">
               <button class="button button-secondary button-small" type="submit">Bootstrap-Key rotieren</button>
@@ -69,7 +87,7 @@
         {{end}}
         {{else}}
         <tr>
-          <td colspan="7" class="muted">Noch keine Remote-Nodes vorhanden.</td>
+          <td colspan="8" class="muted">Noch keine Remote-Nodes vorhanden.</td>
         </tr>
         {{end}}
       </tbody>

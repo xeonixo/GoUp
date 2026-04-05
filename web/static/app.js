@@ -9,6 +9,71 @@
   });
 
   window.addEventListener('DOMContentLoaded', () => {
+    const languageTag = ((navigator.languages && navigator.languages[0]) || navigator.language || 'en').toLowerCase();
+    const durationUnits = (() => {
+      if (languageTag.startsWith('de')) {
+        return { day: 'T', hour: 'Std.', minute: 'Min.', second: 'Sek.' };
+      }
+      if (languageTag.startsWith('fr')) {
+        return { day: 'j', hour: 'h', minute: 'min', second: 's' };
+      }
+      if (languageTag.startsWith('es')) {
+        return { day: 'd', hour: 'h', minute: 'min', second: 's' };
+      }
+      return { day: 'd', hour: 'h', minute: 'min.', second: 'sec.' };
+    })();
+
+    const formatDurationCompact = (totalSeconds) => {
+      const safeSeconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+      if (safeSeconds < 60) {
+        return `${safeSeconds} ${durationUnits.second}`;
+      }
+
+      const minutes = Math.floor(safeSeconds / 60);
+      const seconds = safeSeconds % 60;
+      if (safeSeconds < 3600) {
+        if (seconds > 0) {
+          return `${minutes} ${durationUnits.minute} ${seconds} ${durationUnits.second}`;
+        }
+        return `${minutes} ${durationUnits.minute}`;
+      }
+
+      const hours = Math.floor(minutes / 60);
+      const remMinutes = minutes % 60;
+      if (safeSeconds < 86400) {
+        if (remMinutes > 0) {
+          return `${hours} ${durationUnits.hour} ${remMinutes} ${durationUnits.minute}`;
+        }
+        return `${hours} ${durationUnits.hour}`;
+      }
+
+      const days = Math.floor(hours / 24);
+      const remHours = hours % 24;
+      if (remMinutes > 0) {
+        return `${days} ${durationUnits.day} ${remHours} ${durationUnits.hour} ${remMinutes} ${durationUnits.minute}`;
+      }
+      if (remHours > 0) {
+        return `${days} ${durationUnits.day} ${remHours} ${durationUnits.hour}`;
+      }
+      return `${days} ${durationUnits.day}`;
+    };
+
+    const updateRelativeAgeLabels = () => {
+      document.querySelectorAll('.js-relative-age[data-utc]').forEach((element) => {
+        const raw = element.getAttribute('data-utc');
+        if (!raw) {
+          return;
+        }
+        const date = new Date(raw);
+        if (Number.isNaN(date.getTime())) {
+          return;
+        }
+        const elapsedSeconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+        element.textContent = formatDurationCompact(elapsedSeconds);
+        element.setAttribute('title', date.toLocaleString());
+      });
+    };
+
     try {
       const currentURL = new URL(window.location.href);
       let changed = false;
@@ -56,6 +121,9 @@
       element.textContent = date.toLocaleString();
       element.setAttribute('title', raw);
     });
+
+    updateRelativeAgeLabels();
+    window.setInterval(updateRelativeAgeLabels, 30000);
 
     document.addEventListener('submit', (event) => {
       const form = event.target;

@@ -25,6 +25,17 @@ type RemoteNode struct {
 	UpdatedAt               time.Time
 }
 
+type RemoteNodeEvent struct {
+	ID        int64
+	TenantID  int64
+	NodeID    string
+	EventType string
+	RemoteIP  string
+	UserAgent string
+	Details   string
+	CreatedAt time.Time
+}
+
 const (
 	remoteNodeIDRandomBytes           = 24
 	remoteNodeBootstrapKeyRandomBytes = 48
@@ -62,13 +73,123 @@ CREATE TABLE IF NOT EXISTS remote_nodes (
 `); err != nil {
 		return fmt.Errorf("create remote_nodes table: %w", err)
 	}
+	if _, err := s.db.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS remote_node_events (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	tenant_id INTEGER NOT NULL,
+	node_id TEXT NOT NULL,
+	event_type TEXT NOT NULL,
+	remote_ip TEXT NOT NULL,
+	user_agent TEXT,
+	details TEXT,
+	created_at DATETIME NOT NULL,
+	FOREIGN KEY(tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+)
+`); err != nil {
+		return fmt.Errorf("create remote_node_events table: %w", err)
+	}
 	if _, err := s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_remote_nodes_tenant ON remote_nodes(tenant_id, enabled, node_id)`); err != nil {
 		return fmt.Errorf("create remote_nodes tenant index: %w", err)
 	}
 	if _, err := s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_remote_nodes_last_seen ON remote_nodes(last_seen_at)`); err != nil {
 		return fmt.Errorf("create remote_nodes last_seen index: %w", err)
 	}
+	if _, err := s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_remote_node_events_tenant_node_created ON remote_node_events(tenant_id, node_id, created_at DESC)`); err != nil {
+		return fmt.Errorf("create remote_node_events tenant-node-created index: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_remote_node_events_created ON remote_node_events(created_at DESC)`); err != nil {
+		return fmt.Errorf("create remote_node_events created index: %w", err)
+	}
 	return nil
+}
+
+func (s *ControlPlaneStore) InsertRemoteNodeEvent(ctx context.Context, tenantID int64, nodeID, eventType, remoteIP, userAgent, details string, createdAt time.Time) error {
+	nodeID = strings.TrimSpace(nodeID)
+	eventType = strings.TrimSpace(eventType)
+	if tenantID <= 0 || nodeID == "" || eventType == "" {
+		return errors.New("tenant id, node id and event type are required")
+	}
+	if createdAt.IsZero() {
+		createdAt = time.Now().UTC()
+	}
+	remoteIP = strings.TrimSpace(remoteIP)
+	if remoteIP == "" {
+		remoteIP = "unknown"
+	}
+	if len(remoteIP) > 128 {
+		remoteIP = remoteIP[:128]
+	}
+	userAgent = strings.TrimSpace(userAgent)
+	if len(userAgent) > 255 {
+		userAgent = userAgent[:255]
+	}
+	details = strings.TrimSpace(details)
+	if len(details) > 400 {
+		details = details[:400]
+	}
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO remote_node_events (
+	tenant_id,
+	node_id,
+	event_type,
+	remote_ip,
+	user_agent,
+	details,
+	created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?)
+`, tenantID, nodeID, eventType, remoteIP, userAgent, details, createdAt.UTC())
+	if err != nil {
+		return fmt.Errorf("insert remote node event: %w", err)
+	}
+	return nil
+}
+
+func (s *ControlPlaneStore) ListRecentRemoteNodeEventsByTenant(ctx context.Context, tenantID int64, limit int) ([]RemoteNodeEvent, error) {
+	if tenantID <= 0 {
+		return []RemoteNodeEvent{}, nil
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, tenant_id, node_id, event_type, remote_ip, user_agent, details, created_at
+FROM remote_node_events
+WHERE tenant_id = ?
+ORDER BY created_at DESC, id DESC
+LIMIT ?
+`, tenantID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list remote node events: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]RemoteNodeEvent, 0)
+	for rows.Next() {
+		var item RemoteNodeEvent
+		if err := rows.Scan(
+			&item.ID,
+			&item.TenantID,
+			&item.NodeID,
+			&item.EventType,
+			&item.RemoteIP,
+			&item.UserAgent,
+			&item.Details,
+			&item.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan remote node event: %w", err)
+		}
+		item.NodeID = strings.TrimSpace(item.NodeID)
+		item.EventType = strings.TrimSpace(item.EventType)
+		item.RemoteIP = strings.TrimSpace(item.RemoteIP)
+		item.UserAgent = strings.TrimSpace(item.UserAgent)
+		item.Details = strings.TrimSpace(item.Details)
+		item.CreatedAt = item.CreatedAt.UTC()
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate remote node events: %w", err)
+	}
+	return items, nil
 }
 
 func (s *ControlPlaneStore) CreateRemoteNode(ctx context.Context, tenantID int64, name string, heartbeatTimeoutSeconds int) (RemoteNode, string, error) {
