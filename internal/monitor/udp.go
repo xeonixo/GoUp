@@ -163,7 +163,7 @@ func checkUDPDNS(monitorID int64, checkedAt time.Time, conn *net.UDPConn, starte
 	if flags&0x8000 == 0 {
 		return Result{MonitorID: monitorID, CheckedAt: checkedAt, Status: StatusDown, Latency: latency, Message: "dns response missing QR flag"}
 	}
-	return Result{MonitorID: monitorID, CheckedAt: checkedAt, Status: StatusUp, Latency: latency, Message: fmt.Sprintf("DNS response ok in %d ms", latency.Milliseconds())}
+	return Result{MonitorID: monitorID, CheckedAt: checkedAt, Status: StatusUp, Latency: latency, Message: fmt.Sprintf("DNS response ok in %s", formatLatency(latency))}
 }
 
 func checkUDPNTP(monitorID int64, checkedAt time.Time, conn *net.UDPConn, startedAt time.Time) Result {
@@ -189,7 +189,7 @@ func checkUDPNTP(monitorID int64, checkedAt time.Time, conn *net.UDPConn, starte
 	if mode != 4 && mode != 5 {
 		return Result{MonitorID: monitorID, CheckedAt: checkedAt, Status: StatusDown, Latency: latency, Message: "ntp response mode invalid"}
 	}
-	return Result{MonitorID: monitorID, CheckedAt: checkedAt, Status: StatusUp, Latency: latency, Message: fmt.Sprintf("NTP response ok in %d ms", latency.Milliseconds())}
+	return Result{MonitorID: monitorID, CheckedAt: checkedAt, Status: StatusUp, Latency: latency, Message: fmt.Sprintf("NTP response ok in %s", formatLatency(latency))}
 }
 
 func checkUDPWireGuardLike(ctx context.Context, monitorID int64, checkedAt time.Time, conn *net.UDPConn, startedAt time.Time, timeout time.Duration, tunnelProbe string) Result {
@@ -312,7 +312,7 @@ func formatUDPAttemptLabel(label string, attempt Result) string {
 		if attempt.Status == StatusDegraded {
 			return fmt.Sprintf("%s degraded (%s)", label, attempt.Message)
 		}
-		return fmt.Sprintf("%s %d ms", label, attempt.Latency.Milliseconds())
+		return fmt.Sprintf("%s %s", label, formatLatency(attempt.Latency))
 	}
 	if strings.TrimSpace(attempt.Message) == "" {
 		return label + " down"

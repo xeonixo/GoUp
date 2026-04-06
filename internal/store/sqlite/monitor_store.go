@@ -1325,13 +1325,11 @@ func validateMonitorKindSettings(kind monitor.Kind, target string, tlsMode monit
 			return errors.New("mail monitors require tls or starttls mode")
 		}
 	case monitor.KindDNS:
-		dnsTarget := strings.TrimSpace(target)
-		if dnsTarget == "" {
-			return errors.New("target must be a hostname for DNS monitors")
+		normalizedTarget, err := monitor.NormalizeDNSTarget(target)
+		if err != nil {
+			return err
 		}
-		if strings.ContainsAny(dnsTarget, " /\\@") {
-			return errors.New("DNS target must be a plain hostname (e.g. example.com)")
-		}
+		target = normalizedTarget
 		if expectedStatusCode != nil {
 			return errors.New("expected HTTP status is only valid for HTTPS monitors")
 		}

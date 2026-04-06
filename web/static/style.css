@@ -704,6 +704,18 @@ h3 {
   gap: 1rem;
 }
 
+.inline-grid.inline-grid-http-target {
+  grid-template-columns: minmax(110px, 0.5fr) minmax(0, 1fr) minmax(110px, 0.45fr);
+}
+
+.inline-grid .field-compact {
+  max-width: 100%;
+}
+
+.inline-grid .field-port-compact {
+  max-width: 160px;
+}
+
 input {
 
   border: 1px solid var(--border);
@@ -1227,17 +1239,27 @@ button.monitor-cycle-indicator:disabled {
 .modal-close-button {
   width: 2.15rem;
   height: 2.15rem;
-  display: inline-flex;
+  min-width: 2.15rem;
+  min-height: 2.15rem;
+  max-width: 2.15rem;
+  max-height: 2.15rem;
+  display: flex;
   align-items: center;
   justify-content: center;
+  position: absolute;
+  top: 1.1rem;
+  right: 1.1rem;
   border: 1px solid var(--border);
-  border-radius: 11px;
+  border-radius: 50%;
   background: rgba(9, 14, 28, 0.78);
   color: var(--text);
   cursor: pointer;
-  font-size: 1.2rem;
+  font-size: 1.3rem;
   line-height: 1;
   flex-shrink: 0;
+  z-index: 10;
+  box-shadow: 0 2px 8px 0 rgba(0,0,0,0.08);
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .modal-close-button:hover {

@@ -14,7 +14,7 @@ const (
 	hourlyRollupRetentionDays      = 365
 	maintenanceInterval            = 6 * time.Hour
 	retentionRunInterval           = 24 * time.Hour
-	hourlyRollupBackfillSettingKey = "hourly_rollup_backfill_v1_completed_at"
+	hourlyRollupBackfillSettingKey = "hourly_rollup_backfill_v2_completed_at"
 	lastRetentionRunSettingKey     = "last_raw_retention_run_at"
 	lastRollupRetentionRunSetting  = "last_hourly_rollup_retention_run_at"
 	lastOptimizeMonthSettingKey    = "last_sqlite_optimize_month"
@@ -74,11 +74,13 @@ func (s *Store) RunMaintenance(ctx context.Context, now time.Time) (MaintenanceR
 func upsertHourlyRollup(ctx context.Context, execer sqlExecutor, monitorID int64, checkedAt time.Time, status monitor.Status, latencyMS int) error {
 	hourBucket := checkedAt.UTC().Truncate(time.Hour)
 	upChecks, downChecks, degradedChecks := 0, 0, 0
+	latencySumMS, latencyMinMS, latencyMaxMS := latencyMS, latencyMS, latencyMS
 	switch status {
 	case monitor.StatusUp:
 		upChecks = 1
 	case monitor.StatusDown:
 		downChecks = 1
+		latencySumMS, latencyMinMS, latencyMaxMS = 0, 0, 0
 	case monitor.StatusDegraded:
 		degradedChecks = 1
 	}
@@ -107,7 +109,7 @@ ON CONFLICT(monitor_id, hour_bucket) DO UPDATE SET
     latency_max_ms = MAX(monitor_hourly_rollups.latency_max_ms, excluded.latency_max_ms),
     first_checked_at = MIN(monitor_hourly_rollups.first_checked_at, excluded.first_checked_at),
     last_checked_at = MAX(monitor_hourly_rollups.last_checked_at, excluded.last_checked_at)
-`, monitorID, hourBucket, upChecks, downChecks, degradedChecks, latencyMS, latencyMS, latencyMS, checkedAt.UTC(), checkedAt.UTC())
+`, monitorID, hourBucket, upChecks, downChecks, degradedChecks, latencySumMS, latencyMinMS, latencyMaxMS, checkedAt.UTC(), checkedAt.UTC())
 	if err != nil {
 		return fmt.Errorf("upsert hourly rollup: %w", err)
 	}
@@ -145,9 +147,9 @@ SELECT
     SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END),
     SUM(CASE WHEN status = 'down' THEN 1 ELSE 0 END),
     SUM(CASE WHEN status = 'degraded' THEN 1 ELSE 0 END),
-    SUM(latency_ms),
-    MIN(latency_ms),
-    MAX(latency_ms),
+	SUM(CASE WHEN status IN ('up', 'degraded') THEN latency_ms ELSE 0 END),
+	COALESCE(MIN(CASE WHEN status IN ('up', 'degraded') THEN latency_ms END), 0),
+	COALESCE(MAX(CASE WHEN status IN ('up', 'degraded') THEN latency_ms END), 0),
     MIN(checked_at),
     MAX(checked_at)
 FROM monitor_results

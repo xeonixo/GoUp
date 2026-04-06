@@ -148,7 +148,7 @@ func (c HTTPSChecker) checkTarget(ctx context.Context, item Monitor, checkedAt t
 
 	result.HTTPStatusCode = &resp.StatusCode
 	status := StatusUp
-	message := fmt.Sprintf("HTTP %d in %d ms", resp.StatusCode, result.Latency.Milliseconds())
+	message := fmt.Sprintf("HTTP %d in %s", resp.StatusCode, formatLatency(result.Latency))
 
 	if item.ExpectedStatusCode != nil && resp.StatusCode != *item.ExpectedStatusCode {
 		status = StatusDown
@@ -190,7 +190,7 @@ func (c HTTPSChecker) checkTarget(ctx context.Context, item Monitor, checkedAt t
 			status = StatusDegraded
 			message = fmt.Sprintf("certificate expires in %d days", daysRemaining)
 		} else if isSelfSigned && status == StatusUp {
-			message = fmt.Sprintf("HTTP %d in %d ms (self-signed cert, expires in %d days)", resp.StatusCode, result.Latency.Milliseconds(), daysRemaining)
+			message = fmt.Sprintf("HTTP %d in %s (self-signed cert, expires in %d days)", resp.StatusCode, formatLatency(result.Latency), daysRemaining)
 		}
 	}
 
@@ -230,7 +230,7 @@ func formatHTTPAttemptLabel(label string, attempt Result) string {
 		if attempt.Status == StatusDegraded {
 			return fmt.Sprintf("%s degraded (%s)", label, attempt.Message)
 		}
-		return fmt.Sprintf("%s %d ms", label, attempt.Latency.Milliseconds())
+		return fmt.Sprintf("%s %s", label, formatLatency(attempt.Latency))
 	}
 	if strings.TrimSpace(attempt.Message) == "" {
 		return label + " down"

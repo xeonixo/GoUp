@@ -65,16 +65,32 @@
     const targetHintField = document.getElementById('monitor-target-hint');
     const targetWarnField = document.getElementById('monitor-target-warn');
     const httpsTargetRow = document.getElementById('https-target-row');
+    const httpSchemeField = document.getElementById('monitor-http-scheme');
     const httpHostField = document.getElementById('monitor-http-host');
     const httpPortField = document.getElementById('monitor-http-port');
     const httpPathField = document.getElementById('monitor-http-path');
+    const httpSkipVerifyRow = document.getElementById('https-skip-verify-row');
+    const httpSkipVerifyField = document.getElementById('monitor-http-skip-cert');
+    const httpSkipVerifyLabelField = document.getElementById('monitor-http-skip-cert-label');
     const httpsFamilyRow = document.getElementById('https-family-row');
     const httpsFamilyField = document.getElementById('monitor-https-family');
     const tcpTargetRow = document.getElementById('tcp-target-row');
     const tcpHostField = document.getElementById('monitor-tcp-host');
     const tcpPortField = document.getElementById('monitor-tcp-port');
+    const dnsTargetRow = document.getElementById('dns-target-row');
+    const dnsHostField = document.getElementById('monitor-dns-host');
+    const dnsRecordTypeField = document.getElementById('monitor-dns-record-type');
+    const dnsServerField = document.getElementById('monitor-dns-server');
     const tcpFamilyRow = document.getElementById('tcp-family-row');
     const tcpFamilyField = document.getElementById('monitor-tcp-family');
+    const mailTargetRow = document.getElementById('mail-target-row');
+    const mailHostField = document.getElementById('monitor-mail-host');
+    const mailPortField = document.getElementById('monitor-mail-port');
+    const mailFamilyRow = document.getElementById('mail-family-row');
+    const mailFamilyField = document.getElementById('monitor-mail-family');
+    const mailVerifyRow = document.getElementById('mail-verify-row');
+    const mailVerifyField = document.getElementById('monitor-mail-verify-cert');
+    const mailVerifyLabelField = document.getElementById('monitor-mail-verify-cert-label');
     const udpCheckRow = document.getElementById('udp-check-row');
     const udpCheckField = document.getElementById('monitor-udp-check');
     const udpTargetRow = document.getElementById('udp-target-row');
@@ -276,6 +292,13 @@
     let notificationEventsPage = 1;
     const tablePageSize = 10;
     const i18n = window.GOUP_DASHBOARD_I18N || {};
+    const monitorCreateTitleFallback = String(title?.dataset?.createTitle || title?.textContent || 'Create monitor').trim() || 'Create monitor';
+    const monitorEditTitleFallback = String(title?.dataset?.editTitle || 'Edit monitor').trim() || 'Edit monitor';
+    const monitorSkipCertFallback = String(httpSkipVerifyLabelField?.textContent || 'Do not verify certificate').trim() || 'Do not verify certificate';
+    const monitorTCPHandshakeFallback = String(useHTTPSLabelField?.textContent || 'Check TLS handshake').trim() || 'Check TLS handshake';
+    const monitorVerifyCertFallback = String(verifyCertLabelField?.textContent || 'Verify certificate').trim() || 'Verify certificate';
+    const expectedKeywordsOptionalFallback = String(expectedTextLabelField?.textContent || 'Expected keywords (optional)').trim() || 'Expected keywords (optional)';
+    const expectedKeywordsHintFallback = String(expectedTextHintField?.textContent || 'Separate multiple keywords with commas. All keywords must appear in the body.').trim() || 'Separate multiple keywords with commas. All keywords must appear in the body.';
     const tr = (key, fallback, values = {}) => {
       let text = (typeof i18n[key] === 'string' && i18n[key].trim() !== '') ? i18n[key] : fallback;
       Object.entries(values).forEach(([name, value]) => {
@@ -836,20 +859,60 @@
       return `${normalizedHost}:${port}`;
     };
 
+    const normalizeDNSRecordType = (value) => {
+      const raw = String(value || '').trim().toLowerCase();
+      if (raw === 'a' || raw === 'aaaa' || raw === 'cname' || raw === 'mx' || raw === 'txt' || raw === 'ns' || raw === 'srv' || raw === 'caa' || raw === 'soa') {
+        return raw;
+      }
+      return 'mixed';
+    };
+
+    const parseDNSTarget = (value) => {
+      const raw = String(value || '').trim();
+      if (!raw) {
+        return { host: '', recordType: 'mixed', server: '' };
+      }
+      const parts = raw.split('|');
+      if (parts.length === 1) {
+        return { host: raw, recordType: 'mixed', server: '' };
+      }
+      return {
+        host: String(parts[0] || '').trim(),
+        recordType: normalizeDNSRecordType(parts[1]),
+        server: String(parts.slice(2).join('|') || '').trim()
+      };
+    };
+
+    const composeDNSTarget = () => {
+      const host = String(dnsHostField?.value || '').trim();
+      if (!host) {
+        return '';
+      }
+      const recordType = normalizeDNSRecordType(dnsRecordTypeField?.value);
+      const server = String(dnsServerField?.value || '').trim();
+      if (recordType === 'mixed' && !server) {
+        return host;
+      }
+      return `${host}|${recordType}|${server}`;
+    };
+
     const parseHTTPURLTarget = (value) => {
       const raw = String(value || '').trim();
       if (!raw) {
-        return { host: '', port: '', path: '' };
+        return { scheme: 'https', host: '', port: '', path: '' };
       }
       try {
         const parsed = new URL(raw);
+        const protocol = String(parsed.protocol || '').toLowerCase();
+        const scheme = protocol === 'http:' ? 'http' : 'https';
         return {
+          scheme,
           host: String(parsed.hostname || '').trim(),
           port: String(parsed.port || '').trim(),
           path: `${parsed.pathname || ''}${parsed.search || ''}`
         };
       } catch (_) {
-        return { host: '', port: '', path: '' };
+        return { scheme: 'https', host: '', port: '', path: '' };
       }
     };
 
@@ -865,7 +928,7 @@
       return host.includes(':') ? `[${host}]:${port}` : `${host}:${port}`;
     };
 
-    const composeHTTPSMonitorTarget = (useHTTPS) => {
+    const composeHTTPSMonitorTarget = () => {
       const hostPort = formatHTTPHostPort(httpHostField?.value, httpPortField?.value);
       if (!hostPort) {
         return '';
@@ -874,7 +937,7 @@
       if (path && !path.startsWith('/') && !path.startsWith('?')) {
         path = `/${path}`;
       }
-      const scheme = useHTTPS ? 'https://' : 'http://';
+      const scheme = String(httpSchemeField?.value || 'https').toLowerCase() === 'http' ? 'http://' : 'https://';
       return `${scheme}${hostPort}${path}`;
     };
 
@@ -947,6 +1010,24 @@
         }
       };
 
+      const syncMailFamilyMode = () => {
+        if (!mailFamilyRow || !mailFamilyField) {
+          return;
+        }
+        const isMailMonitor = kindField.value === 'smtp' || kindField.value === 'imap';
+        if (!isMailMonitor) {
+          mailFamilyRow.hidden = true;
+          return;
+        }
+
+        const mailHost = String(mailHostField?.value || '').trim().replace(/^\[/, '').replace(/\]$/, '');
+        const requiresFamily = mailHost !== '' && !isLiteralIP(mailHost);
+        mailFamilyRow.hidden = !requiresFamily;
+        if (!requiresFamily) {
+          mailFamilyField.value = 'dual';
+        }
+      };
+
       const syncUDPFamilyMode = () => {
         if (!udpFamilyRow || !udpFamilyField) {
           return;
@@ -1016,17 +1097,26 @@
       const isUDP = kind === 'udp';
       const isWhois = kind === 'whois';
       const udpCheckMode = normalizeUDPCheck(udpCheckField?.value);
-      const supportsTLSChecks = isHTTPMonitor || isTCPMonitor;
+      const supportsTCPTLSChecks = isTCPMonitor;
+      const isHTTPSEnabled = isHTTPMonitor && String(httpSchemeField?.value || 'https').toLowerCase() !== 'http';
+      const mailTLSSelection = String(tlsModeField?.value || '').toLowerCase();
+      const mailEncryptionEnabled = isMail && (mailTLSSelection === 'tls' || mailTLSSelection === 'starttls');
       const showExpectedText = isHTTPMonitor || isDNS;
 
       if (targetRow) {
-        targetRow.hidden = isTCPMonitor || isHTTPMonitor || isUDP;
+        targetRow.hidden = isTCPMonitor || isHTTPMonitor || isUDP || isMail || isDNS;
       }
       if (httpsTargetRow) {
         httpsTargetRow.hidden = !isHTTPMonitor;
       }
       if (tcpTargetRow) {
         tcpTargetRow.hidden = !isTCPMonitor;
+      }
+      if (dnsTargetRow) {
+        dnsTargetRow.hidden = !isDNS;
+      }
+      if (mailTargetRow) {
+        mailTargetRow.hidden = !isMail;
       }
       if (udpCheckRow) {
         udpCheckRow.hidden = !isUDP;
@@ -1035,7 +1125,7 @@
         udpTargetRow.hidden = !isUDP;
       }
       if (targetField) {
-        targetField.required = !isTCPMonitor && !isHTTPMonitor && !isUDP;
+        targetField.required = !isTCPMonitor && !isHTTPMonitor && !isUDP && !isMail && !isDNS;
       }
       if (httpHostField) {
         httpHostField.required = isHTTPMonitor;
@@ -1049,6 +1139,15 @@
       if (tcpPortField) {
         tcpPortField.required = isTCPMonitor;
       }
+      if (dnsHostField) {
+        dnsHostField.required = isDNS;
+      }
+      if (mailHostField) {
+        mailHostField.required = isMail;
+      }
+      if (mailPortField) {
+        mailPortField.required = isMail;
+      }
       if (udpHostField) {
         udpHostField.required = isUDP;
       }
@@ -1057,23 +1156,29 @@
       }
 
       tlsModeRow.hidden = !isMail;
-      httpsModeRow.hidden = !supportsTLSChecks;
-      httpsVerifyRow.hidden = !supportsTLSChecks || !useHTTPSField.checked;
+      httpsModeRow.hidden = !supportsTCPTLSChecks;
+      httpsVerifyRow.hidden = !supportsTCPTLSChecks || !useHTTPSField.checked;
+      if (mailVerifyRow) {
+        mailVerifyRow.hidden = !mailEncryptionEnabled;
+      }
+      if (httpSkipVerifyRow) {
+        httpSkipVerifyRow.hidden = !isHTTPMonitor || !isHTTPSEnabled;
+      }
       expectedStatusRow.hidden = !isHTTPMonitor;
       expectedTextRow.hidden = !showExpectedText;
 
       if (isHTTPMonitor) {
-        if (useHTTPSLabelField) {
-          useHTTPSLabelField.textContent = tr('monitorUseHTTPS', 'Use HTTPS');
+        if (!httpSchemeField || !httpSkipVerifyField) {
+          return;
         }
-        if (verifyCertLabelField) {
-          verifyCertLabelField.textContent = tr('monitorVerifyCert', 'Verify certificate');
+        if (httpSkipVerifyLabelField) {
+          httpSkipVerifyLabelField.textContent = tr('monitorSkipCert', monitorSkipCertFallback);
         }
-        if (!useHTTPSField.checked) {
-          verifyCertField.checked = false;
+        if (String(httpSchemeField.value || 'https').toLowerCase() === 'http') {
+          httpSkipVerifyField.checked = false;
           tlsModeField.value = 'none';
         } else {
-          tlsModeField.value = verifyCertField.checked ? 'tls' : 'starttls';
+          tlsModeField.value = httpSkipVerifyField.checked ? 'starttls' : 'tls';
         }
         if (targetField) {
           targetField.placeholder = 'example.com/health';
@@ -1082,29 +1187,29 @@
           httpHostField.placeholder = 'example.com oder 2001:db8::1';
         }
         if (httpPortField) {
-          httpPortField.placeholder = useHTTPSField.checked ? '443' : '80';
+          httpPortField.placeholder = String(httpSchemeField.value || 'https').toLowerCase() === 'http' ? '80' : '443';
         }
         if (httpPathField) {
           httpPathField.placeholder = '/health';
         }
         if (targetHintField) {
-          targetHintField.textContent = useHTTPSField.checked
-            ? tr('monitorHintHTTPS', 'For HTTPS: host/path without protocol (https:// is added automatically).')
-            : tr('monitorHintHTTP', 'For HTTP: host/path without protocol (http:// is added automatically).');
+          targetHintField.textContent = String(httpSchemeField.value || 'https').toLowerCase() === 'http'
+            ? tr('monitorHintHTTP', 'For HTTP: host/path without protocol (http:// is added automatically).')
+            : tr('monitorHintHTTPS', 'For HTTPS: host/path without protocol (https:// is added automatically).');
         }
         if (expectedTextLabelField) {
-          expectedTextLabelField.textContent = tr('expectedKeywordsOptional', 'Expected keywords (optional)');
+          expectedTextLabelField.textContent = tr('expectedKeywordsOptional', expectedKeywordsOptionalFallback);
         }
         if (expectedTextHintField) {
-          expectedTextHintField.textContent = tr('expectedKeywordsHint', 'Separate multiple keywords with commas. All keywords must appear in the body.');
+          expectedTextHintField.textContent = tr('expectedKeywordsHint', expectedKeywordsHintFallback);
         }
         syncHTTPSFamilyMode();
       } else if (isTCPMonitor) {
         if (useHTTPSLabelField) {
-          useHTTPSLabelField.textContent = tr('monitorTCPHandshake', 'Check TLS handshake');
+          useHTTPSLabelField.textContent = tr('monitorTCPHandshake', monitorTCPHandshakeFallback);
         }
         if (verifyCertLabelField) {
-          verifyCertLabelField.textContent = tr('monitorVerifyCert', 'Verify certificate');
+          verifyCertLabelField.textContent = tr('monitorVerifyCert', monitorVerifyCertFallback);
         }
         expectedStatusField.value = '';
         expectedTextField.value = '';
@@ -1124,22 +1229,44 @@
           tcpPortField.placeholder = '443';
         }
         if (targetHintField) {
-          targetHintField.textContent = tr('monitorHintTCP', 'For TCP: host:port');
+          targetHintField.textContent = '';
         }
         syncTCPFamilyMode();
       } else if (isMail) {
+        if (httpSchemeField) {
+          httpSchemeField.value = 'https';
+        }
+        if (httpSkipVerifyField) {
+          httpSkipVerifyField.checked = false;
+        }
         useHTTPSField.checked = false;
         verifyCertField.checked = false;
-        if (tlsModeField.value !== 'tls' && tlsModeField.value !== 'starttls') {
+        if (mailVerifyLabelField) {
+          mailVerifyLabelField.textContent = tr('monitorSkipCert', monitorSkipCertFallback);
+        }
+        if (tlsModeField.value !== 'none' && tlsModeField.value !== 'tls' && tlsModeField.value !== 'starttls') {
           tlsModeField.value = kind === 'smtp' ? 'starttls' : 'tls';
         }
+        if (!mailEncryptionEnabled && mailVerifyField) {
+          mailVerifyField.checked = false;
+        }
         if (targetField) {
-          targetField.placeholder = 'mail.example.com:587';
+          targetField.placeholder = '';
+        }
+        if (mailPortField) {
+          mailPortField.placeholder = kind === 'smtp' ? '587' : '993';
         }
         if (targetHintField) {
-          targetHintField.textContent = tr('monitorHintMail', 'For mail monitors: host:port');
+          targetHintField.textContent = '';
         }
+        syncMailFamilyMode();
       } else if (isDNS) {
+        if (httpSchemeField) {
+          httpSchemeField.value = 'https';
+        }
+        if (httpSkipVerifyField) {
+          httpSkipVerifyField.checked = false;
+        }
         useHTTPSField.checked = false;
         verifyCertField.checked = false;
         tlsModeField.value = 'none';
@@ -1147,19 +1274,34 @@
         if (targetField) {
           targetField.placeholder = 'example.com';
         }
+        if (dnsHostField) {
+          dnsHostField.placeholder = 'example.com';
+        }
+        if (dnsRecordTypeField && !dnsRecordTypeField.value) {
+          dnsRecordTypeField.value = 'mixed';
+        }
+        if (dnsServerField) {
+          dnsServerField.placeholder = '1.1.1.1 oder 2606:4700:4700::1111';
+        }
         if (targetHintField) {
           targetHintField.textContent = tr('monitorHintDNS', 'Hostname to resolve (e.g. example.com).');
         }
         if (expectedTextField) {
-          expectedTextField.placeholder = '1.2.3.4';
+          expectedTextField.placeholder = tr('monitorDNSExpectedPlaceholder', '1.2.3.4, 2606:4700:4700::1111');
         }
         if (expectedTextLabelField) {
-          expectedTextLabelField.textContent = tr('dnsExpectedOptional', 'Expected DNS response (optional)');
+          expectedTextLabelField.textContent = tr('dnsExpectedOptional', 'Expected DNS keywords (optional)');
         }
         if (expectedTextHintField) {
-          expectedTextHintField.textContent = tr('dnsExpectedHint', 'Optional substring that must appear in the resolved IP addresses.');
+          expectedTextHintField.textContent = tr('dnsExpectedHint', 'Comma-separated keywords. All keywords must appear in the resolved DNS records.');
         }
       } else if (isUDP) {
+        if (httpSchemeField) {
+          httpSchemeField.value = 'https';
+        }
+        if (httpSkipVerifyField) {
+          httpSkipVerifyField.checked = false;
+        }
         useHTTPSField.checked = false;
         verifyCertField.checked = false;
         tlsModeField.value = 'none';
@@ -1180,6 +1322,12 @@
         }
         syncUDPFamilyMode();
       } else if (isWhois) {
+        if (httpSchemeField) {
+          httpSchemeField.value = 'https';
+        }
+        if (httpSkipVerifyField) {
+          httpSkipVerifyField.checked = false;
+        }
         useHTTPSField.checked = false;
         verifyCertField.checked = false;
         tlsModeField.value = 'none';
@@ -1189,9 +1337,15 @@
           targetField.placeholder = 'example.com';
         }
         if (targetHintField) {
-          targetHintField.textContent = tr('monitorHintWHOIS', 'Domain without protocol (e.g. example.com). Checks expiry date or registration status (TLD-dependent).');
+          targetHintField.textContent = '';
         }
       } else if (isICMPMonitor) {
+        if (httpSchemeField) {
+          httpSchemeField.value = 'https';
+        }
+        if (httpSkipVerifyField) {
+          httpSkipVerifyField.checked = false;
+        }
         useHTTPSField.checked = false;
         verifyCertField.checked = false;
         expectedStatusField.value = '';
@@ -1200,10 +1354,16 @@
           targetField.placeholder = '1.1.1.1 oder host.example.com';
         }
         if (targetHintField) {
-          targetHintField.textContent = tr('monitorHintICMP', 'For ICMP: IPv4/IPv6 address or hostname without port.');
+          targetHintField.textContent = '';
         }
         syncICMPFamilyMode();
       } else {
+        if (httpSchemeField) {
+          httpSchemeField.value = 'https';
+        }
+        if (httpSkipVerifyField) {
+          httpSkipVerifyField.checked = false;
+        }
         useHTTPSField.checked = false;
         verifyCertField.checked = false;
         tlsModeField.value = 'none';
@@ -1214,14 +1374,14 @@
             targetField.placeholder = 'example.com:443';
           }
           if (targetHintField) {
-            targetHintField.textContent = tr('monitorHintTCP', 'For TCP: host:port');
+            targetHintField.textContent = '';
           }
         } else if (kind === 'icmp') {
           if (targetField) {
             targetField.placeholder = '1.1.1.1';
           }
           if (targetHintField) {
-            targetHintField.textContent = tr('monitorHintICMPShort', 'For ICMP: IPv4/IPv6 address');
+            targetHintField.textContent = '';
           }
         }
       }
@@ -1231,6 +1391,15 @@
       }
       if (!isTCPMonitor && tcpFamilyRow) {
         tcpFamilyRow.hidden = true;
+      }
+      if (!isDNS && dnsTargetRow) {
+        dnsTargetRow.hidden = true;
+      }
+      if (!isMail && mailFamilyRow) {
+        mailFamilyRow.hidden = true;
+      }
+      if (!isMail && mailVerifyRow) {
+        mailVerifyRow.hidden = true;
       }
       if (!isHTTPMonitor && httpsFamilyRow) {
         httpsFamilyRow.hidden = true;
@@ -1246,7 +1415,7 @@
       if (!title || !idField || !nameField || !groupField || !kindField || !tlsModeField || !targetField || !intervalField || !timeoutField || !expectedStatusField || !expectedTextField || !enabledField || !notifyField || !dialog) {
         return;
       }
-      title.textContent = tr('monitorCreateTitle', 'Create monitor');
+      title.textContent = tr('monitorCreateTitle', monitorCreateTitleFallback);
       idField.value = '';
       nameField.value = '';
       groupField.value = '';
@@ -1264,6 +1433,9 @@
       if (tcpFamilyField) {
         tcpFamilyField.value = 'dual';
       }
+      if (mailFamilyField) {
+        mailFamilyField.value = 'dual';
+      }
       if (udpFamilyField) {
         udpFamilyField.value = 'dual';
       }
@@ -1274,17 +1446,41 @@
       if (httpHostField) {
         httpHostField.value = '';
       }
+      if (httpSchemeField) {
+        httpSchemeField.value = 'https';
+      }
       if (httpPortField) {
         httpPortField.value = '';
       }
       if (httpPathField) {
         httpPathField.value = '';
       }
+      if (httpSkipVerifyField) {
+        httpSkipVerifyField.checked = false;
+      }
       if (tcpHostField) {
         tcpHostField.value = '';
       }
       if (tcpPortField) {
         tcpPortField.value = '';
+      }
+      if (dnsHostField) {
+        dnsHostField.value = '';
+      }
+      if (dnsRecordTypeField) {
+        dnsRecordTypeField.value = 'mixed';
+      }
+      if (dnsServerField) {
+        dnsServerField.value = '';
+      }
+      if (mailHostField) {
+        mailHostField.value = '';
+      }
+      if (mailPortField) {
+        mailPortField.value = '';
+      }
+      if (mailVerifyField) {
+        mailVerifyField.checked = false;
       }
       if (udpHostField) {
         udpHostField.value = '';
@@ -1308,7 +1504,7 @@
       if (!title || !idField || !nameField || !groupField || !kindField || !tlsModeField || !targetField || !intervalField || !timeoutField || !expectedStatusField || !expectedTextField || !enabledField || !notifyField || !dialog) {
         return;
       }
-      title.textContent = tr('monitorEditTitle', 'Edit monitor');
+      title.textContent = tr('monitorEditTitle', monitorEditTitleFallback);
       idField.value = button.dataset.id || '';
       nameField.value = button.dataset.name || '';
       groupField.value = button.dataset.group || '';
@@ -1316,7 +1512,11 @@
       if (monitorExecutorField) {
         monitorExecutorField.value = button.dataset.executor || 'local';
       }
-      tlsModeField.value = button.dataset.tlsMode || 'tls';
+      const rawTLSMode = String(button.dataset.tlsMode || 'tls').toLowerCase();
+      const baseTLSMode = rawTLSMode.endsWith('_ipv4') || rawTLSMode.endsWith('_ipv6') || rawTLSMode.endsWith('_dual')
+        ? rawTLSMode.replace(/_(ipv4|ipv6|dual)$/, '')
+        : rawTLSMode;
+      tlsModeField.value = baseTLSMode;
       if (icmpFamilyField) {
         if (tlsModeField.value === 'starttls') {
           icmpFamilyField.value = 'ipv6';
@@ -1331,6 +1531,16 @@
       const monitorKind = button.dataset.kind || 'https';
       if (monitorKind === 'https') {
         const httpsModeRaw = String(button.dataset.tlsMode || 'tls').toLowerCase();
+        if (httpSchemeField) {
+          if (httpsModeRaw === 'none' || httpsModeRaw.startsWith('none_')) {
+            httpSchemeField.value = 'http';
+          } else {
+            httpSchemeField.value = 'https';
+          }
+        }
+        if (httpSkipVerifyField) {
+          httpSkipVerifyField.checked = httpsModeRaw === 'starttls' || httpsModeRaw.startsWith('starttls_');
+        }
         if (httpsFamilyField) {
           if (httpsModeRaw.endsWith('_ipv6')) {
             httpsFamilyField.value = 'ipv6';
@@ -1341,6 +1551,9 @@
           }
         }
         const parsedHTTP = parseHTTPURLTarget(rawTarget);
+        if (httpSchemeField) {
+          httpSchemeField.value = parsedHTTP.scheme;
+        }
         if (httpHostField) {
           httpHostField.value = parsedHTTP.host;
         }
@@ -1351,6 +1564,12 @@
           httpPathField.value = parsedHTTP.path;
         }
       } else {
+        if (httpSchemeField) {
+          httpSchemeField.value = 'https';
+        }
+        if (httpSkipVerifyField) {
+          httpSkipVerifyField.checked = false;
+        }
         if (httpHostField) {
           httpHostField.value = '';
         }
@@ -1391,6 +1610,77 @@
         }
         if (tcpFamilyField) {
           tcpFamilyField.value = 'dual';
+        }
+      }
+      if (monitorKind === 'dns') {
+        const parsedTarget = parseDNSTarget(rawTarget);
+        if (dnsHostField) {
+          dnsHostField.value = parsedTarget.host;
+        }
+        if (dnsRecordTypeField) {
+          dnsRecordTypeField.value = normalizeDNSRecordType(parsedTarget.recordType);
+        }
+        if (dnsServerField) {
+          dnsServerField.value = parsedTarget.server;
+        }
+      } else {
+        if (dnsHostField) {
+          dnsHostField.value = '';
+        }
+        if (dnsRecordTypeField) {
+          dnsRecordTypeField.value = 'mixed';
+        }
+        if (dnsServerField) {
+          dnsServerField.value = '';
+        }
+      }
+      if (monitorKind === 'smtp' || monitorKind === 'imap') {
+        const mailModeRaw = String(button.dataset.tlsMode || (monitorKind === 'smtp' ? 'starttls' : 'tls')).toLowerCase();
+        const mailModeBase = mailModeRaw.endsWith('_ipv4') || mailModeRaw.endsWith('_ipv6') || mailModeRaw.endsWith('_dual')
+          ? mailModeRaw.replace(/_(ipv4|ipv6|dual)$/, '')
+          : mailModeRaw;
+        if (tlsModeField) {
+          if (mailModeBase === 'tls_insecure') {
+            tlsModeField.value = 'tls';
+          } else if (mailModeBase === 'starttls_insecure') {
+            tlsModeField.value = 'starttls';
+          } else if (mailModeBase === 'none' || mailModeBase === 'tls' || mailModeBase === 'starttls') {
+            tlsModeField.value = mailModeBase;
+          } else {
+            tlsModeField.value = monitorKind === 'smtp' ? 'starttls' : 'tls';
+          }
+        }
+        if (mailVerifyField) {
+          mailVerifyField.checked = (mailModeBase === 'tls_insecure' || mailModeBase === 'starttls_insecure');
+        }
+        if (mailFamilyField) {
+          if (mailModeRaw.endsWith('_ipv6')) {
+            mailFamilyField.value = 'ipv6';
+          } else if (mailModeRaw.endsWith('_ipv4')) {
+            mailFamilyField.value = 'ipv4';
+          } else {
+            mailFamilyField.value = 'dual';
+          }
+        }
+        const parsedTarget = parseHostPort(rawTarget);
+        if (mailHostField) {
+          mailHostField.value = parsedTarget.host;
+        }
+        if (mailPortField) {
+          mailPortField.value = parsedTarget.port;
+        }
+      } else {
+        if (mailHostField) {
+          mailHostField.value = '';
+        }
+        if (mailPortField) {
+          mailPortField.value = '';
+        }
+        if (mailFamilyField) {
+          mailFamilyField.value = 'dual';
+        }
+        if (mailVerifyField) {
+          mailVerifyField.checked = false;
         }
       }
       if (monitorKind === 'udp') {
@@ -1476,6 +1766,11 @@
       scheduleIconSearch(groupIconSearch?.value || '');
     });
     kindField?.addEventListener('change', applyKindRules);
+    tlsModeField?.addEventListener('change', () => {
+      if (kindField?.value === 'smtp' || kindField?.value === 'imap') {
+        applyKindRules();
+      }
+    });
     targetField?.addEventListener('input', () => {
       if (kindField?.value === 'icmp' || kindField?.value === 'whois') {
         applyKindRules();
@@ -1494,6 +1789,42 @@
     });
     tcpFamilyField?.addEventListener('change', () => {
       if (kindField?.value === 'tcp') {
+        applyKindRules();
+      }
+    });
+    dnsHostField?.addEventListener('input', () => {
+      if (kindField?.value === 'dns' && targetField) {
+        targetField.value = composeDNSTarget();
+      }
+    });
+    dnsRecordTypeField?.addEventListener('change', () => {
+      if (kindField?.value === 'dns' && targetField) {
+        targetField.value = composeDNSTarget();
+      }
+    });
+    dnsServerField?.addEventListener('input', () => {
+      if (kindField?.value === 'dns' && targetField) {
+        targetField.value = composeDNSTarget();
+      }
+    });
+    mailHostField?.addEventListener('input', () => {
+      if (kindField?.value === 'smtp' || kindField?.value === 'imap') {
+        targetField.value = formatHostPort(mailHostField?.value, mailPortField?.value);
+        applyKindRules();
+      }
+    });
+    mailPortField?.addEventListener('input', () => {
+      if (kindField?.value === 'smtp' || kindField?.value === 'imap') {
+        targetField.value = formatHostPort(mailHostField?.value, mailPortField?.value);
+      }
+    });
+    mailFamilyField?.addEventListener('change', () => {
+      if (kindField?.value === 'smtp' || kindField?.value === 'imap') {
+        applyKindRules();
+      }
+    });
+    mailVerifyField?.addEventListener('change', () => {
+      if (kindField?.value === 'smtp' || kindField?.value === 'imap') {
         applyKindRules();
       }
     });
@@ -1525,14 +1856,25 @@
         applyKindRules();
       }
     });
+    httpSchemeField?.addEventListener('change', () => {
+      if (kindField?.value === 'https') {
+        applyKindRules();
+        targetField.value = composeHTTPSMonitorTarget();
+      }
+    });
     httpPortField?.addEventListener('input', () => {
       if (kindField?.value === 'https') {
-        targetField.value = composeHTTPSMonitorTarget(useHTTPSField?.checked !== false);
+        targetField.value = composeHTTPSMonitorTarget();
       }
     });
     httpPathField?.addEventListener('input', () => {
       if (kindField?.value === 'https') {
-        targetField.value = composeHTTPSMonitorTarget(useHTTPSField?.checked !== false);
+        targetField.value = composeHTTPSMonitorTarget();
+      }
+    });
+    httpSkipVerifyField?.addEventListener('change', () => {
+      if (kindField?.value === 'https') {
+        applyKindRules();
       }
     });
     httpsFamilyField?.addEventListener('change', () => {
@@ -1546,8 +1888,19 @@
       }
     });
     monitorForm?.addEventListener('submit', (event) => {
+      if (kindField?.value === 'dns') {
+        const normalizedTarget = composeDNSTarget();
+        if (!normalizedTarget) {
+          event.preventDefault();
+          return;
+        }
+        if (targetField) {
+          targetField.value = normalizedTarget;
+        }
+        return;
+      }
       if (kindField?.value === 'https') {
-        const normalizedTarget = composeHTTPSMonitorTarget(useHTTPSField?.checked !== false);
+        const normalizedTarget = composeHTTPSMonitorTarget();
         if (!normalizedTarget) {
           event.preventDefault();
           return;
@@ -1580,6 +1933,23 @@
         }
         if (udpCheckField) {
           udpCheckField.value = normalizeUDPCheck(udpCheckField.value);
+        }
+        return;
+      }
+      if (kindField?.value === 'smtp' || kindField?.value === 'imap') {
+        const normalizedTarget = formatHostPort(mailHostField?.value, mailPortField?.value);
+        if (!normalizedTarget) {
+          event.preventDefault();
+          return;
+        }
+        if (targetField) {
+          targetField.value = normalizedTarget;
+        }
+        if (mailFamilyField) {
+          const host = String(mailHostField?.value || '').trim().replace(/^\[/, '').replace(/\]$/, '');
+          if (!host || isLiteralIP(host)) {
+            mailFamilyField.value = 'dual';
+          }
         }
         return;
       }
@@ -2596,8 +2966,14 @@
 
     const formatLatency = (value) => {
       const numeric = Number(value);
-      if (!Number.isFinite(numeric) || numeric <= 0) {
+      if (!Number.isFinite(numeric) || numeric < 0) {
         return '—';
+      }
+      if (numeric === 0) {
+        return '0 ms';
+      }
+      if (numeric > 0 && numeric < 1) {
+        return '<1 ms';
       }
       if (numeric < 1000) {
         return `${numeric} ms`;
@@ -2736,7 +3112,7 @@
         }
         const status = String(point?.status || '').trim().toLowerCase();
         const latencyMS = Number(point?.latency_ms || 0);
-        if (Number.isFinite(latencyMS) && latencyMS > 0) {
+        if (Number.isFinite(latencyMS) && latencyMS >= 0) {
           slot.latencyMS = latencyMS;
           slot.hasValue = true;
         }
@@ -2767,8 +3143,9 @@
       const downSlots = slots.filter((slot) => slot.hasStatus && slot.status === 'down');
       const rawLatencyValues = Array.isArray(points)
         ? points
+          .filter((point) => String(point?.status || '').trim().toLowerCase() !== 'down')
           .map((point) => Number(point?.latency_ms || 0))
-          .filter((value) => Number.isFinite(value) && value > 0)
+          .filter((value) => Number.isFinite(value) && value >= 0)
         : [];
 
       hideLatencyTooltip();
@@ -2836,18 +3213,24 @@
       const fallbackAverage = rawLatencyValues.length > 0
         ? Math.round(rawLatencyValues.reduce((sum, value) => sum + value, 0) / rawLatencyValues.length)
         : 0;
-      const avgValueMS = Number(averageMS) > 0 ? Number(averageMS) : fallbackAverage;
-      const avgPercent = avgValueMS > 0
-        ? Math.max(2, Math.min(100, Math.round((avgValueMS / safeMax) * 100)))
+      const serverAverage = Number(averageMS);
+      const hasAverageValue = rawLatencyValues.length > 0;
+      const avgValueMS = hasAverageValue && Number.isFinite(serverAverage) && serverAverage >= 0
+        ? serverAverage
+        : fallbackAverage;
+      const avgPercent = hasAverageValue
+        ? Math.max(0, Math.min(100, Math.round((avgValueMS / safeMax) * 100)))
         : 0;
       avgLine.style.bottom = `${avgPercent}%`;
       const avgTooltipText = `Ø ${formatLatency(avgValueMS)} · ${latencyRangeLabels[selectedRange] || selectedRange}`;
-      avgLine.title = avgTooltipText;
+      avgLine.title = hasAverageValue ? avgTooltipText : '';
 
       const avgHit = document.createElement('div');
       avgHit.className = 'latency-avg-hit';
       avgHit.style.bottom = `calc(${avgPercent}% - 5px)`;
-      bindLatencySlotTooltip(avgHit, avgTooltipText, avgLine);
+      if (hasAverageValue) {
+        bindLatencySlotTooltip(avgHit, avgTooltipText, avgLine);
+      }
 
       const avgLabel = document.createElement('div');
       avgLabel.className = 'latency-avg-label';
@@ -2855,9 +3238,9 @@
       avgLabel.textContent = `Ø ${formatLatency(avgValueMS)}`;
 
       trendDetailLatencyPlot.appendChild(bars);
-      trendDetailLatencyPlot.appendChild(avgLine);
-      trendDetailLatencyPlot.appendChild(avgHit);
-      if (avgValueMS > 0) {
+      if (hasAverageValue) {
+        trendDetailLatencyPlot.appendChild(avgLine);
+        trendDetailLatencyPlot.appendChild(avgHit);
         trendDetailLatencyPlot.appendChild(avgLabel);
       }
 
@@ -2915,7 +3298,7 @@
         }
         const payload = await response.json();
         const payloadRange = normalizeLatencyRange(payload?.range || selectedRange);
-        renderLatencyChart(payload?.points || [], payload?.average_ms || 0, payloadRange);
+        renderLatencyChart(payload?.points || [], payload?.average_ms, payloadRange);
         setLatencyRangeButtonsState(payloadRange, false);
       } catch (_) {
         if (trendDetailLatencyPlot) {
@@ -2955,17 +3338,21 @@
 
       const barsWithChecks = bars.filter((bar) => Number(bar.dataset.checks || '0') > 0);
       const totalChecks = barsWithChecks.reduce((sum, bar) => sum + Number(bar.dataset.checks || '0'), 0);
-      const weightedLatency = barsWithChecks.reduce((sum, bar) => sum + (Number(bar.dataset.avgMs || '0') * Number(bar.dataset.checks || '0')), 0);
-      const minLatency = barsWithChecks.reduce((min, bar) => {
+      const barsWithLatency = bars.filter((bar) => Number(bar.dataset.latencyChecks || '0') > 0);
+      const totalLatencyChecks = barsWithLatency.reduce((sum, bar) => sum + Number(bar.dataset.latencyChecks || '0'), 0);
+      const weightedLatency = barsWithLatency.reduce((sum, bar) => sum + (Number(bar.dataset.avgMs || '0') * Number(bar.dataset.latencyChecks || '0')), 0);
+      const minLatency = barsWithLatency.reduce((min, bar) => {
         const value = Number(bar.dataset.minMs || '0');
-        return min === 0 || (value > 0 && value < min) ? value : min;
+        return min === 0 || (value >= 0 && value < min) ? value : min;
       }, 0);
-      const maxLatency = barsWithChecks.reduce((max, bar) => {
+      const maxLatency = barsWithLatency.reduce((max, bar) => {
         const value = Number(bar.dataset.maxMs || '0');
         return value > max ? value : max;
       }, 0);
-      const avgLatency = totalChecks > 0 ? Math.round(weightedLatency / totalChecks) : 0;
-      trendDetailLatency.textContent = `${formatLatency(avgLatency)} / ${formatLatency(minLatency)} / ${formatLatency(maxLatency)}`;
+      const avgLatency = totalLatencyChecks > 0 ? Math.round(weightedLatency / totalLatencyChecks) : null;
+      trendDetailLatency.textContent = totalLatencyChecks > 0
+        ? `${formatLatency(avgLatency)} / ${formatLatency(minLatency)} / ${formatLatency(maxLatency)}`
+        : '— / — / —';
       trendDetailChecks.textContent = totalChecks > 0 ? String(totalChecks) : '—';
 
       trendDetailBars.innerHTML = '';
@@ -2997,8 +3384,8 @@
         const when = document.createElement('td');
         when.textContent = formatDateValue(bar.dataset.bucket, bar.dataset.format || 'hour');
         const result = document.createElement('td');
-        const checks = Number(bar.dataset.checks || '0');
-        if (checks > 0) {
+        const latencyChecks = Number(bar.dataset.latencyChecks || '0');
+        if (latencyChecks > 0) {
           result.textContent = `${bar.dataset.label || '—'} · Ø ${formatLatency(bar.dataset.avgMs)} · Min ${formatLatency(bar.dataset.minMs)} · Max ${formatLatency(bar.dataset.maxMs)}`;
         } else {
           result.textContent = bar.dataset.label || tr('trendNoData', 'No data');

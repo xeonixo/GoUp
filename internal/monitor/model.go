@@ -20,9 +20,11 @@ const (
 )
 
 const (
-	TLSModeNone     TLSMode = "none"
-	TLSModeTLS      TLSMode = "tls"
-	TLSModeSTARTTLS TLSMode = "starttls"
+	TLSModeNone             TLSMode = "none"
+	TLSModeTLS              TLSMode = "tls"
+	TLSModeSTARTTLS         TLSMode = "starttls"
+	TLSModeTLSInsecure      TLSMode = "tls_insecure"
+	TLSModeSTARTTLSInsecure TLSMode = "starttls_insecure"
 )
 
 const (

@@ -303,15 +303,16 @@ type dashboardIconSearchResult struct {
 }
 
 type trendPointView struct {
-	BucketRaw string
-	Percent   int
-	Class     string
-	Label     string
-	Format    string
-	Checks    int
-	AvgMS     int
-	MinMS     int
-	MaxMS     int
+	BucketRaw     string
+	Percent       int
+	Class         string
+	Label         string
+	Format        string
+	Checks        int
+	LatencyChecks int
+	AvgMS         int
+	MinMS         int
+	MaxMS         int
 }
 
 type monitorView struct {
@@ -2173,6 +2174,17 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 	}
 
 	target := strings.TrimSpace(r.FormValue("target"))
+	if kind == monitor.KindDNS {
+		dnsHost := strings.TrimSpace(r.FormValue("dns_host"))
+		dnsRecordType := monitor.NormalizeDNSRecordType(strings.TrimSpace(r.FormValue("dns_record_type")))
+		dnsServer := strings.TrimSpace(r.FormValue("dns_server"))
+		if dnsHost != "" || dnsServer != "" || dnsRecordType != monitor.DNSRecordTypeMixed {
+			target = monitor.ComposeDNSTarget(dnsHost, dnsRecordType, dnsServer)
+		}
+		if normalizedTarget, normalizeErr := monitor.NormalizeDNSTarget(target); normalizeErr == nil {
+			target = normalizedTarget
+		}
+	}
 	if kind == monitor.KindHTTPS {
 		httpHost := strings.TrimSpace(r.FormValue("http_host"))
 		httpPort := strings.TrimSpace(r.FormValue("http_port"))
@@ -2209,6 +2221,33 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 				tlsMode = monitor.ComposeTCPTLSMode(tlsMode, family)
 			}
 		}
+	}
+	if kind == monitor.KindSMTP || kind == monitor.KindIMAP {
+		mailHost := strings.TrimSpace(r.FormValue("mail_host"))
+		mailPort := strings.TrimSpace(r.FormValue("mail_port"))
+		if mailHost != "" || mailPort != "" {
+			target = strings.TrimSpace(net.JoinHostPort(strings.Trim(mailHost, "[]"), mailPort))
+		}
+		mailSecurityMode, mailVerifyCert, _ := monitor.ParseMailTLSMode(tlsMode)
+		if rawSkip := strings.TrimSpace(r.FormValue("mail_skip_cert")); rawSkip != "" {
+			mailSkipCert := strings.EqualFold(rawSkip, "on") || strings.EqualFold(rawSkip, "true") || rawSkip == "1"
+			mailVerifyCert = !mailSkipCert
+		} else if rawVerify := strings.TrimSpace(r.FormValue("mail_verify_cert")); rawVerify != "" {
+			// Backward compatibility for older form payloads.
+			mailVerifyCert = strings.EqualFold(rawVerify, "on") || strings.EqualFold(rawVerify, "true") || rawVerify == "1"
+		}
+		if mailSecurityMode == monitor.TLSModeNone {
+			mailVerifyCert = false
+		}
+		mailFamily := monitor.TCPAddressFamilyDual
+		if host, _, splitErr := net.SplitHostPort(target); splitErr == nil {
+			if isLiteralIPAddress(host) {
+				mailFamily = monitor.TCPAddressFamilyDual
+			} else {
+				mailFamily = monitor.NormalizeTCPAddressFamily(strings.TrimSpace(r.FormValue("mail_family")))
+			}
+		}
+		tlsMode = monitor.ComposeMailTLSMode(mailSecurityMode, mailVerifyCert, mailFamily)
 	}
 	if kind == monitor.KindICMP {
 		if !isLiteralIPAddress(target) && target != "" {
@@ -2539,7 +2578,7 @@ func (s *Server) handleMonitorLatencyHistory(w http.ResponseWriter, r *http.Requ
 			LatencyMS: point.LatencyMS,
 			Status:    strings.TrimSpace(point.Status),
 		})
-		if point.LatencyMS > 0 {
+		if !strings.EqualFold(strings.TrimSpace(point.Status), string(monitor.StatusDown)) && point.LatencyMS >= 0 {
 			latencySum += point.LatencyMS
 			latencyCount++
 		}
@@ -3634,7 +3673,10 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 			view.StatusClass = "status-" + view.LastStatus
 			view.StatusSummary = item.LastResult.Message
 			view.LastMessage = item.LastResult.Message
-			view.LastLatency = item.LastResult.Latency.String()
+			view.LastLatency = formatLatencyLabel(item.LastResult.Latency)
+			if isTimeoutMessage(item.LastResult.Message) {
+				view.LastLatency = ""
+			}
 			if item.Monitor.Kind == monitor.KindICMP {
 				if dualLatency := icmpDualStackLatencyLabel(item.LastResult.Message); dualLatency != "" {
 					view.LastLatency = dualLatency
@@ -3671,6 +3713,22 @@ func icmpDualStackLatencyLabel(message string) string {
 		return ""
 	}
 	return strings.Join(parts[1:], " · ")
+}
+
+func formatLatencyLabel(duration time.Duration) string {
+	if duration <= 0 {
+		return "0ms"
+	}
+	if duration < time.Millisecond {
+		return "<1ms"
+	}
+	if duration < time.Second {
+		return strconv.FormatInt(duration.Milliseconds(), 10) + "ms"
+	}
+	seconds := duration.Seconds()
+	formatted := strconv.FormatFloat(seconds, 'f', 2, 64)
+	formatted = strings.TrimRight(strings.TrimRight(formatted, "0"), ".")
+	return formatted + "s"
 }
 
 func buildAvailableGroups(items []store.MonitorGroup) []string {
@@ -3995,11 +4053,13 @@ func aggregateServiceTrendPoints(items []monitorView) []trendPointView {
 	}
 	buckets := make([]trendPointView, len(items[0].TrendPoints))
 	type aggregate struct {
-		totalChecks int
-		upChecks    int
-		latencySum  int
-		minMS       int
-		maxMS       int
+		totalChecks   int
+		upChecks      int
+		latencyChecks int
+		latencySum    int
+		hasMinMS      bool
+		minMS         int
+		maxMS         int
 	}
 	agg := make([]aggregate, len(items[0].TrendPoints))
 	for i, point := range items[0].TrendPoints {
@@ -4017,11 +4077,13 @@ func aggregateServiceTrendPoints(items []monitorView) []trendPointView {
 			}
 			agg[i].totalChecks += point.Checks
 			agg[i].upChecks += int(float64(point.Percent) / 100.0 * float64(point.Checks))
-			agg[i].latencySum += point.AvgMS * point.Checks
-			if agg[i].minMS == 0 || (point.MinMS > 0 && point.MinMS < agg[i].minMS) {
+			agg[i].latencyChecks += point.LatencyChecks
+			agg[i].latencySum += point.AvgMS * point.LatencyChecks
+			if point.LatencyChecks > 0 && (!agg[i].hasMinMS || point.MinMS < agg[i].minMS) {
+				agg[i].hasMinMS = true
 				agg[i].minMS = point.MinMS
 			}
-			if point.MaxMS > agg[i].maxMS {
+			if point.LatencyChecks > 0 && point.MaxMS > agg[i].maxMS {
 				agg[i].maxMS = point.MaxMS
 			}
 		}
@@ -4033,7 +4095,10 @@ func aggregateServiceTrendPoints(items []monitorView) []trendPointView {
 		percent := int(float64(agg[i].upChecks) / float64(agg[i].totalChecks) * 100)
 		buckets[i].Percent = percent
 		buckets[i].Checks = agg[i].totalChecks
-		buckets[i].AvgMS = agg[i].latencySum / agg[i].totalChecks
+		buckets[i].LatencyChecks = agg[i].latencyChecks
+		if agg[i].latencyChecks > 0 {
+			buckets[i].AvgMS = agg[i].latencySum / agg[i].latencyChecks
+		}
 		buckets[i].MinMS = agg[i].minMS
 		buckets[i].MaxMS = agg[i].maxMS
 		buckets[i].Label = strconv.Itoa(percent) + "% Uptime · " + strconv.Itoa(agg[i].totalChecks) + " Checks"
@@ -4669,7 +4734,9 @@ func buildTrendPoints(items []store.MonitorHourlyRollup, now time.Time, selected
 		upChecks       int
 		downChecks     int
 		degradedChecks int
+		latencyChecks  int
 		latencySumMS   int
+		hasLatencyMin  bool
 		latencyMinMS   int
 		latencyMaxMS   int
 	}
@@ -4694,11 +4761,14 @@ func buildTrendPoints(items []store.MonitorHourlyRollup, now time.Time, selected
 		entry.upChecks += item.UpChecks
 		entry.downChecks += item.DownChecks
 		entry.degradedChecks += item.DegradedChecks
+		currentLatencyChecks := item.UpChecks + item.DegradedChecks
+		entry.latencyChecks += currentLatencyChecks
 		entry.latencySumMS += item.LatencySumMS
-		if entry.latencyMinMS == 0 || (item.LatencyMinMS > 0 && item.LatencyMinMS < entry.latencyMinMS) {
+		if currentLatencyChecks > 0 && (!entry.hasLatencyMin || item.LatencyMinMS < entry.latencyMinMS) {
+			entry.hasLatencyMin = true
 			entry.latencyMinMS = item.LatencyMinMS
 		}
-		if item.LatencyMaxMS > entry.latencyMaxMS {
+		if currentLatencyChecks > 0 && item.LatencyMaxMS > entry.latencyMaxMS {
 			entry.latencyMaxMS = item.LatencyMaxMS
 		}
 	}
@@ -4718,7 +4788,10 @@ func buildTrendPoints(items []store.MonitorHourlyRollup, now time.Time, selected
 			percent := int(float64(agg.upChecks) / float64(agg.totalChecks) * 100)
 			point.Percent = percent
 			point.Checks = agg.totalChecks
-			point.AvgMS = agg.latencySumMS / agg.totalChecks
+			point.LatencyChecks = agg.latencyChecks
+			if agg.latencyChecks > 0 {
+				point.AvgMS = agg.latencySumMS / agg.latencyChecks
+			}
 			point.MinMS = agg.latencyMinMS
 			point.MaxMS = agg.latencyMaxMS
 			point.Label = strconv.Itoa(percent) + "% Uptime · " + strconv.Itoa(agg.totalChecks) + " Checks"
@@ -4841,12 +4914,12 @@ func normalizeTLSMode(kind monitor.Kind, requested monitor.TLSMode) monitor.TLSM
 		}
 		return monitor.TLSModeNone
 	case monitor.KindSMTP:
-		if requested == monitor.TLSModeTLS || requested == monitor.TLSModeSTARTTLS {
+		if monitor.IsValidMailTLSMode(requested) {
 			return requested
 		}
 		return monitor.TLSModeSTARTTLS
 	case monitor.KindIMAP:
-		if requested == monitor.TLSModeTLS || requested == monitor.TLSModeSTARTTLS {
+		if monitor.IsValidMailTLSMode(requested) {
 			return requested
 		}
 		return monitor.TLSModeTLS
@@ -4878,6 +4951,42 @@ func parseMonitorExecutorSelection(raw string) (executorKind string, executorRef
 }
 
 func monitorTargetLabel(item monitor.Monitor) string {
+	if item.Kind == monitor.KindDNS {
+		parsed := monitor.ParseDNSTarget(item.Target)
+		parts := make([]string, 0, 3)
+		if parsed.Host != "" {
+			parts = append(parts, parsed.Host)
+		}
+		switch monitor.NormalizeDNSRecordType(string(parsed.RecordType)) {
+		case monitor.DNSRecordTypeA:
+			parts = append(parts, "A")
+		case monitor.DNSRecordTypeAAAA:
+			parts = append(parts, "AAAA")
+		case monitor.DNSRecordTypeCNAME:
+			parts = append(parts, "CNAME")
+		case monitor.DNSRecordTypeMX:
+			parts = append(parts, "MX")
+		case monitor.DNSRecordTypeTXT:
+			parts = append(parts, "TXT")
+		case monitor.DNSRecordTypeNS:
+			parts = append(parts, "NS")
+		case monitor.DNSRecordTypeSRV:
+			parts = append(parts, "SRV")
+		case monitor.DNSRecordTypeCAA:
+			parts = append(parts, "CAA")
+		case monitor.DNSRecordTypeSOA:
+			parts = append(parts, "SOA")
+		default:
+			parts = append(parts, "A+AAAA")
+		}
+		if parsed.Server != "" {
+			parts = append(parts, "via "+parsed.Server)
+		}
+		if len(parts) > 0 {
+			return strings.Join(parts, " · ")
+		}
+		return item.Target
+	}
 	if item.Kind != monitor.KindTCP {
 		return item.Target
 	}
@@ -4896,10 +5005,39 @@ func monitorTLSModeLabel(item monitor.Monitor) string {
 	case monitor.KindHTTPS:
 		return ""
 	case monitor.KindSMTP, monitor.KindIMAP:
-		if item.TLSMode == monitor.TLSModeSTARTTLS {
-			return "STARTTLS"
+		securityMode, verifyCertificate, family := monitor.ParseMailTLSMode(item.TLSMode)
+		parts := make([]string, 0, 2)
+		switch securityMode {
+		case monitor.TLSModeNone:
+			parts = append(parts, "Plaintext")
+		case monitor.TLSModeSTARTTLS:
+			if verifyCertificate {
+				parts = append(parts, "STARTTLS")
+			} else {
+				parts = append(parts, "STARTTLS (selfsigned)")
+			}
+		default:
+			if verifyCertificate {
+				parts = append(parts, "TLS")
+			} else {
+				parts = append(parts, "TLS (selfsigned)")
+			}
 		}
-		return "TLS"
+		host := ""
+		if parsedHost, _, err := net.SplitHostPort(strings.TrimSpace(item.Target)); err == nil {
+			host = strings.TrimSpace(strings.Trim(parsedHost, "[]"))
+		}
+		if host != "" && !isLiteralIPAddress(host) {
+			switch family {
+			case monitor.TCPAddressFamilyIPv4:
+				parts = append(parts, "IPv4")
+			case monitor.TCPAddressFamilyIPv6:
+				parts = append(parts, "IPv6")
+			default:
+				parts = append(parts, "Dual Stack")
+			}
+		}
+		return strings.Join(parts, " · ")
 	case monitor.KindTCP:
 		securityMode, family := monitor.ParseTCPTLSMode(item.TLSMode)
 		parts := make([]string, 0, 2)
@@ -4955,6 +5093,17 @@ func monitorTLSModeLabel(item monitor.Monitor) string {
 	}
 }
 
+func isTimeoutMessage(message string) bool {
+	text := strings.ToLower(strings.TrimSpace(message))
+	if text == "" {
+		return false
+	}
+	return strings.Contains(text, "timeout") ||
+		strings.Contains(text, "timed out") ||
+		strings.Contains(text, "deadline exceeded") ||
+		strings.Contains(text, "i/o timeout")
+}
+
 func normalizeHTTPMonitorTarget(raw string, mode monitor.TLSMode) string {
 	target := strings.TrimSpace(raw)
 	if target == "" {
@@ -4963,9 +5112,7 @@ func normalizeHTTPMonitorTarget(raw string, mode monitor.TLSMode) string {
 	if strings.Contains(target, "://") {
 		return target
 	}
-	if strings.HasPrefix(target, "//") {
-		target = strings.TrimPrefix(target, "//")
-	}
+	target = strings.TrimPrefix(target, "//")
 	if mode == monitor.TLSModeNone {
 		return "http://" + target
 	}

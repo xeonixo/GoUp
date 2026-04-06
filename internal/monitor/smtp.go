@@ -16,11 +16,14 @@ import (
 type SMTPChecker struct{}
 
 func (c SMTPChecker) Check(ctx context.Context, item Monitor) Result {
-	switch item.TLSMode {
+	securityMode, verifyCertificate, family := ParseMailTLSMode(item.TLSMode)
+	switch securityMode {
 	case TLSModeTLS:
-		return c.checkTLS(ctx, item)
+		return c.checkTLS(ctx, item, family, verifyCertificate)
 	case TLSModeSTARTTLS:
-		return c.checkSTARTTLS(ctx, item)
+		return c.checkSTARTTLS(ctx, item, family, verifyCertificate)
+	case TLSModeNone:
+		return c.checkPlain(ctx, item, family)
 	default:
 		return Result{
 			MonitorID: item.ID,
@@ -31,7 +34,45 @@ func (c SMTPChecker) Check(ctx context.Context, item Monitor) Result {
 	}
 }
 
-func (c SMTPChecker) checkTLS(ctx context.Context, item Monitor) Result {
+func (c SMTPChecker) checkPlain(ctx context.Context, item Monitor, family TCPAddressFamily) Result {
+	startedAt := time.Now()
+	result := Result{MonitorID: item.ID, CheckedAt: startedAt.UTC(), Status: StatusDown}
+
+	network, networkErr := tcpDialNetwork(item.Target, family)
+	if networkErr != nil {
+		result.Message = fmt.Sprintf("invalid smtp target: %v", networkErr)
+		return result
+	}
+
+	conn, err := (&net.Dialer{Timeout: item.Timeout}).DialContext(ctx, network, item.Target)
+	result.Latency = time.Since(startedAt)
+	if err != nil {
+		result.Message = fmt.Sprintf("smtp connect failed: %v", err)
+		return result
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(item.Timeout)); err != nil {
+		result.Message = fmt.Sprintf("smtp deadline failed: %v", err)
+		return result
+	}
+
+	reader := bufio.NewReader(conn)
+	code, _, err := readSMTPResponse(reader)
+	if err != nil {
+		result.Message = fmt.Sprintf("smtp banner failed: %v", err)
+		return result
+	}
+	if code != 220 {
+		result.Message = fmt.Sprintf("unexpected smtp banner code %d", code)
+		return result
+	}
+
+	result.Status = StatusUp
+	result.Message = fmt.Sprintf("SMTP plaintext ok in %s", formatLatency(result.Latency))
+	return result
+}
+
+func (c SMTPChecker) checkTLS(ctx context.Context, item Monitor, family TCPAddressFamily, verifyCertificate bool) Result {
 	startedAt := time.Now()
 	result := Result{MonitorID: item.ID, CheckedAt: startedAt.UTC(), Status: StatusDown}
 
@@ -44,12 +85,18 @@ func (c SMTPChecker) checkTLS(ctx context.Context, item Monitor) Result {
 	dialer := &tls.Dialer{
 		NetDialer: &net.Dialer{Timeout: item.Timeout},
 		Config: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-			ServerName: host,
+			MinVersion:         tls.VersionTLS12,
+			ServerName:         host,
+			InsecureSkipVerify: !verifyCertificate,
 		},
 	}
+	network, networkErr := tcpDialNetwork(item.Target, family)
+	if networkErr != nil {
+		result.Message = fmt.Sprintf("invalid smtp target: %v", networkErr)
+		return result
+	}
 
-	conn, err := dialer.DialContext(ctx, "tcp", item.Target)
+	conn, err := dialer.DialContext(ctx, network, item.Target)
 	result.Latency = time.Since(startedAt)
 	if err != nil {
 		result.Message = fmt.Sprintf("smtp tls connect failed: %v", err)
@@ -79,11 +126,11 @@ func (c SMTPChecker) checkTLS(ctx context.Context, item Monitor) Result {
 	}
 
 	applyTLSMetadata(&result, tlsConn.ConnectionState())
-	result.Status, result.Message = finalizeTLSResult(&result, fmt.Sprintf("SMTP TLS ok in %d ms", result.Latency.Milliseconds()))
+	result.Status, result.Message = finalizeTLSResult(&result, fmt.Sprintf("SMTP TLS ok in %s", formatLatency(result.Latency)))
 	return result
 }
 
-func (c SMTPChecker) checkSTARTTLS(ctx context.Context, item Monitor) Result {
+func (c SMTPChecker) checkSTARTTLS(ctx context.Context, item Monitor, family TCPAddressFamily, verifyCertificate bool) Result {
 	startedAt := time.Now()
 	result := Result{MonitorID: item.ID, CheckedAt: startedAt.UTC(), Status: StatusDown}
 
@@ -93,7 +140,13 @@ func (c SMTPChecker) checkSTARTTLS(ctx context.Context, item Monitor) Result {
 		return result
 	}
 
-	conn, err := (&net.Dialer{Timeout: item.Timeout}).DialContext(ctx, "tcp", item.Target)
+	network, networkErr := tcpDialNetwork(item.Target, family)
+	if networkErr != nil {
+		result.Message = fmt.Sprintf("invalid smtp target: %v", networkErr)
+		return result
+	}
+
+	conn, err := (&net.Dialer{Timeout: item.Timeout}).DialContext(ctx, network, item.Target)
 	result.Latency = time.Since(startedAt)
 	if err != nil {
 		result.Message = fmt.Sprintf("smtp connect failed: %v", err)
@@ -148,7 +201,7 @@ func (c SMTPChecker) checkSTARTTLS(ctx context.Context, item Monitor) Result {
 		return result
 	}
 
-	tlsConn := tls.Client(conn, &tls.Config{MinVersion: tls.VersionTLS12, ServerName: host})
+	tlsConn := tls.Client(conn, &tls.Config{MinVersion: tls.VersionTLS12, ServerName: host, InsecureSkipVerify: !verifyCertificate})
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
 		result.Message = fmt.Sprintf("smtp starttls handshake failed: %v", err)
 		return result
@@ -156,7 +209,7 @@ func (c SMTPChecker) checkSTARTTLS(ctx context.Context, item Monitor) Result {
 	result.Latency = time.Since(startedAt)
 
 	applyTLSMetadata(&result, tlsConn.ConnectionState())
-	result.Status, result.Message = finalizeTLSResult(&result, fmt.Sprintf("SMTP STARTTLS ok in %d ms", result.Latency.Milliseconds()))
+	result.Status, result.Message = finalizeTLSResult(&result, fmt.Sprintf("SMTP STARTTLS ok in %s", formatLatency(result.Latency)))
 	return result
 }
 

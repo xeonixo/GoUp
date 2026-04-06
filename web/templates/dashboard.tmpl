@@ -43,7 +43,7 @@
   <form method="post" action="{{$.AppBase}}monitors/save" class="stack form-grid" id="monitor-form">
     <input type="hidden" name="id" id="monitor-id">
     <div class="modal-header">
-      <h2 id="monitor-modal-title">{{index $.Translations "dashboard.modal.create_title"}}</h2>
+      <h2 id="monitor-modal-title" data-create-title="{{index $.Translations "dashboard.modal.create_title"}}" data-edit-title="{{index $.Translations "dashboard.modal.edit_title"}}">{{index $.Translations "dashboard.modal.create_title"}}</h2>
       <button class="modal-close-button" type="button" id="monitor-close" aria-label="{{index $.Translations "dashboard.modal.close_aria"}}">×</button>
     </div>
 
@@ -68,16 +68,6 @@
         <option value="starttls">{{index $.Translations "dashboard.modal.tls_mode_starttls"}}</option>
         <option value="none">{{index $.Translations "dashboard.modal.tls_mode_none"}}</option>
       </select>
-    </label>
-
-    <label id="https-mode-row" class="checkbox-row" hidden>
-      <input type="checkbox" id="monitor-use-https" checked>
-      <span id="monitor-use-https-label">{{index $.Translations "dashboard.modal.https_checkbox"}}</span>
-    </label>
-
-    <label id="https-verify-row" class="checkbox-row" hidden>
-      <input type="checkbox" id="monitor-verify-cert" checked>
-      <span id="monitor-verify-cert-label">{{index $.Translations "dashboard.modal.verify_cert_checkbox"}}</span>
     </label>
 
     <label>
@@ -117,21 +107,31 @@
 
     <label id="https-target-row" hidden>
       <span>{{index $.Translations "dashboard.modal.http_target_label"}}</span>
-      <div class="inline-grid">
+      <div class="inline-grid inline-grid-http-target">
+        <label class="field-compact">
+          <span>{{index $.Translations "dashboard.modal.protocol_label"}}</span>
+          <select id="monitor-http-scheme">
+            <option value="https">https://</option>
+            <option value="http">http://</option>
+          </select>
+        </label>
         <label>
           <span>{{index $.Translations "dashboard.modal.host_label"}}</span>
           <input type="text" id="monitor-http-host" name="http_host" placeholder="{{index $.Translations "dashboard.modal.http_host_placeholder"}}" autocomplete="off" spellcheck="false">
         </label>
-        <label>
+        <label class="field-compact field-port-compact">
           <span>{{index $.Translations "dashboard.modal.port_optional_label"}}</span>
           <input type="number" id="monitor-http-port" name="http_port" min="1" max="65535" placeholder="{{index $.Translations "dashboard.modal.http_port_placeholder"}}" inputmode="numeric">
         </label>
       </div>
+      <label id="https-skip-verify-row" class="checkbox-row" hidden>
+        <input type="checkbox" id="monitor-http-skip-cert">
+        <span id="monitor-http-skip-cert-label">{{index $.Translations "dashboard.modal.skip_cert_checkbox"}}</span>
+      </label>
       <label>
         <span>{{index $.Translations "dashboard.modal.path_query_optional_label"}}</span>
         <input type="text" id="monitor-http-path" name="http_path" placeholder="{{index $.Translations "dashboard.modal.http_path_placeholder"}}">
       </label>
-      <small class="muted compact">{{index $.Translations "dashboard.modal.http_port_default_hint"}}</small>
     </label>
 
     <label id="https-family-row" hidden>
@@ -156,7 +156,46 @@
           <input type="number" id="monitor-tcp-port" name="tcp_port" min="1" max="65535" placeholder="{{index $.Translations "dashboard.modal.tcp_port_placeholder"}}" inputmode="numeric">
         </label>
       </div>
-      <small class="muted compact">{{index $.Translations "dashboard.modal.tcp_target_hint"}}</small>
+    </label>
+
+    <label id="dns-target-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.dns_target_label"}}</span>
+      <div class="inline-grid">
+        <label>
+          <span>{{index $.Translations "dashboard.modal.host_label"}}</span>
+          <input type="text" id="monitor-dns-host" name="dns_host" placeholder="{{index $.Translations "dashboard.modal.dns_host_placeholder"}}" autocomplete="off" spellcheck="false">
+        </label>
+        <label class="field-compact">
+          <span>{{index $.Translations "dashboard.modal.dns_record_type_label"}}</span>
+          <select id="monitor-dns-record-type" name="dns_record_type">
+            <option value="mixed">{{index $.Translations "dashboard.modal.dns_record_type_mixed"}}</option>
+            <option value="a">{{index $.Translations "dashboard.modal.dns_record_type_a"}}</option>
+            <option value="aaaa">{{index $.Translations "dashboard.modal.dns_record_type_aaaa"}}</option>
+            <option value="cname">{{index $.Translations "dashboard.modal.dns_record_type_cname"}}</option>
+            <option value="mx">{{index $.Translations "dashboard.modal.dns_record_type_mx"}}</option>
+            <option value="txt">{{index $.Translations "dashboard.modal.dns_record_type_txt"}}</option>
+            <option value="ns">{{index $.Translations "dashboard.modal.dns_record_type_ns"}}</option>
+            <option value="srv">{{index $.Translations "dashboard.modal.dns_record_type_srv"}}</option>
+            <option value="caa">{{index $.Translations "dashboard.modal.dns_record_type_caa"}}</option>
+            <option value="soa">{{index $.Translations "dashboard.modal.dns_record_type_soa"}}</option>
+          </select>
+        </label>
+      </div>
+      <label>
+        <span>{{index $.Translations "dashboard.modal.dns_server_label"}}</span>
+        <input type="text" id="monitor-dns-server" name="dns_server" placeholder="{{index $.Translations "dashboard.modal.dns_server_placeholder"}}" autocomplete="off" spellcheck="false">
+      </label>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.dns_server_hint"}}</small>
+    </label>
+
+    <label id="https-mode-row" class="checkbox-row" hidden>
+      <input type="checkbox" id="monitor-use-https" checked>
+      <span id="monitor-use-https-label">{{index $.Translations "dashboard.modal.tcp_tls_handshake"}}</span>
+    </label>
+
+    <label id="https-verify-row" class="checkbox-row" hidden>
+      <input type="checkbox" id="monitor-verify-cert" checked>
+      <span id="monitor-verify-cert-label">{{index $.Translations "dashboard.modal.verify_cert_checkbox"}}</span>
     </label>
 
     <label id="tcp-family-row" hidden>
@@ -167,6 +206,35 @@
         <option value="dual" selected>Dual Stack (IPv4 + IPv6)</option>
       </select>
       <small class="muted compact">{{index $.Translations "dashboard.modal.tcp_family_hint"}}</small>
+    </label>
+
+    <label id="mail-target-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.mail_target_label"}}</span>
+      <div class="inline-grid">
+        <label>
+          <span>{{index $.Translations "dashboard.modal.host_label"}}</span>
+          <input type="text" id="monitor-mail-host" name="mail_host" placeholder="{{index $.Translations "dashboard.modal.mail_host_placeholder"}}" autocomplete="off" spellcheck="false">
+        </label>
+        <label>
+          <span>{{index $.Translations "dashboard.modal.port_label"}}</span>
+          <input type="number" id="monitor-mail-port" name="mail_port" min="1" max="65535" placeholder="{{index $.Translations "dashboard.modal.mail_port_placeholder"}}" inputmode="numeric">
+        </label>
+      </div>
+    </label>
+
+    <label id="mail-family-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.ip_family_hostname_only"}}</span>
+      <select id="monitor-mail-family" name="mail_family">
+        <option value="ipv4">IPv4</option>
+        <option value="ipv6">IPv6</option>
+        <option value="dual" selected>Dual Stack (IPv4 + IPv6)</option>
+      </select>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.mail_family_hint"}}</small>
+    </label>
+
+    <label id="mail-verify-row" class="checkbox-row" hidden>
+      <input type="checkbox" id="monitor-mail-verify-cert" name="mail_skip_cert">
+      <span id="monitor-mail-verify-cert-label">{{index $.Translations "dashboard.modal.skip_cert_checkbox"}}</span>
     </label>
 
     <label id="udp-check-row" hidden>
@@ -445,7 +513,7 @@
                 aria-label="{{printf (index $.Translations "dashboard.trend_detail.open_for") .Title}}">
                 <div class="trend-bars" aria-label="{{printf (index $.Translations "dashboard.trend.aria") .TrendLabel}}">
                   {{range .TrendPoints}}
-                  <span class="trend-bar {{.Class}}" data-bucket="{{.BucketRaw}}" data-label="{{.Label}}" data-format="{{.Format}}" data-checks="{{.Checks}}" data-avg-ms="{{.AvgMS}}" data-min-ms="{{.MinMS}}" data-max-ms="{{.MaxMS}}"></span>
+                  <span class="trend-bar {{.Class}}" data-bucket="{{.BucketRaw}}" data-label="{{.Label}}" data-format="{{.Format}}" data-checks="{{.Checks}}" data-latency-checks="{{.LatencyChecks}}" data-avg-ms="{{.AvgMS}}" data-min-ms="{{.MinMS}}" data-max-ms="{{.MaxMS}}"></span>
                   {{end}}
                 </div>
               </button>
@@ -526,7 +594,7 @@
           aria-label="{{printf (index $.Translations "dashboard.trend_detail.open_for") .Name}}">
           <div class="trend-bars" aria-label="{{printf (index $.Translations "dashboard.trend.aria") .TrendLabel}}">
             {{range .TrendPoints}}
-            <span class="trend-bar {{.Class}}" data-bucket="{{.BucketRaw}}" data-label="{{.Label}}" data-format="{{.Format}}" data-checks="{{.Checks}}" data-avg-ms="{{.AvgMS}}" data-min-ms="{{.MinMS}}" data-max-ms="{{.MaxMS}}"></span>
+            <span class="trend-bar {{.Class}}" data-bucket="{{.BucketRaw}}" data-label="{{.Label}}" data-format="{{.Format}}" data-checks="{{.Checks}}" data-latency-checks="{{.LatencyChecks}}" data-avg-ms="{{.AvgMS}}" data-min-ms="{{.MinMS}}" data-max-ms="{{.MaxMS}}"></span>
             {{end}}
           </div>
         </button>
@@ -711,16 +779,13 @@
     monitorEditTitle: {{printf "%q" (index $.Translations "dashboard.modal.edit_title")}},
     monitorUseHTTPS: {{printf "%q" (index $.Translations "dashboard.modal.https_checkbox")}},
     monitorVerifyCert: {{printf "%q" (index $.Translations "dashboard.modal.verify_cert_checkbox")}},
+    monitorSkipCert: {{printf "%q" (index $.Translations "dashboard.modal.skip_cert_checkbox")}},
     monitorTCPHandshake: {{printf "%q" (index $.Translations "dashboard.modal.tcp_tls_handshake")}},
     monitorHintHTTPS: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_https")}},
     monitorHintHTTP: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_http_plain")}},
-    monitorHintTCP: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_tcp")}},
-    monitorHintMail: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_mail")}},
     monitorHintDNS: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_dns")}},
-    monitorHintWHOIS: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_whois")}},
+    monitorDNSExpectedPlaceholder: {{printf "%q" (index $.Translations "dashboard.modal.dns_expected_placeholder")}},
     monitorHintUDP: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_udp")}},
-    monitorHintICMP: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_icmp")}},
-    monitorHintICMPShort: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_icmp_short")}},
     dnsExpectedOptional: {{printf "%q" (index $.Translations "dashboard.modal.expected_dns_response_optional")}},
     dnsExpectedHint: {{printf "%q" (index $.Translations "dashboard.modal.expected_dns_hint")}},
     monitorCycleChecking: {{printf "%q" (index $.Translations "dashboard.monitor.cycle.checking")}},

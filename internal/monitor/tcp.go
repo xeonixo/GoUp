@@ -92,7 +92,6 @@ func (c TCPChecker) Check(ctx context.Context, item Monitor) Result {
 	return attempt
 }
 
-
 func (c TCPChecker) checkTarget(ctx context.Context, item Monitor, checkedAt time.Time, network string, target string, serverName string, securityMode TLSMode) Result {
 	attemptStartedAt := time.Now()
 	result := Result{
@@ -112,7 +111,7 @@ func (c TCPChecker) checkTarget(ctx context.Context, item Monitor, checkedAt tim
 		_ = conn.Close()
 
 		result.Status = StatusUp
-		result.Message = fmt.Sprintf("TCP connect ok in %d ms", result.Latency.Milliseconds())
+		result.Message = fmt.Sprintf("TCP connect ok in %s", formatLatency(result.Latency))
 		return result
 	}
 
@@ -131,11 +130,11 @@ func (c TCPChecker) checkTarget(ctx context.Context, item Monitor, checkedAt tim
 
 	state := conn.ConnectionState()
 	applyTLSMetadata(&result, state)
-	status, message := finalizeTLSResult(&result, fmt.Sprintf("TCP TLS handshake ok in %d ms", result.Latency.Milliseconds()))
+	status, message := finalizeTLSResult(&result, fmt.Sprintf("TCP TLS handshake ok in %s", formatLatency(result.Latency)))
 	if securityMode == TLSModeSTARTTLS && len(state.PeerCertificates) > 0 {
 		leaf := state.PeerCertificates[0]
 		if leaf.CheckSignatureFrom(leaf) == nil && result.TLSDaysRemaining != nil {
-			message = fmt.Sprintf("TCP TLS handshake ok in %d ms (self-signed cert, expires in %d days)", result.Latency.Milliseconds(), *result.TLSDaysRemaining)
+			message = fmt.Sprintf("TCP TLS handshake ok in %s (self-signed cert, expires in %d days)", formatLatency(result.Latency), *result.TLSDaysRemaining)
 		}
 	}
 	result.Status = status
@@ -148,7 +147,7 @@ func formatTCPAttemptLabel(label string, attempt Result) string {
 		if attempt.Status == StatusDegraded {
 			return fmt.Sprintf("%s degraded (%s)", label, attempt.Message)
 		}
-		return fmt.Sprintf("%s %d ms", label, attempt.Latency.Milliseconds())
+		return fmt.Sprintf("%s %s", label, formatLatency(attempt.Latency))
 	}
 	if strings.TrimSpace(attempt.Message) == "" {
 		return label + " down"

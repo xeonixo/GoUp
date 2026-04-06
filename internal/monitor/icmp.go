@@ -341,14 +341,7 @@ func isLiteralICMPTarget(target string) bool {
 }
 
 func formatICMPLatency(duration time.Duration) string {
-	if duration <= 0 {
-		return "<1 ms"
-	}
-	ms := duration.Milliseconds()
-	if ms <= 0 {
-		return "<1 ms"
-	}
-	return fmt.Sprintf("%d ms", ms)
+	return formatLatency(duration)
 }
 
 func formatICMPError(prefix string, err error) string {
