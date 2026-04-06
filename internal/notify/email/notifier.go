@@ -333,6 +333,11 @@ func formatEmailTemplate(template string, values map[string]string) string {
 	return result
 }
 
+// sanitizeEmailHeader removes CR and LF characters to prevent email header injection.
+func sanitizeEmailHeader(value string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(value)
+}
+
 func sendSMTPMail(cfg store.GlobalSMTPDeliveryConfig, to, subject, body string) error {
 	to = strings.TrimSpace(to)
 	if to == "" {
@@ -344,14 +349,14 @@ func sendSMTPMail(cfg store.GlobalSMTPDeliveryConfig, to, subject, body string) 
 		return fmt.Errorf("smtp host/port not configured")
 	}
 
-	fromHeader := cfg.Settings.FromEmail
+	fromHeader := sanitizeEmailHeader(cfg.Settings.FromEmail)
 	if strings.TrimSpace(cfg.Settings.FromName) != "" {
-		fromHeader = fmt.Sprintf("%s <%s>", cfg.Settings.FromName, cfg.Settings.FromEmail)
+		fromHeader = fmt.Sprintf("%s <%s>", sanitizeEmailHeader(cfg.Settings.FromName), sanitizeEmailHeader(cfg.Settings.FromEmail))
 	}
 	msg := strings.Join([]string{
 		"From: " + fromHeader,
-		"To: " + to,
-		"Subject: " + subject,
+		"To: " + sanitizeEmailHeader(to),
+		"Subject: " + sanitizeEmailHeader(subject),
 		"MIME-Version: 1.0",
 		"Content-Type: text/html; charset=UTF-8",
 		"",

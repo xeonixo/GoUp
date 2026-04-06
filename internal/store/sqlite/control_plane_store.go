@@ -202,8 +202,7 @@ func (s *ControlPlaneStore) ConfigureSecretKey(key string) error {
 	if key == "" {
 		return fmt.Errorf("secret key must not be empty")
 	}
-	// codeql[go/weak-sensitive-data-hashing]: Required for backward-compatible decryption of data encrypted before PBKDF2 migration.
-	legacy := sha256.Sum256([]byte(key))
+	legacy := sha256.Sum256([]byte(key)) // codeql[go/weak-sensitive-data-hashing]: Required for backward-compatible decryption of data encrypted before PBKDF2 migration.
 	derived := pbkdf2.Key([]byte(key), []byte("goup/control-plane/secret-key/v2"), 120000, 32, sha256.New)
 	s.secretKey = derived
 	s.legacySecretKey = legacy[:]

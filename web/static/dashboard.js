@@ -623,7 +623,7 @@
           groupIconPreviewFrame.hidden = false;
         }
         if (groupIconPreview) {
-          groupIconPreview.src = groupIconUploadPreviewURL;
+          groupIconPreview.src = groupIconUploadPreviewURL; // codeql[js/xss-through-dom]: groupIconUploadPreviewURL is a blob: URL created via URL.createObjectURL() from a user-selected file input, not DOM text.
         }
         if (groupIconSelection) {
           groupIconSelection.textContent = tr('groupIconSelectedUpload', 'Selected: custom uploaded icon');
