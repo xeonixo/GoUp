@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1588,6 +1589,9 @@ func (s *ControlPlaneStore) decryptSecret(ciphertext string) (string, error) {
 	}
 	legacyPlaintext, legacyErr := decryptProviderSecret(s.legacySecretKey, ciphertext)
 	if legacyErr == nil {
+		slog.Warn("[security] decrypted secret with legacy SHA-256 key (pre-PBKDF2). " +
+			"Re-encrypt stored secrets by updating and re-saving all SSO provider credentials " +
+			"to migrate to the current PBKDF2-derived key.")
 		return legacyPlaintext, nil
 	}
 	return "", err

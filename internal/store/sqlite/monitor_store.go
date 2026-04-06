@@ -1266,7 +1266,7 @@ func validateMonitorKindSettings(kind monitor.Kind, target string, tlsMode monit
 		if !monitor.IsValidHTTPSTLSMode(tlsMode) {
 			return errors.New("invalid HTTP(S) tls mode")
 		}
-		httpsTLSMode, _ := monitor.ParseHTTPSTLSMode(tlsMode)
+		httpsTLSMode, _, _ := monitor.ParseHTTPSTLSMode(tlsMode)
 		switch httpsTLSMode {
 		case "", monitor.TLSModeTLS:
 			if parsedTarget.Scheme != "https" {
@@ -1289,7 +1289,7 @@ func validateMonitorKindSettings(kind monitor.Kind, target string, tlsMode monit
 			return errors.New("expected HTTP status is only valid for HTTPS monitors")
 		}
 		if !monitor.IsValidTCPTLSMode(tlsMode) {
-			return errors.New("tcp monitors support tls, starttls (self-signed) or none")
+			return errors.New("tcp monitors support tls, tls_insecure, starttls, starttls_insecure or none")
 		}
 	case monitor.KindICMP:
 		icmpTarget := strings.TrimSpace(target)

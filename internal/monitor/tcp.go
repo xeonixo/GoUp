@@ -20,7 +20,7 @@ func (c TCPChecker) Check(ctx context.Context, item Monitor) Result {
 		Status:    StatusDown,
 	}
 
-	securityMode, family := ParseTCPTLSMode(item.TLSMode)
+	securityMode, verifyCertificate, family := ParseTCPTLSMode(item.TLSMode)
 	host, port, err := net.SplitHostPort(item.Target)
 	if err != nil {
 		result.Latency = time.Since(startedAt)
@@ -36,8 +36,8 @@ func (c TCPChecker) Check(ctx context.Context, item Monitor) Result {
 
 	if family == TCPAddressFamilyDual && net.ParseIP(host) == nil {
 		baseTarget := net.JoinHostPort(host, port)
-		v4Attempt := c.checkTarget(ctx, item, checkedAt, "tcp4", baseTarget, host, securityMode)
-		v6Attempt := c.checkTarget(ctx, item, checkedAt, "tcp6", baseTarget, host, securityMode)
+		v4Attempt := c.checkTarget(ctx, item, checkedAt, "tcp4", baseTarget, host, securityMode, verifyCertificate)
+		v6Attempt := c.checkTarget(ctx, item, checkedAt, "tcp6", baseTarget, host, securityMode, verifyCertificate)
 
 		v4Label := formatTCPAttemptLabel("IPv4", v4Attempt)
 		v6Label := formatTCPAttemptLabel("IPv6", v6Attempt)
@@ -88,11 +88,11 @@ func (c TCPChecker) Check(ctx context.Context, item Monitor) Result {
 		return result
 	}
 
-	attempt := c.checkTarget(ctx, item, checkedAt, network, item.Target, host, securityMode)
+	attempt := c.checkTarget(ctx, item, checkedAt, network, item.Target, host, securityMode, verifyCertificate)
 	return attempt
 }
 
-func (c TCPChecker) checkTarget(ctx context.Context, item Monitor, checkedAt time.Time, network string, target string, serverName string, securityMode TLSMode) Result {
+func (c TCPChecker) checkTarget(ctx context.Context, item Monitor, checkedAt time.Time, network string, target string, serverName string, securityMode TLSMode, verifyCertificate bool) Result {
 	attemptStartedAt := time.Now()
 	result := Result{
 		MonitorID: item.ID,
@@ -119,7 +119,7 @@ func (c TCPChecker) checkTarget(ctx context.Context, item Monitor, checkedAt tim
 	conn, err := tls.DialWithDialer(dialer, network, target, &tls.Config{
 		MinVersion:         tls.VersionTLS12,
 		ServerName:         serverName,
-		InsecureSkipVerify: securityMode == TLSModeSTARTTLS,
+		InsecureSkipVerify: !verifyCertificate, // false for tls mode; true for starttls/tls_insecure
 	})
 	result.Latency = time.Since(attemptStartedAt)
 	if err != nil {
@@ -131,7 +131,7 @@ func (c TCPChecker) checkTarget(ctx context.Context, item Monitor, checkedAt tim
 	state := conn.ConnectionState()
 	applyTLSMetadata(&result, state)
 	status, message := finalizeTLSResult(&result, fmt.Sprintf("TCP TLS handshake ok in %s", formatLatency(result.Latency)))
-	if securityMode == TLSModeSTARTTLS && len(state.PeerCertificates) > 0 {
+	if !verifyCertificate && len(state.PeerCertificates) > 0 {
 		leaf := state.PeerCertificates[0]
 		if leaf.CheckSignatureFrom(leaf) == nil && result.TLSDaysRemaining != nil {
 			message = fmt.Sprintf("TCP TLS handshake ok in %s (self-signed cert, expires in %d days)", formatLatency(result.Latency), *result.TLSDaysRemaining)

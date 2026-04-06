@@ -177,8 +177,8 @@ const (
 	bootstrapMaxFailures   = 8
 	bootstrapWindow        = 5 * time.Minute
 	bootstrapLockout       = 15 * time.Minute
-	passwordResetTTL       = 30 * time.Minute
-	controlPlaneAdminTTL   = 12 * time.Hour
+	passwordResetTTL       = 15 * time.Minute
+	controlPlaneAdminTTL   = 1 * time.Hour
 	controlPlaneCookie     = "goup_cp_admin"
 )
 
@@ -3273,25 +3273,39 @@ func sanitizeUploadedIconBaseName(name string) string {
 	return base
 }
 
+// detectUploadedIconExtension validates an uploaded icon by requiring BOTH a
+// whitelisted file extension AND a matching MIME type.  Checking the extension
+// first prevents an attacker from uploading a file whose content passes MIME
+// sniffing but whose extension hints at a dangerous type.
 func detectUploadedIconExtension(contentType string, originalName string) (string, bool) {
-	contentType = strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
-	switch contentType {
-	case "image/svg+xml":
-		return ".svg", true
-	case "image/png":
-		return ".png", true
-	case "image/webp":
-		return ".webp", true
-	case "image/jpeg":
-		return ".jpg", true
-	case "image/x-icon", "image/vnd.microsoft.icon":
-		return ".ico", true
-	}
+	// Step 1: validate the file extension against the strict whitelist.
 	ext := strings.ToLower(filepath.Ext(strings.TrimSpace(originalName)))
-	switch ext {
-	case ".svg", ".png", ".webp", ".jpg", ".jpeg", ".ico":
-		if ext == ".jpeg" {
-			return ".jpg", true
+	if ext == ".jpeg" {
+		ext = ".jpg"
+	}
+	allowedExts := map[string]string{
+		".svg":  "image/svg+xml",
+		".png":  "image/png",
+		".webp": "image/webp",
+		".jpg":  "image/jpeg",
+		".ico":  "image/x-icon",
+	}
+	expectedMIME, extOK := allowedExts[ext]
+	if !extOK {
+		return "", false
+	}
+
+	// Step 2: confirm the detected MIME type matches the extension.
+	detectedMIME := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	switch detectedMIME {
+	case "image/svg+xml", "image/png", "image/webp", "image/jpeg",
+		"image/x-icon", "image/vnd.microsoft.icon":
+		// Acceptable MIME; verify it corresponds to the declared extension.
+		if detectedMIME == "image/vnd.microsoft.icon" {
+			detectedMIME = "image/x-icon"
+		}
+		if detectedMIME != expectedMIME {
+			return "", false
 		}
 		return ext, true
 	default:
@@ -5039,7 +5053,7 @@ func monitorTLSModeLabel(item monitor.Monitor) string {
 		}
 		return strings.Join(parts, " · ")
 	case monitor.KindTCP:
-		securityMode, family := monitor.ParseTCPTLSMode(item.TLSMode)
+		securityMode, _, family := monitor.ParseTCPTLSMode(item.TLSMode)
 		parts := make([]string, 0, 2)
 		switch securityMode {
 		case monitor.TLSModeTLS:
@@ -5129,7 +5143,7 @@ func isLiteralIPAddress(raw string) bool {
 }
 
 func monitorHTTPKindLabel(target string, mode monitor.TLSMode) string {
-	securityMode, family := monitor.ParseHTTPSTLSMode(mode)
+	securityMode, _, family := monitor.ParseHTTPSTLSMode(mode)
 	base := "HTTPS"
 	switch securityMode {
 	case monitor.TLSModeNone:

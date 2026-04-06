@@ -817,7 +817,7 @@
   "email.password_reset.greeting_generic": "Hallo,",
   "email.password_reset.requested": "für dein Konto wurde eine Passwort-Zurücksetzung angefordert.",
   "email.password_reset.link_line": "Link: {reset_link}",
-  "email.password_reset.valid_for": "Dieser Link ist 30 Minuten gültig.",
+  "email.password_reset.valid_for": "Dieser Link ist 15 Minuten gültig.",
   "email.password_reset.ignore": "Falls du das nicht angefordert hast, ignoriere diese E-Mail.",
   "email.status.up": "UP",
   "email.status.down": "DOWN",

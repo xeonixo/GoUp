@@ -7,11 +7,16 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
 
 const sessionCookieName = "goup_session"
+
+// validSlugPattern restricts cookie paths to safe slug characters only.
+// This prevents path-injection via user-controlled tenant slugs.
+var validSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9\-]{0,62}$`)
 
 type UserSession struct {
 	UserID            int64     `json:"uid,omitempty"`
@@ -34,6 +39,17 @@ type SessionManager struct {
 
 func NewSessionManager(key []byte, secure bool) *SessionManager {
 	return &SessionManager{key: key, secure: secure}
+}
+
+// safeSlugPath returns a cookie Path for the given tenant slug.
+// If the slug is empty or contains characters outside [a-z0-9-] the root
+// path "/" is returned to avoid path-injection.
+func safeSlugPath(slug string) string {
+	slug = strings.ToLower(strings.Trim(strings.TrimSpace(slug), "/"))
+	if slug == "" || !validSlugPattern.MatchString(slug) {
+		return "/"
+	}
+	return "/" + slug
 }
 
 func (m *SessionManager) Get(r *http.Request) (*UserSession, error) {
@@ -71,10 +87,7 @@ func (m *SessionManager) Set(w http.ResponseWriter, session UserSession) error {
 		return err
 	}
 
-	path := "/"
-	if slug := strings.Trim(strings.TrimSpace(session.TenantSlug), "/"); slug != "" {
-		path = "/" + slug
-	}
+	path := safeSlugPath(session.TenantSlug)
 
 	value := base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(m.sign(payload))
 	http.SetCookie(w, &http.Cookie{
@@ -96,10 +109,7 @@ func (m *SessionManager) Clear(w http.ResponseWriter) {
 }
 
 func (m *SessionManager) ClearForTenant(w http.ResponseWriter, tenantSlug string) {
-	path := "/"
-	if slug := strings.Trim(strings.TrimSpace(tenantSlug), "/"); slug != "" {
-		path = "/" + slug
-	}
+	path := safeSlugPath(tenantSlug)
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    "",

@@ -26,7 +26,7 @@ func (c HTTPSChecker) Check(ctx context.Context, item Monitor) Result {
 		Status:    StatusDown,
 	}
 
-	securityMode, family := ParseHTTPSTLSMode(item.TLSMode)
+	securityMode, verifyCertificate, family := ParseHTTPSTLSMode(item.TLSMode)
 	parsedTarget, err := url.Parse(item.Target)
 	if err != nil {
 		result.Message = fmt.Sprintf("invalid request target: %v", err)
@@ -48,8 +48,8 @@ func (c HTTPSChecker) Check(ctx context.Context, item Monitor) Result {
 	}
 
 	if family == TCPAddressFamilyDual && net.ParseIP(host) == nil {
-		v4Attempt := c.checkTarget(ctx, item, checkedAt, securityMode, "tcp4")
-		v6Attempt := c.checkTarget(ctx, item, checkedAt, securityMode, "tcp6")
+		v4Attempt := c.checkTarget(ctx, item, checkedAt, securityMode, verifyCertificate, "tcp4")
+		v6Attempt := c.checkTarget(ctx, item, checkedAt, securityMode, verifyCertificate, "tcp6")
 
 		v4Label := formatHTTPAttemptLabel("IPv4", v4Attempt)
 		v6Label := formatHTTPAttemptLabel("IPv6", v6Attempt)
@@ -100,10 +100,10 @@ func (c HTTPSChecker) Check(ctx context.Context, item Monitor) Result {
 		return result
 	}
 
-	return c.checkTarget(ctx, item, checkedAt, securityMode, network)
+	return c.checkTarget(ctx, item, checkedAt, securityMode, verifyCertificate, network)
 }
 
-func (c HTTPSChecker) checkTarget(ctx context.Context, item Monitor, checkedAt time.Time, securityMode TLSMode, network string) Result {
+func (c HTTPSChecker) checkTarget(ctx context.Context, item Monitor, checkedAt time.Time, securityMode TLSMode, verifyCertificate bool, network string) Result {
 	startedAt := time.Now()
 	result := Result{
 		MonitorID: item.ID,
@@ -114,7 +114,7 @@ func (c HTTPSChecker) checkTarget(ctx context.Context, item Monitor, checkedAt t
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = &tls.Config{
 		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: securityMode == TLSModeSTARTTLS,
+		InsecureSkipVerify: !verifyCertificate, // false for tls mode; true for starttls/tls_insecure
 	}
 	if network != "" {
 		dialer := &net.Dialer{Timeout: item.Timeout}
