@@ -100,7 +100,7 @@
   "login.security_notice": "Gib deine Anmeldedaten niemals weiter",
   "login.or_text": "oder",
   "login.or_local": "oder lokal anmelden",
-  "login.oidc_button": "Mit {{.DisplayName}} anmelden",
+  "login.oidc_button": "Mit %s anmelden",
   "password_reset.request.title": "Passwort zurücksetzen",
   "password_reset.request.subtitle": "Gib deine E-Mail ein, um einen Reset-Link zu erhalten",
   "password_reset.request.email_label": "E-Mail-Adresse",

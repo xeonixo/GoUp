@@ -100,7 +100,7 @@
   "login.security_notice": "Never share your login credentials",
   "login.or_text": "or",
   "login.or_local": "or log in locally",
-  "login.oidc_button": "Login with {{.DisplayName}}",
+  "login.oidc_button": "Login with %s",
   "password_reset.request.title": "Reset password",
   "password_reset.request.subtitle": "Enter your email to receive a reset link",
   "password_reset.request.email_label": "Email address",

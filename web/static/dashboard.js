@@ -191,6 +191,68 @@
       });
     };
 
+    const currentOpenActionMenus = () => {
+      const keys = [];
+      document.querySelectorAll('.action-menu[open]').forEach((menu) => {
+        const monitorCard = menu.closest('.monitor-card');
+        if (monitorCard instanceof HTMLElement) {
+          const monitorID = (monitorCard.dataset.monitorId || '').trim();
+          if (monitorID) {
+            keys.push(`monitor:${monitorID}`);
+            return;
+          }
+        }
+
+        const serviceCluster = menu.closest('.service-cluster');
+        if (serviceCluster instanceof HTMLElement) {
+          const groupName = (serviceCluster.dataset.group || '').trim();
+          if (groupName) {
+            keys.push(`group:${groupName}`);
+          }
+        }
+      });
+      return keys;
+    };
+
+    const restoreOpenActionMenus = (keys) => {
+      if (!Array.isArray(keys) || keys.length === 0) {
+        return;
+      }
+
+      keys.forEach((key) => {
+        if (typeof key !== 'string' || key.trim() === '') {
+          return;
+        }
+
+        if (key.startsWith('monitor:')) {
+          const monitorID = key.slice('monitor:'.length);
+          if (!monitorID) {
+            return;
+          }
+          const monitorCard = Array.from(document.querySelectorAll('.monitor-card'))
+            .find((node) => (node.dataset.monitorId || '') === monitorID);
+          const menu = monitorCard ? monitorCard.querySelector('.action-menu') : null;
+          if (menu instanceof HTMLDetailsElement) {
+            menu.open = true;
+          }
+          return;
+        }
+
+        if (key.startsWith('group:')) {
+          const groupName = key.slice('group:'.length);
+          if (!groupName) {
+            return;
+          }
+          const serviceCluster = Array.from(document.querySelectorAll('.service-cluster'))
+            .find((node) => (node.dataset.group || '') === groupName);
+          const menu = serviceCluster ? serviceCluster.querySelector('.service-summary-right .action-menu') : null;
+          if (menu instanceof HTMLDetailsElement) {
+            menu.open = true;
+          }
+        }
+      });
+    };
+
     let liveSocket = null;
     let liveReconnectTimer = null;
     let liveReconnectDelayMS = 1000;
@@ -343,27 +405,22 @@
           const requestedBoardGroups = Array.from(livePendingBoardGroups);
           livePendingParts = new Set();
           livePendingBoardGroups = new Set();
-          applyLiveSnapshot(requestedParts, requestedBoardGroups).then((updated) => {
+          applyLiveSnapshot(requestedParts, requestedBoardGroups).then(() => {
             liveSnapshotInFlight = false;
-            if (updated) {
-              liveLastReloadAt = Date.now();
-              return;
-            }
             liveLastReloadAt = Date.now();
-            saveDashboardState();
-            window.location.reload();
+            if (livePendingParts.size > 0 || livePendingBoardGroups.size > 0) {
+              scheduleLiveReload();
+            }
           }).catch(() => {
             liveSnapshotInFlight = false;
-            liveLastReloadAt = Date.now();
-            saveDashboardState();
-            window.location.reload();
+            requestedParts.forEach((part) => livePendingParts.add(part));
+            requestedBoardGroups.forEach((groupName) => livePendingBoardGroups.add(groupName));
+            scheduleLiveReload();
           });
           return;
         }
 
-        liveLastReloadAt = now;
-        saveDashboardState();
-        window.location.reload();
+        scheduleLiveReload();
       }, 500);
     };
 
@@ -2429,6 +2486,7 @@
       }
 
       const openGroupsBeforeUpdate = currentOpenGroups();
+      const openActionMenusBeforeUpdate = currentOpenActionMenus();
 
       const parts = Array.isArray(requestedParts)
         ? requestedParts
@@ -2505,6 +2563,7 @@
 
       if (boardReplaced) {
         restoreOpenGroups(openGroupsBeforeUpdate);
+        restoreOpenActionMenus(openActionMenusBeforeUpdate);
       }
 
       applyKindRules();

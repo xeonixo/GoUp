@@ -1240,13 +1240,28 @@ func (s *Server) loadDashboardPageData(r *http.Request, appStore *store.Store, t
 	executorOptions := buildMonitorExecutorOptions(remoteNodes)
 
 	curUser := s.currentUser(r)
+	preferredLanguage := defaultUILanguage
+	if curUser != nil {
+		preferredLanguage = normalizeUILanguage(curUser.PreferredLanguage)
+		if strings.TrimSpace(curUser.PreferredLanguage) == "" {
+			preferredLanguage = detectPreferredLanguage(r)
+		}
+	} else {
+		preferredLanguage = detectPreferredLanguage(r)
+	}
+	translations := s.translationsForLanguage(preferredLanguage)
+	noticeLocalized := localizeFlashMessage(translations, noticeText)
+	errorLocalized := localizeFlashMessage(translations, errorText)
+
 	return pageData{
 		Title:            "Dashboard · GoUp",
 		User:             curUser,
+		UILanguage:       preferredLanguage,
+		Translations:     translations,
 		IsAdmin:          curUser == nil || strings.EqualFold(strings.TrimSpace(curUser.Role), "admin"),
 		Stats:            stats,
-		Notice:           noticeText,
-		Error:            errorText,
+		Notice:           noticeLocalized,
+		Error:            errorLocalized,
 		AuthEnabled:      s.cfg.Auth.Mode == config.AuthModeOIDC,
 		AuthDisabled:     s.cfg.Auth.Mode != config.AuthModeOIDC,
 		TrendValue:       selectedTrend.Value,
