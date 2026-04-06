@@ -50,8 +50,8 @@ func (c UDPChecker) Check(ctx context.Context, item Monitor) Result {
 
 		v4Up := v4Attempt.Status == StatusUp || v4Attempt.Status == StatusDegraded
 		v6Up := v6Attempt.Status == StatusUp || v6Attempt.Status == StatusDegraded
-		v4Label := formatUDPAttemptLabel("IPv4", v4Attempt)
-		v6Label := formatUDPAttemptLabel("IPv6", v6Attempt)
+		v4Label := formatAttemptLabel("IPv4", v4Attempt)
+		v6Label := formatAttemptLabel("IPv6", v6Attempt)
 
 		result := Result{MonitorID: item.ID, CheckedAt: checkedAt, Status: StatusDown}
 		switch {
@@ -305,19 +305,6 @@ func buildDNSProbeQuery() ([]byte, uint16) {
 	_ = binary.Write(buf, binary.BigEndian, uint16(1))
 
 	return buf.Bytes(), id
-}
-
-func formatUDPAttemptLabel(label string, attempt Result) string {
-	if attempt.Status == StatusUp || attempt.Status == StatusDegraded {
-		if attempt.Status == StatusDegraded {
-			return fmt.Sprintf("%s degraded (%s)", label, attempt.Message)
-		}
-		return fmt.Sprintf("%s %s", label, formatLatency(attempt.Latency))
-	}
-	if strings.TrimSpace(attempt.Message) == "" {
-		return label + " down"
-	}
-	return fmt.Sprintf("%s down (%s)", label, attempt.Message)
 }
 
 func runWireGuardTunnelProbe(ctx context.Context, rawProbe string, timeout time.Duration) (string, error) {

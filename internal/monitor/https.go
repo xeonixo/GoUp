@@ -51,8 +51,8 @@ func (c HTTPSChecker) Check(ctx context.Context, item Monitor) Result {
 		v4Attempt := c.checkTarget(ctx, item, checkedAt, securityMode, verifyCertificate, "tcp4")
 		v6Attempt := c.checkTarget(ctx, item, checkedAt, securityMode, verifyCertificate, "tcp6")
 
-		v4Label := formatHTTPAttemptLabel("IPv4", v4Attempt)
-		v6Label := formatHTTPAttemptLabel("IPv6", v6Attempt)
+		v4Label := formatAttemptLabel("IPv4", v4Attempt)
+		v6Label := formatAttemptLabel("IPv6", v6Attempt)
 
 		v4Up := v4Attempt.Status == StatusUp || v4Attempt.Status == StatusDegraded
 		v6Up := v6Attempt.Status == StatusUp || v6Attempt.Status == StatusDegraded
@@ -223,19 +223,6 @@ func httpsDialNetwork(host string, family TCPAddressFamily) (string, error) {
 	default:
 		return "tcp", nil
 	}
-}
-
-func formatHTTPAttemptLabel(label string, attempt Result) string {
-	if attempt.Status == StatusUp || attempt.Status == StatusDegraded {
-		if attempt.Status == StatusDegraded {
-			return fmt.Sprintf("%s degraded (%s)", label, attempt.Message)
-		}
-		return fmt.Sprintf("%s %s", label, formatLatency(attempt.Latency))
-	}
-	if strings.TrimSpace(attempt.Message) == "" {
-		return label + " down"
-	}
-	return fmt.Sprintf("%s down (%s)", label, attempt.Message)
 }
 
 func adoptHTTPAttemptMetadata(target *Result, from Result) {

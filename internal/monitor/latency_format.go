@@ -1,10 +1,24 @@
 package monitor
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
 )
+
+func formatAttemptLabel(label string, attempt Result) string {
+	if attempt.Status == StatusUp || attempt.Status == StatusDegraded {
+		if attempt.Status == StatusDegraded {
+			return fmt.Sprintf("%s degraded (%s)", label, attempt.Message)
+		}
+		return fmt.Sprintf("%s %s", label, formatLatency(attempt.Latency))
+	}
+	if strings.TrimSpace(attempt.Message) == "" {
+		return label + " down"
+	}
+	return fmt.Sprintf("%s down (%s)", label, attempt.Message)
+}
 
 func formatLatency(duration time.Duration) string {
 	if duration <= 0 {

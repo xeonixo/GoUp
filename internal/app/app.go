@@ -146,17 +146,9 @@ func New(ctx context.Context) (*App, error) {
 			}
 		}
 
-		matrixEndpointID, endpointErr := ts.EnsureSystemNotificationEndpoint(ctx, "matrix", "user-matrix", `{}`, true)
+		matrixEndpointID, emailEndpointID, endpointErr := ensureNotifierEndpoints(ctx, ts)
 		if endpointErr != nil {
-			logger.Warn("ensure matrix endpoint failed", "tenant", t.Slug, "error", endpointErr)
-			if t.ID != defaultTenant.ID {
-				ts.Close()
-			}
-			continue
-		}
-		emailEndpointID, endpointErr := ts.EnsureSystemNotificationEndpoint(ctx, "email", "user-email", `{}`, true)
-		if endpointErr != nil {
-			logger.Warn("ensure email endpoint failed", "tenant", t.Slug, "error", endpointErr)
+			logger.Warn("ensure notification endpoint failed", "tenant", t.Slug, "error", endpointErr)
 			if t.ID != defaultTenant.ID {
 				ts.Close()
 			}
@@ -254,11 +246,7 @@ func (a *App) checkRemoteNodesHeartbeat(ctx context.Context) {
 			a.logger.Warn("resolve tenant store for remote node heartbeat failed", "tenant_id", node.TenantID, "node_id", node.NodeID, "error", storeErr)
 			continue
 		}
-		matrixEndpointID, endpointErr := appStore.EnsureSystemNotificationEndpoint(ctx, "matrix", "user-matrix", `{}`, true)
-		if endpointErr != nil {
-			continue
-		}
-		emailEndpointID, endpointErr := appStore.EnsureSystemNotificationEndpoint(ctx, "email", "user-email", `{}`, true)
+		matrixEndpointID, emailEndpointID, endpointErr := ensureNotifierEndpoints(ctx, appStore)
 		if endpointErr != nil {
 			continue
 		}
@@ -367,6 +355,18 @@ func parseLogLevel(value string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+func ensureNotifierEndpoints(ctx context.Context, s *store.Store) (matrixID, emailID int64, err error) {
+	matrixID, err = s.EnsureSystemNotificationEndpoint(ctx, "matrix", "user-matrix", `{}`, true)
+	if err != nil {
+		return 0, 0, fmt.Errorf("matrix: %w", err)
+	}
+	emailID, err = s.EnsureSystemNotificationEndpoint(ctx, "email", "user-email", `{}`, true)
+	if err != nil {
+		return 0, 0, fmt.Errorf("email: %w", err)
+	}
+	return matrixID, emailID, nil
 }
 
 func tenantHasAppDatabase(path string) bool {

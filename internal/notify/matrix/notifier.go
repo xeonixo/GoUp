@@ -51,6 +51,9 @@ func (n *Notifier) Notify(ctx context.Context, transition monitor.Transition) er
 	if !n.Enabled() {
 		return nil
 	}
+
+	message := formatTransitionMessage(transition)
+
 	if n.controlStore != nil && n.tenantID > 0 {
 		targets, err := n.controlStore.ListTenantMatrixNotificationTargets(ctx, n.tenantID)
 		if err != nil {
@@ -59,10 +62,6 @@ func (n *Notifier) Notify(ctx context.Context, transition monitor.Transition) er
 		if len(targets) == 0 {
 			return monitor.ErrNoRecipients
 		}
-
-		headline := fmt.Sprintf("%s %s: %s → %s", statusEmoji(transition.Current), transition.Monitor.Name, strings.ToUpper(string(transition.Previous)), strings.ToUpper(string(transition.Current)))
-		detail := fmt.Sprintf("Kind: %s\nTarget: %s\nZeit: %s\nDetails: %s", strings.ToUpper(string(transition.Monitor.Kind)), transition.Monitor.Target, transition.CheckedAt.Local().Format(time.RFC3339), transition.ResultDetail)
-		message := headline + "\n" + detail
 
 		var sendErrors []string
 		for _, target := range targets {
@@ -88,11 +87,13 @@ func (n *Notifier) Notify(ctx context.Context, transition monitor.Transition) er
 	if n.client == nil {
 		return fmt.Errorf("matrix client is not initialized")
 	}
+	return n.client.SendMessage(ctx, message)
+}
 
+func formatTransitionMessage(transition monitor.Transition) string {
 	headline := fmt.Sprintf("%s %s: %s → %s", statusEmoji(transition.Current), transition.Monitor.Name, strings.ToUpper(string(transition.Previous)), strings.ToUpper(string(transition.Current)))
 	detail := fmt.Sprintf("Kind: %s\nTarget: %s\nZeit: %s\nDetails: %s", strings.ToUpper(string(transition.Monitor.Kind)), transition.Monitor.Target, transition.CheckedAt.Local().Format(time.RFC3339), transition.ResultDetail)
-
-	return n.client.SendMessage(ctx, headline+"\n"+detail)
+	return headline + "\n" + detail
 }
 
 func statusEmoji(status monitor.Status) string {
