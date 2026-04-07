@@ -14,11 +14,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"goup/internal/monitor"
 	emailnotify "goup/internal/notify/email"
 	matrixnotify "goup/internal/notify/matrix"
 	store "goup/internal/store/sqlite"
+
+	"github.com/gorilla/websocket"
 )
 
 const (
