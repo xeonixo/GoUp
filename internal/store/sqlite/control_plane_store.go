@@ -1,7 +1,6 @@
 package sqlite
 
 import (
-	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -14,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -29,9 +27,8 @@ import (
 var tenantSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)
 
 type ControlPlaneStore struct {
-	db              *sql.DB
-	secretKey       []byte
-	legacySecretKey []byte
+	db        *sql.DB
+	secretKey []byte
 }
 
 type Tenant struct {
@@ -203,10 +200,8 @@ func (s *ControlPlaneStore) ConfigureSecretKey(key string) error {
 	if key == "" {
 		return fmt.Errorf("secret key must not be empty")
 	}
-	legacy := sha256.Sum256([]byte(key)) // codeql[go/weak-sensitive-data-hashing]: Required for backward-compatible decryption of data encrypted before PBKDF2 migration.
 	derived := pbkdf2.Key([]byte(key), []byte("goup/control-plane/secret-key/v2"), 120000, 32, sha256.New)
 	s.secretKey = derived
-	s.legacySecretKey = legacy[:]
 	return nil
 }
 
@@ -1580,21 +1575,7 @@ func (s *ControlPlaneStore) decryptSecret(ciphertext string) (string, error) {
 	if len(s.secretKey) == 0 {
 		return "", fmt.Errorf("secret key is not configured")
 	}
-	plaintext, err := decryptProviderSecret(s.secretKey, ciphertext)
-	if err == nil {
-		return plaintext, nil
-	}
-	if len(s.legacySecretKey) == 0 || bytes.Equal(s.legacySecretKey, s.secretKey) {
-		return "", err
-	}
-	legacyPlaintext, legacyErr := decryptProviderSecret(s.legacySecretKey, ciphertext)
-	if legacyErr == nil {
-		slog.Warn("[security] decrypted secret with legacy SHA-256 key (pre-PBKDF2). " +
-			"Re-encrypt stored secrets by updating and re-saving all SSO provider credentials " +
-			"to migrate to the current PBKDF2-derived key.")
-		return legacyPlaintext, nil
-	}
-	return "", err
+	return decryptProviderSecret(s.secretKey, ciphertext)
 }
 
 func (s *ControlPlaneStore) GetGlobalSMTPSettings(ctx context.Context) (GlobalSMTPSettings, error) {
