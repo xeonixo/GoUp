@@ -447,7 +447,10 @@ func New(deps Dependencies) (*Server, error) {
 		usedResetTokens:     make(map[string]time.Time),
 	}
 	s.appMux = s.buildAppMux()
-	s.handler = s.routes()
+	s.handler, err = s.routes()
+	if err != nil {
+		return nil, fmt.Errorf("build routes: %w", err)
+	}
 
 	return s, nil
 }
@@ -488,20 +491,20 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 }
 
-func (s *Server) routes() http.Handler {
+func (s *Server) routes() (http.Handler, error) {
 	mux := http.NewServeMux()
 
 	staticFS, err := fs.Sub(web.FS, "static")
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("sub static fs: %w", err)
 	}
 	assetsFS, err := fs.Sub(webassets.FS, ".")
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("sub assets fs: %w", err)
 	}
 	faviconFS, err := fs.Sub(webassets.FS, "favicon")
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("sub favicon fs: %w", err)
 	}
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assetsFS))))
@@ -554,7 +557,7 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("/admin/tenants/{id}/users/{userID}/remove", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantUserRemove)))
 	mux.Handle("/admin/settings/smtp/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSMTPSettingsSave)))
 
-	return s.logging(s.securityHeaders(s.requireSameOrigin(mux)))
+	return s.logging(s.securityHeaders(s.requireSameOrigin(mux))), nil
 }
 
 func serveEmbeddedFile(fsys fs.FS, fileName string) http.HandlerFunc {

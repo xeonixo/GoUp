@@ -134,7 +134,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		assigned, err := a.poll(ctx)
 		if err != nil {
 			a.logger.Error("poll failed", "error", err)
-			time.Sleep(time.Duration(a.pollSeconds) * time.Second)
+			a.sleep(ctx, time.Duration(a.pollSeconds)*time.Second)
 			continue
 		}
 
@@ -145,7 +145,15 @@ func (a *Agent) Run(ctx context.Context) error {
 			}
 		}
 
-		time.Sleep(time.Duration(a.pollSeconds) * time.Second)
+		a.sleep(ctx, time.Duration(a.pollSeconds)*time.Second)
+	}
+}
+
+// sleep waits for the given duration or until ctx is cancelled.
+func (a *Agent) sleep(ctx context.Context, d time.Duration) {
+	select {
+	case <-ctx.Done():
+	case <-time.After(d):
 	}
 }
 
