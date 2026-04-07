@@ -428,3 +428,59 @@ Die folgenden P0-Punkte wurden umgesetzt.
 ### 8.5 Verifikation
 
 - `go test ./...` erfolgreich.
+
+---
+
+## 9) Umgesetzte P1-Maßnahmen (07.04.2026)
+
+Die folgenden P1-Punkte wurden umgesetzt.
+
+### 9.1 P1-1: Dynamisches Runner-Reconcile für Tenant-Änderungen
+
+**Implementierung**
+
+- Runner-Verwaltung in `internal/app/app.go` von statischer Liste auf tenantbezogene Registry umgestellt (`map[tenant_id]*tenantRunner`).
+- Reconcile-Loop ergänzt (`runRunnerReconcile(...)`, Intervall 30s):
+  - lädt Tenants aus der Control-Plane,
+  - berechnet Sollzustand (aktive Tenants mit App-DB),
+  - stoppt Runner bei deaktivierten/entfernten Tenants,
+  - startet Runner für neue Tenants,
+  - startet Runner neu bei relevanten Tenant-Konfigurationsänderungen (z. B. `slug`, `db_path`).
+- Einheitlicher Runner-Aufbau zentralisiert über `buildTenantRunner(...)`.
+- Runner werden mit tenant-spezifischem `context.WithCancel(...)` gestartet und sauber gestoppt.
+
+**Effekt**
+
+- Tenant-Aktivierung/Deaktivierung und relevante Konfigänderungen werden ohne kompletten App-Neustart wirksam.
+
+### 9.2 P1-2: Bounded Worker-Pool für Due-Checks
+
+**Implementierung**
+
+- `internal/monitor/runner.go`:
+  - Due-Snapshots werden zunächst gesammelt.
+  - Abarbeitung erfolgt über begrenzte Parallelität (`workers = 4`, semaphore-basiert).
+  - Einzel-Check-Logik in `runSnapshot(...)` extrahiert.
+- Tick-Zyklus bleibt deterministisch, da ein Lauf auf Abschluss aller Worker wartet.
+
+**Effekt**
+
+- Weniger Schedule-Drift bei vielen fälligen Checks.
+- Kontrollierte Parallelität statt rein sequentieller Ausführung.
+
+### 9.3 P1-3: WebSocket-Origin-Check im Upgrader erzwingen
+
+**Implementierung**
+
+- Globaler Upgrader mit `CheckOrigin: true`-Default entfernt.
+- Neuer servergebundener Upgrader `dashboardLiveUpgrader()` setzt `CheckOrigin` explizit auf `s.websocketOriginAllowed`.
+- Beide Live-WebSocket-Endpunkte nutzen jetzt den servergebundenen Upgrader.
+
+**Effekt**
+
+- Defense-in-Depth verbessert: Origin-Validierung ist direkt im Upgrade-Pfad verankert, nicht nur als vorgelagerte Handler-Prüfung.
+
+### 9.4 Verifikation
+
+- `go test ./...` erfolgreich.
+- `go vet ./...` ohne Befund.

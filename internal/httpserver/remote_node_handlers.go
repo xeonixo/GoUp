@@ -216,7 +216,8 @@ func (s *Server) handleSettingsRemoteNodesLive(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	conn, err := dashboardLiveUpgrader.Upgrade(w, r, nil)
+	upgrader := s.dashboardLiveUpgrader()
+	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}

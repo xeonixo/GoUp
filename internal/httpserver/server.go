@@ -410,13 +410,10 @@ const (
 	groupIconUploadMaxBytes   = 2 << 20
 )
 
-var dashboardLiveUpgrader = websocket.Upgrader{
+var dashboardLiveUpgraderBase = websocket.Upgrader{
 	ReadBufferSize:    1024,
 	WriteBufferSize:   1024,
 	EnableCompression: true,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
 }
 
 func New(deps Dependencies) (*Server, error) {
@@ -1668,7 +1665,8 @@ func (s *Server) handleDashboardLive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := dashboardLiveUpgrader.Upgrade(w, r, nil)
+	upgrader := s.dashboardLiveUpgrader()
+	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
@@ -1776,6 +1774,12 @@ func (s *Server) websocketOriginAllowed(r *http.Request) bool {
 	}
 	_, ok := allowed[origin]
 	return ok
+}
+
+func (s *Server) dashboardLiveUpgrader() websocket.Upgrader {
+	upgrader := dashboardLiveUpgraderBase
+	upgrader.CheckOrigin = s.websocketOriginAllowed
+	return upgrader
 }
 
 func (s *Server) dashboardLiveSignature(ctx context.Context, appStore *store.Store) (string, error) {

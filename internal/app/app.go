@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"goup/internal/auth"
@@ -25,8 +26,15 @@ type App struct {
 	controlStore *store.ControlPlaneStore
 	tenantStores *store.TenantStoreManager
 	server       *httpserver.Server
-	runners      []*monitorrunner.Runner
+	runnerMu     sync.Mutex
+	runners      map[int64]*tenantRunner
 	remoteNodeUp map[string]bool
+}
+
+type tenantRunner struct {
+	tenant store.Tenant
+	runner *monitorrunner.Runner
+	cancel context.CancelFunc
 }
 
 func New(ctx context.Context) (*App, error) {
@@ -130,31 +138,18 @@ func New(ctx context.Context) (*App, error) {
 	tenantStores := store.NewTenantStoreManager(controlStore, defaultTenant, sqliteStore)
 
 	// Build one runner per active tenant that has a database.
-	runners := make([]*monitorrunner.Runner, 0, len(allTenants))
+	runners := make(map[int64]*tenantRunner, len(allTenants))
 	for _, t := range allTenants {
 		if !t.Active || !tenantHasAppDatabase(t.DBPath) {
 			continue
 		}
-		ts, err := tenantStores.StoreForTenant(ctx, t.ID)
+		runner, err := buildTenantRunner(ctx, logger, controlStore, tenantStores, cfg, t)
 		if err != nil {
-			logger.Warn("failed to resolve tenant db for runner", "tenant", t.Slug, "error", err)
+			logger.Warn("failed to initialize runner for tenant", "tenant", t.Slug, "error", err)
 			continue
 		}
-
-		matrixEndpointID, emailEndpointID, endpointErr := ensureNotifierEndpoints(ctx, ts)
-		if endpointErr != nil {
-			logger.Warn("ensure notification endpoint failed", "tenant", t.Slug, "error", endpointErr)
-			continue
-		}
-
-		tenant := t // capture loop variable
-		runners = append(runners, monitorrunner.NewRunner(
-			logger,
-			ts,
-			matrixnotify.NewTenantNotifier(controlStore, matrixEndpointID, tenant.ID),
-			emailnotify.NewNotifier(controlStore, emailEndpointID, tenant.ID, cfg.BaseURL, tenant.Slug),
-		))
-		logger.Info("runner initialized for tenant", "tenant", tenant.Slug)
+		runners[t.ID] = &tenantRunner{tenant: t, runner: runner}
+		logger.Info("runner initialized for tenant", "tenant", t.Slug)
 	}
 
 	server, err := httpserver.New(httpserver.Dependencies{
@@ -191,17 +186,126 @@ func New(ctx context.Context) (*App, error) {
 }
 
 func (a *App) Run(ctx context.Context) error {
-	for _, r := range a.runners {
-		go r.Run(ctx)
-	}
+	a.startConfiguredRunners(ctx)
 	if a.controlStore != nil {
 		go a.runRemoteNodeHeartbeatWatch(ctx)
 	}
 	if a.controlStore != nil && a.tenantStores != nil {
 		go a.runMaintenance(ctx)
+		go a.runRunnerReconcile(ctx)
 	}
 	a.logger.Info("starting server", "addr", a.config.Addr)
 	return a.server.Run(ctx)
+}
+
+func (a *App) startConfiguredRunners(ctx context.Context) {
+	a.runnerMu.Lock()
+	defer a.runnerMu.Unlock()
+	for _, item := range a.runners {
+		if item == nil || item.runner == nil || item.cancel != nil {
+			continue
+		}
+		runnerCtx, cancel := context.WithCancel(ctx)
+		item.cancel = cancel
+		go item.runner.Run(runnerCtx)
+		a.logger.Info("runner started for tenant", "tenant", item.tenant.Slug)
+	}
+}
+
+func (a *App) runRunnerReconcile(ctx context.Context) {
+	a.reconcileRunners(ctx)
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			a.reconcileRunners(ctx)
+		}
+	}
+}
+
+func (a *App) reconcileRunners(ctx context.Context) {
+	tenants, err := a.controlStore.GetAllTenants(ctx)
+	if err != nil {
+		a.logger.Warn("load tenants for runner reconcile failed", "error", err)
+		return
+	}
+
+	desired := make(map[int64]store.Tenant, len(tenants))
+	for _, tenant := range tenants {
+		if !tenant.Active || !tenantHasAppDatabase(tenant.DBPath) {
+			continue
+		}
+		desired[tenant.ID] = tenant
+	}
+
+	toStart := make([]store.Tenant, 0)
+
+	a.runnerMu.Lock()
+	for tenantID, item := range a.runners {
+		desiredTenant, ok := desired[tenantID]
+		if !ok {
+			if item != nil && item.cancel != nil {
+				item.cancel()
+			}
+			delete(a.runners, tenantID)
+			if item != nil {
+				a.logger.Info("runner stopped for tenant", "tenant", item.tenant.Slug, "reason", "tenant inactive or missing")
+			}
+			continue
+		}
+
+		if item == nil {
+			delete(a.runners, tenantID)
+			toStart = append(toStart, desiredTenant)
+			continue
+		}
+
+		existingDBPath := strings.TrimSpace(item.tenant.DBPath)
+		desiredDBPath := strings.TrimSpace(desiredTenant.DBPath)
+		if existingDBPath != desiredDBPath || strings.TrimSpace(item.tenant.Slug) != strings.TrimSpace(desiredTenant.Slug) {
+			if item.cancel != nil {
+				item.cancel()
+			}
+			delete(a.runners, tenantID)
+			toStart = append(toStart, desiredTenant)
+			a.logger.Info("runner restarted for tenant", "tenant", desiredTenant.Slug, "reason", "tenant configuration changed")
+		}
+	}
+	for tenantID, tenant := range desired {
+		if _, ok := a.runners[tenantID]; !ok {
+			toStart = append(toStart, tenant)
+		}
+	}
+	a.runnerMu.Unlock()
+
+	for _, tenant := range toStart {
+		runner, err := buildTenantRunner(ctx, a.logger, a.controlStore, a.tenantStores, a.config, tenant)
+		if err != nil {
+			a.logger.Warn("failed to initialize runner during reconcile", "tenant", tenant.Slug, "error", err)
+			continue
+		}
+
+		runnerCtx, cancel := context.WithCancel(ctx)
+		a.runnerMu.Lock()
+		if existing, ok := a.runners[tenant.ID]; ok {
+			a.runnerMu.Unlock()
+			cancel()
+			if existing != nil && existing.cancel == nil && existing.runner != nil {
+				existingCtx, existingCancel := context.WithCancel(ctx)
+				existing.cancel = existingCancel
+				go existing.runner.Run(existingCtx)
+			}
+			continue
+		}
+		a.runners[tenant.ID] = &tenantRunner{tenant: tenant, runner: runner, cancel: cancel}
+		a.runnerMu.Unlock()
+
+		go runner.Run(runnerCtx)
+		a.logger.Info("runner started for tenant", "tenant", tenant.Slug)
+	}
 }
 
 func (a *App) runRemoteNodeHeartbeatWatch(ctx context.Context) {
@@ -335,6 +439,7 @@ func (a *App) runMaintenanceOnce(ctx context.Context) {
 
 func (a *App) Close() error {
 	var firstErr error
+	a.stopRunners()
 	if a.tenantStores != nil {
 		if err := a.tenantStores.Close(); err != nil {
 			firstErr = err
@@ -351,6 +456,18 @@ func (a *App) Close() error {
 		}
 	}
 	return firstErr
+}
+
+func (a *App) stopRunners() {
+	a.runnerMu.Lock()
+	defer a.runnerMu.Unlock()
+	for _, item := range a.runners {
+		if item == nil || item.cancel == nil {
+			continue
+		}
+		item.cancel()
+		item.cancel = nil
+	}
 }
 
 func parseLogLevel(value string) slog.Level {
@@ -376,6 +493,23 @@ func ensureNotifierEndpoints(ctx context.Context, s *store.Store) (matrixID, ema
 		return 0, 0, fmt.Errorf("email: %w", err)
 	}
 	return matrixID, emailID, nil
+}
+
+func buildTenantRunner(ctx context.Context, logger *slog.Logger, controlStore *store.ControlPlaneStore, tenantStores *store.TenantStoreManager, cfg config.Config, tenant store.Tenant) (*monitorrunner.Runner, error) {
+	ts, err := tenantStores.StoreForTenant(ctx, tenant.ID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve tenant db: %w", err)
+	}
+	matrixEndpointID, emailEndpointID, endpointErr := ensureNotifierEndpoints(ctx, ts)
+	if endpointErr != nil {
+		return nil, endpointErr
+	}
+	return monitorrunner.NewRunner(
+		logger,
+		ts,
+		matrixnotify.NewTenantNotifier(controlStore, matrixEndpointID, tenant.ID),
+		emailnotify.NewNotifier(controlStore, emailEndpointID, tenant.ID, cfg.BaseURL, tenant.Slug),
+	), nil
 }
 
 func tenantHasAppDatabase(path string) bool {

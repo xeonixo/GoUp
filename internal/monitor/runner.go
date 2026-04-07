@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 )
 
@@ -28,6 +29,7 @@ type Runner struct {
 	notifiers []Notifier
 	checkers  map[Kind]Checker
 	interval  time.Duration
+	workers   int
 }
 
 type Transition struct {
@@ -51,6 +53,7 @@ func NewRunner(logger *slog.Logger, store Store, notifiers ...Notifier) *Runner 
 		store:     store,
 		notifiers: notifiers,
 		interval:  5 * time.Second,
+		workers:   4,
 		checkers: map[Kind]Checker{
 			KindHTTPS: HTTPSChecker{},
 			KindTCP:   TCPChecker{},
@@ -88,72 +91,105 @@ func (r *Runner) runDueChecks(ctx context.Context) {
 	}
 
 	now := time.Now()
+	dueSnapshots := make([]Snapshot, 0, len(snapshots))
 	for _, snapshot := range snapshots {
 		if !snapshot.IsDue(now) {
 			continue
 		}
+		dueSnapshots = append(dueSnapshots, snapshot)
+	}
+	if len(dueSnapshots) == 0 {
+		return
+	}
 
-		checker, ok := r.checkers[snapshot.Monitor.Kind]
-		if !ok {
-			r.logger.Warn("no checker registered for monitor kind", "monitor_id", snapshot.Monitor.ID, "kind", snapshot.Monitor.Kind)
-			continue
-		}
+	workers := r.workers
+	if workers <= 0 {
+		workers = 1
+	}
+	if workers > len(dueSnapshots) {
+		workers = len(dueSnapshots)
+	}
 
-		runCtx, cancel := context.WithTimeout(ctx, snapshot.Monitor.Timeout+2*time.Second)
-		result := checker.Check(runCtx, snapshot.Monitor)
-		cancel()
+	sem := make(chan struct{}, workers)
+	var wg sync.WaitGroup
+	for _, snapshot := range dueSnapshots {
+		snapshot := snapshot
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			defer func() { <-sem }()
+			r.runSnapshot(ctx, snapshot)
+		}()
+	}
+	wg.Wait()
+}
 
-		if err := r.store.SaveMonitorResult(ctx, result); err != nil {
-			r.logger.Error("save monitor result failed", "monitor_id", snapshot.Monitor.ID, "error", err)
-			continue
-		}
+func (r *Runner) runSnapshot(ctx context.Context, snapshot Snapshot) {
+	checker, ok := r.checkers[snapshot.Monitor.Kind]
+	if !ok {
+		r.logger.Warn("no checker registered for monitor kind", "monitor_id", snapshot.Monitor.ID, "kind", snapshot.Monitor.Kind)
+		return
+	}
 
-		if err := r.store.RecordMonitorState(ctx, snapshot.Monitor.ID, result.Status, result.Message, result.CheckedAt); err != nil {
-			r.logger.Error("record monitor state failed", "monitor_id", snapshot.Monitor.ID, "error", err)
-		}
+	runCtx, cancel := context.WithTimeout(ctx, snapshot.Monitor.Timeout+2*time.Second)
+	result := checker.Check(runCtx, snapshot.Monitor)
+	cancel()
 
-		if transition, ok := buildTransition(snapshot, result); ok {
-			for _, notifier := range r.notifiers {
-				if notifier == nil || !notifier.Enabled() {
-					continue
-				}
+	if err := r.store.SaveMonitorResult(ctx, result); err != nil {
+		r.logger.Error("save monitor result failed", "monitor_id", snapshot.Monitor.ID, "error", err)
+		return
+	}
 
-				notifyCtx, notifyCancel := context.WithTimeout(ctx, 5*time.Second)
-				err := notifier.Notify(notifyCtx, transition)
-				notifyCancel()
+	if err := r.store.RecordMonitorState(ctx, snapshot.Monitor.ID, result.Status, result.Message, result.CheckedAt); err != nil {
+		r.logger.Error("record monitor state failed", "monitor_id", snapshot.Monitor.ID, "error", err)
+	}
 
-				// No recipients configured – nothing was sent, don't pollute the log.
-				if errors.Is(err, ErrNoRecipients) {
-					continue
-				}
+	if transition, ok := buildTransition(snapshot, result); ok {
+		for _, notifier := range r.notifiers {
+			if notifier == nil || !notifier.Enabled() {
+				continue
+			}
 
-				var deliveredAt *time.Time
-				errorMessage := ""
-				if err == nil {
-					now := time.Now().UTC()
-					deliveredAt = &now
-				} else {
-					errorMessage = err.Error()
-				}
+			notifyCtx, notifyCancel := context.WithTimeout(ctx, 5*time.Second)
+			err := notifier.Notify(notifyCtx, transition)
+			notifyCancel()
 
-				if recordErr := r.store.RecordNotificationEvent(ctx, snapshot.Monitor.ID, notifier.EndpointID(), notifier.EventType(), deliveredAt, errorMessage); recordErr != nil {
-					r.logger.Error("record notification event failed", "monitor_id", snapshot.Monitor.ID, "endpoint_id", notifier.EndpointID(), "error", recordErr)
-				}
+			// No recipients configured – nothing was sent, don't pollute the log.
+			if errors.Is(err, ErrNoRecipients) {
+				continue
+			}
 
-				if err != nil {
-					r.logger.Error("send transition notification failed", "monitor_id", snapshot.Monitor.ID, "endpoint_id", notifier.EndpointID(), "error", err)
-				}
+			var deliveredAt *time.Time
+			errorMessage := ""
+			if err == nil {
+				now := time.Now().UTC()
+				deliveredAt = &now
+			} else {
+				errorMessage = err.Error()
+			}
+
+			if recordErr := r.store.RecordNotificationEvent(ctx, snapshot.Monitor.ID, notifier.EndpointID(), notifier.EventType(), deliveredAt, errorMessage); recordErr != nil {
+				r.logger.Error("record notification event failed", "monitor_id", snapshot.Monitor.ID, "endpoint_id", notifier.EndpointID(), "error", recordErr)
+			}
+
+			if err != nil {
+				r.logger.Error("send transition notification failed", "monitor_id", snapshot.Monitor.ID, "endpoint_id", notifier.EndpointID(), "error", err)
 			}
 		}
-
-		r.logger.Info("monitor check completed",
-			"monitor_id", snapshot.Monitor.ID,
-			"name", snapshot.Monitor.Name,
-			"kind", snapshot.Monitor.Kind,
-			"status", result.Status,
-			"latency_ms", result.Latency.Milliseconds(),
-		)
 	}
+
+	r.logger.Info("monitor check completed",
+		"monitor_id", snapshot.Monitor.ID,
+		"name", snapshot.Monitor.Name,
+		"kind", snapshot.Monitor.Kind,
+		"status", result.Status,
+		"latency_ms", result.Latency.Milliseconds(),
+	)
 }
 
 func buildTransition(snapshot Snapshot, result Result) (Transition, bool) {
