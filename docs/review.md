@@ -484,3 +484,71 @@ Die folgenden P1-Punkte wurden umgesetzt.
 
 - `go test ./...` erfolgreich.
 - `go vet ./...` ohne Befund.
+
+---
+
+## 10) Umgesetzte P2-Maßnahmen (07.04.2026)
+
+Die folgenden P2-Punkte wurden umgesetzt.
+
+### 10.1 P2-1: `internal/httpserver/server.go` fachlich aufgeteilt
+
+**Implementierung**
+
+- Funktionen wurden aus der monolithischen Datei in dedizierte Module ausgelagert:
+  - `internal/httpserver/logging_middleware.go`
+  - `internal/httpserver/password_reset_tokens.go`
+  - `internal/httpserver/security_state.go`
+
+**Effekt**
+
+- Bessere Trennschärfe nach Verantwortlichkeiten (Logging, Passwort-Reset-Token, Security-State-Cleanup).
+- `server.go` wird schrittweise wartbarer und leichter erweiterbar.
+
+### 10.2 P2-2: Lockout-Map-Sweeper / TTL-Cleanup
+
+**Implementierung**
+
+- Periodischer Sweeper eingeführt (`runSecurityStateSweeper`, Intervall 5 Minuten).
+- Cleanup für In-Memory-Maps:
+  - `localLoginAttempts`
+  - `adminAccessAttempts`
+  - `bootstrapAttempts`
+- Entfernt veraltete Einträge außerhalb des jeweiligen Zeitfensters bzw. nach Ablauf von Lockouts.
+
+**Effekt**
+
+- Verhindert ungebremstes Wachstum der Lockout-Maps bei vielen einmaligen Keys/IPs.
+
+### 10.3 P2-3: HTTP-Logging um Statuscode und Response-Bytes erweitert
+
+**Implementierung**
+
+- Logging-Middleware durch `loggingResponseWriter` ergänzt.
+- Geloggte Felder enthalten jetzt zusätzlich:
+  - `status`
+  - `bytes`
+- Wrapper erhält Websocket-/Streaming-Kompatibilität durch Forwarding von optionalen Interfaces (`Hijack`, `Flush`, `Push`, `ReadFrom`).
+
+**Effekt**
+
+- Bessere Incident-Analyse und SLO-Auswertung durch vollständigeres Request-Logging.
+
+### 10.4 P2-4: Password-Reset mit optionalem One-Time-Use (Replay-Schutz)
+
+**Implementierung**
+
+- In-Memory-Replay-Schutz für Reset-Tokens ergänzt:
+  - verwendete Tokens werden als SHA-256-Digest gespeichert (`usedResetTokens`),
+  - Prüfung vor Anzeige/Verarbeitung des Confirm-Flows,
+  - Markierung nach erfolgreichem Passwort-Reset,
+  - TTL-Cleanup über Sweeper.
+
+**Effekt**
+
+- Wiederverwendung bereits eingelöster Tokens wird verhindert (best-effort, pro Prozesslauf).
+
+### 10.5 Verifikation
+
+- `go test ./...` erfolgreich.
+- `go vet ./...` ohne Befund.

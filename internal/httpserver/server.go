@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
@@ -80,6 +79,8 @@ type Server struct {
 	adminAccessAttempts map[string]localLoginAttempt
 	bootstrapMu         sync.Mutex
 	bootstrapAttempts   map[string]localLoginAttempt
+	passwordResetMu     sync.Mutex
+	usedResetTokens     map[string]time.Time
 }
 
 type dashboardIconAsset struct {
@@ -443,6 +444,7 @@ func New(deps Dependencies) (*Server, error) {
 		localLoginAttempts:  make(map[string]localLoginAttempt),
 		adminAccessAttempts: make(map[string]localLoginAttempt),
 		bootstrapAttempts:   make(map[string]localLoginAttempt),
+		usedResetTokens:     make(map[string]time.Time),
 	}
 	s.appMux = s.buildAppMux()
 	s.handler = s.routes()
@@ -461,6 +463,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 
 	errCh := make(chan error, 1)
+	go s.runSecurityStateSweeper(ctx)
 	go func() {
 		errCh <- srv.ListenAndServe()
 	}()
@@ -3393,14 +3396,6 @@ func (s *Server) render(w http.ResponseWriter, name string, data pageData) {
 	}
 }
 
-func (s *Server) logging(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		next.ServeHTTP(w, r)
-		s.logger.Info("http request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(start).String())
-	})
-}
-
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
@@ -3442,75 +3437,6 @@ func parseTemplates() (map[string]*template.Template, error) {
 		parsed[page] = tmpl
 	}
 	return parsed, nil
-}
-
-func (s *Server) passwordResetEnabled(ctx context.Context) bool {
-	smtpCfg, err := s.controlStore.GetGlobalSMTPSettings(ctx)
-	if err != nil {
-		return false
-	}
-	return strings.TrimSpace(smtpCfg.Host) != "" && strings.TrimSpace(smtpCfg.FromEmail) != "" && smtpCfg.PasswordConfigured
-}
-
-func (s *Server) signPasswordResetToken(tenantID, userID int64, expiresAt time.Time) (string, error) {
-	nonce := make([]byte, 8)
-	if _, err := rand.Read(nonce); err != nil {
-		return "", err
-	}
-	payload := fmt.Sprintf("%d:%d:%d:%s", tenantID, userID, expiresAt.UTC().Unix(), hex.EncodeToString(nonce))
-	payloadEncoded := base64.RawURLEncoding.EncodeToString([]byte(payload))
-
-	h := hmac.New(sha256.New, []byte(s.cfg.SessionKey))
-	_, _ = h.Write([]byte(payloadEncoded))
-	signature := base64.RawURLEncoding.EncodeToString(h.Sum(nil))
-	return payloadEncoded + "." + signature, nil
-}
-
-func (s *Server) parsePasswordResetToken(token string) (tenantID, userID int64, expiresAt time.Time, err error) {
-	parts := strings.Split(token, ".")
-	if len(parts) != 2 {
-		return 0, 0, time.Time{}, fmt.Errorf("invalid token")
-	}
-	payloadEncoded := parts[0]
-	providedSig, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return 0, 0, time.Time{}, fmt.Errorf("invalid token signature")
-	}
-
-	h := hmac.New(sha256.New, []byte(s.cfg.SessionKey))
-	_, _ = h.Write([]byte(payloadEncoded))
-	expectedSig := h.Sum(nil)
-	if !hmac.Equal(providedSig, expectedSig) {
-		return 0, 0, time.Time{}, fmt.Errorf("invalid token")
-	}
-
-	payloadBytes, err := base64.RawURLEncoding.DecodeString(payloadEncoded)
-	if err != nil {
-		return 0, 0, time.Time{}, fmt.Errorf("invalid token payload")
-	}
-	fields := strings.Split(string(payloadBytes), ":")
-	if len(fields) < 3 {
-		return 0, 0, time.Time{}, fmt.Errorf("invalid token payload")
-	}
-
-	tenantID, err = strconv.ParseInt(fields[0], 10, 64)
-	if err != nil {
-		return 0, 0, time.Time{}, fmt.Errorf("invalid token tenant")
-	}
-	userID, err = strconv.ParseInt(fields[1], 10, 64)
-	if err != nil {
-		return 0, 0, time.Time{}, fmt.Errorf("invalid token user")
-	}
-	expUnix, err := strconv.ParseInt(fields[2], 10, 64)
-	if err != nil {
-		return 0, 0, time.Time{}, fmt.Errorf("invalid token expiration")
-	}
-	expiresAt = time.Unix(expUnix, 0).UTC()
-	if time.Now().UTC().After(expiresAt) {
-		return 0, 0, time.Time{}, fmt.Errorf("token expired")
-	}
-
-	return tenantID, userID, expiresAt, nil
 }
 
 func sendSMTPMail(cfg store.GlobalSMTPDeliveryConfig, to, subject, body string) error {
@@ -5426,9 +5352,13 @@ func (s *Server) handleTenantPasswordResetConfirm(w http.ResponseWriter, r *http
 			return
 		}
 
-		tokenTenantID, userID, _, err := s.parsePasswordResetToken(token)
+		tokenTenantID, userID, tokenExpiresAt, err := s.parsePasswordResetToken(token)
 		if err != nil || tokenTenantID != tenant.ID {
 			http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Reset-Link ist ungültig oder abgelaufen"), http.StatusSeeOther)
+			return
+		}
+		if s.passwordResetTokenUsed(token) {
+			http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Reset-Link wurde bereits verwendet"), http.StatusSeeOther)
 			return
 		}
 
@@ -5437,6 +5367,7 @@ func (s *Server) handleTenantPasswordResetConfirm(w http.ResponseWriter, r *http
 			http.Redirect(w, r, "/"+tenantSlug+"/password-reset/confirm?token="+url.QueryEscape(token)+"&error="+url.QueryEscape("Passwort konnte nicht gesetzt werden"), http.StatusSeeOther)
 			return
 		}
+		s.markPasswordResetTokenUsed(token, tokenExpiresAt)
 
 		http.Redirect(w, r, "/"+tenantSlug+"/login?notice="+url.QueryEscape("Passwort wurde aktualisiert. Bitte anmelden."), http.StatusSeeOther)
 		return
@@ -5455,6 +5386,10 @@ func (s *Server) handleTenantPasswordResetConfirm(w http.ResponseWriter, r *http
 	tokenTenantID, _, _, err := s.parsePasswordResetToken(token)
 	if err != nil || tokenTenantID != tenant.ID {
 		http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Reset-Link ist ungültig oder abgelaufen"), http.StatusSeeOther)
+		return
+	}
+	if s.passwordResetTokenUsed(token) {
+		http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Reset-Link wurde bereits verwendet"), http.StatusSeeOther)
 		return
 	}
 
