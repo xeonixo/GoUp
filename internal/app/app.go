@@ -135,23 +135,15 @@ func New(ctx context.Context) (*App, error) {
 		if !t.Active || !tenantHasAppDatabase(t.DBPath) {
 			continue
 		}
-		var ts *store.Store
-		if t.ID == defaultTenant.ID {
-			ts = sqliteStore
-		} else {
-			ts, err = store.Open(ctx, t.DBPath)
-			if err != nil {
-				logger.Warn("failed to open tenant db for runner", "tenant", t.Slug, "error", err)
-				continue
-			}
+		ts, err := tenantStores.StoreForTenant(ctx, t.ID)
+		if err != nil {
+			logger.Warn("failed to resolve tenant db for runner", "tenant", t.Slug, "error", err)
+			continue
 		}
 
 		matrixEndpointID, emailEndpointID, endpointErr := ensureNotifierEndpoints(ctx, ts)
 		if endpointErr != nil {
 			logger.Warn("ensure notification endpoint failed", "tenant", t.Slug, "error", endpointErr)
-			if t.ID != defaultTenant.ID {
-				ts.Close()
-			}
 			continue
 		}
 
@@ -205,7 +197,7 @@ func (a *App) Run(ctx context.Context) error {
 	if a.controlStore != nil {
 		go a.runRemoteNodeHeartbeatWatch(ctx)
 	}
-	if a.store != nil {
+	if a.controlStore != nil && a.tenantStores != nil {
 		go a.runMaintenance(ctx)
 	}
 	a.logger.Info("starting server", "addr", a.config.Addr)
@@ -305,23 +297,40 @@ func (a *App) runMaintenance(ctx context.Context) {
 }
 
 func (a *App) runMaintenanceOnce(ctx context.Context) {
-	result, err := a.store.RunMaintenance(ctx, time.Now().UTC())
+	tenants, err := a.controlStore.GetAllTenants(ctx)
 	if err != nil {
-		a.logger.Error("database maintenance failed", "error", err)
+		a.logger.Error("load tenants for maintenance failed", "error", err)
 		return
 	}
+	now := time.Now().UTC()
+	for _, tenant := range tenants {
+		if !tenant.Active || !tenantHasAppDatabase(tenant.DBPath) {
+			continue
+		}
+		tenantStore, err := a.tenantStores.StoreForTenant(ctx, tenant.ID)
+		if err != nil {
+			a.logger.Warn("resolve tenant store for maintenance failed", "tenant", tenant.Slug, "error", err)
+			continue
+		}
+		result, err := tenantStore.RunMaintenance(ctx, now)
+		if err != nil {
+			a.logger.Error("database maintenance failed", "tenant", tenant.Slug, "error", err)
+			continue
+		}
 
-	if !result.BackfilledHourlyRollups && !result.Optimized && result.DeletedRawResults == 0 && result.DeletedHourlyRollups == 0 {
-		return
+		if !result.BackfilledHourlyRollups && !result.Optimized && result.DeletedRawResults == 0 && result.DeletedHourlyRollups == 0 {
+			continue
+		}
+
+		a.logger.Info(
+			"database maintenance completed",
+			"tenant", tenant.Slug,
+			"hourly_rollups_backfilled", result.BackfilledHourlyRollups,
+			"raw_results_deleted", result.DeletedRawResults,
+			"hourly_rollups_deleted", result.DeletedHourlyRollups,
+			"optimized", result.Optimized,
+		)
 	}
-
-	a.logger.Info(
-		"database maintenance completed",
-		"hourly_rollups_backfilled", result.BackfilledHourlyRollups,
-		"raw_results_deleted", result.DeletedRawResults,
-		"hourly_rollups_deleted", result.DeletedHourlyRollups,
-		"optimized", result.Optimized,
-	)
 }
 
 func (a *App) Close() error {

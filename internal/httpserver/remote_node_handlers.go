@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -22,11 +24,18 @@ import (
 const (
 	remoteNodeAccessTokenTTL       = 5 * time.Minute
 	remoteNodeDefaultPollIntervalS = 20
+	remoteNodeBootstrapBodyLimit   = 4 * 1024
+	remoteNodePollBodyLimit        = 4 * 1024
+	remoteNodeReportBodyLimit      = 512 * 1024
 )
 
 type remoteNodeBootstrapRequest struct {
 	NodeID       string `json:"node_id"`
 	BootstrapKey string `json:"bootstrap_key"`
+}
+
+type remoteNodePollRequest struct {
+	AgentVersion string `json:"agent_version,omitempty"`
 }
 
 type remoteNodeMonitorPayload struct {
@@ -496,7 +505,15 @@ func (s *Server) handleRemoteNodeBootstrap(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	var payload remoteNodeBootstrapRequest
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := decodeJSONStrict(w, r, &payload, remoteNodeBootstrapBodyLimit); err != nil {
+		if err == errInvalidJSONPayload {
+			http.Error(w, "invalid payload", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+	if strings.TrimSpace(payload.NodeID) == "" || strings.TrimSpace(payload.BootstrapKey) == "" {
 		http.Error(w, "invalid payload", http.StatusBadRequest)
 		return
 	}
@@ -533,6 +550,15 @@ func (s *Server) handleRemoteNodeBootstrap(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleRemoteNodePoll(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var payload remoteNodePollRequest
+	if err := decodeJSONStrict(w, r, &payload, remoteNodePollBodyLimit); err != nil {
+		if err == errInvalidJSONPayload {
+			http.Error(w, "invalid payload", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
 		return
 	}
 	node, ok := s.authenticateRemoteNodeRequest(w, r)
@@ -588,17 +614,20 @@ func (s *Server) handleRemoteNodeReport(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	var payload remoteNodeReportRequest
+	if err := decodeJSONStrict(w, r, &payload, remoteNodeReportBodyLimit); err != nil {
+		if err == errInvalidJSONPayload {
+			http.Error(w, "invalid payload", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
+		return
+	}
 	node, ok := s.authenticateRemoteNodeRequest(w, r)
 	if !ok {
 		return
 	}
 	_ = s.controlStore.TouchRemoteNodeLastSeen(r.Context(), node.ID, time.Now().UTC())
-
-	var payload remoteNodeReportRequest
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "invalid payload", http.StatusBadRequest)
-		return
-	}
 
 	appStore, err := s.tenantStores.StoreForTenant(r.Context(), node.TenantID)
 	if err != nil {
@@ -675,6 +704,35 @@ func (s *Server) authenticateRemoteNodeRequest(w http.ResponseWriter, r *http.Re
 		return store.RemoteNode{}, false
 	}
 	return node, true
+}
+
+var errInvalidJSONPayload = errors.New("invalid json payload")
+
+func decodeJSONStrict(w http.ResponseWriter, r *http.Request, dst any, maxBytes int64) error {
+	if maxBytes <= 0 {
+		maxBytes = 4096
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			return maxBytesErr
+		}
+		return errInvalidJSONPayload
+	}
+	if err := dec.Decode(&struct{}{}); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			return maxBytesErr
+		}
+		return errInvalidJSONPayload
+	}
+	return errInvalidJSONPayload
 }
 
 func decodeRemoteNodeResult(item remoteNodeResultPayload) (monitor.Result, error) {

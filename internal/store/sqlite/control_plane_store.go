@@ -1193,7 +1193,7 @@ func (s *ControlPlaneStore) ensureTenantMembershipNotificationColumn(ctx context
 
 func (s *ControlPlaneStore) tableHasColumn(ctx context.Context, tableName, columnName string) (bool, error) {
 	switch tableName {
-	case "users", "tenant_memberships":
+	case "users", "tenant_memberships", "remote_nodes":
 	default:
 		return false, fmt.Errorf("unsupported table inspection: %s", tableName)
 	}
