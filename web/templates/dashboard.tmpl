@@ -348,10 +348,18 @@
       <p class="muted compact">{{index $.Translations "dashboard.group_modal.preview_source"}}</p>
     </div>
 
-    <label>
-      <span>{{index $.Translations "dashboard.group_modal.search_label"}}</span>
-      <input type="search" id="group-icon-search" placeholder="{{index $.Translations "dashboard.group_icon.search_placeholder"}}" autocomplete="off" spellcheck="false">
-    </label>
+    <div class="group-icon-search-row">
+      <label class="group-icon-search-label">
+        <span>{{index $.Translations "dashboard.group_modal.search_label"}}</span>
+        <input type="search" id="group-icon-search" placeholder="{{index $.Translations "dashboard.group_icon.search_placeholder"}}" autocomplete="off" spellcheck="false">
+      </label>
+      <button class="button button-secondary" type="button" id="group-icon-search-button">{{index $.Translations "dashboard.group_modal.search_button"}}</button>
+    </div>
+
+    <div id="group-icon-consent-panel" hidden>
+      <p class="muted compact">{{index $.Translations "dashboard.group_modal.consent_text"}}</p>
+      <button class="button button-secondary" type="button" id="group-icon-consent-confirm">{{index $.Translations "dashboard.group_modal.consent_confirm"}}</button>
+    </div>
 
     <p class="muted compact" id="group-icon-search-status">{{index $.Translations "dashboard.group_modal.search_hint"}}</p>
     <div class="group-icon-results" id="group-icon-results" aria-live="polite"></div>
@@ -361,11 +369,6 @@
       <input type="file" id="group-icon-upload" name="icon_upload" accept=".svg,image/svg+xml,.png,image/png,.webp,image/webp,.jpg,.jpeg,image/jpeg,.ico,image/x-icon,image/vnd.microsoft.icon">
     </label>
     <p class="muted compact">{{index $.Translations "dashboard.group_modal.upload_hint"}}</p>
-
-    <label>
-      <span>{{index $.Translations "dashboard.group_modal.custom_slug_label"}}</span>
-      <input type="text" id="group-icon-custom" placeholder="{{index $.Translations "dashboard.group_icon.custom_placeholder"}}">
-    </label>
 
     <p class="muted compact" id="group-icon-selection">{{index $.Translations "dashboard.group_modal.no_icon_selected"}}</p>
 
