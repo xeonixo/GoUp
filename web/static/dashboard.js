@@ -54,6 +54,7 @@
     const groupIconSelection = document.getElementById('group-icon-selection');
     const groupIconPreview = document.getElementById('group-icon-preview');
     const groupIconPreviewFrame = document.getElementById('group-icon-preview-frame');
+    const groupNewNameField = document.getElementById('group-new-name-field');
     const nameField = document.getElementById('monitor-name');
     const kindField = document.getElementById('monitor-kind');
     const groupField = document.getElementById('monitor-group');
@@ -820,6 +821,7 @@
       const iconValue = String(button.dataset.iconSlug || '').trim();
       groupModalTitle.textContent = tr('groupModalTitle', 'Configure group · {name}', { name: groupName });
       groupNameField.value = groupName;
+      if (groupNewNameField) groupNewNameField.value = groupName;
       clearGroupIconUploadSelection();
       groupIconCustom.value = isUploadedIconRef(iconValue) ? '' : normalizeIconSlug(iconValue);
       groupIconSearch.value = !isUploadedIconRef(iconValue) && iconValue ? normalizeIconSlug(iconValue) : groupName;

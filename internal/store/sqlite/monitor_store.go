@@ -736,6 +736,42 @@ WHERE name = ?
 	return nil
 }
 
+func (s *Store) RenameMonitorGroup(ctx context.Context, oldName, newName string) error {
+	oldName = strings.TrimSpace(oldName)
+	newName = strings.TrimSpace(newName)
+	if oldName == "" || newName == "" {
+		return errors.New("group name is required")
+	}
+	if oldName == newName {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+	now := time.Now().UTC()
+	if _, err = tx.ExecContext(ctx, `
+INSERT INTO monitor_groups (name, icon_slug, sort_order, created_at, updated_at)
+SELECT ?, icon_slug, sort_order, created_at, ?
+FROM monitor_groups WHERE name = ?
+`, newName, now, oldName); err != nil {
+		return fmt.Errorf("insert renamed group: %w", err)
+	}
+	if _, err = tx.ExecContext(ctx,
+		`UPDATE monitors SET group_name = ?, updated_at = ? WHERE TRIM(group_name) = ?`,
+		newName, now, oldName,
+	); err != nil {
+		return fmt.Errorf("update monitor group_name: %w", err)
+	}
+	if _, err = tx.ExecContext(ctx,
+		`DELETE FROM monitor_groups WHERE name = ?`, oldName,
+	); err != nil {
+		return fmt.Errorf("delete old group: %w", err)
+	}
+	return tx.Commit()
+}
+
 func (s *Store) ReorderMonitorGroups(ctx context.Context, draggedGroup string, targetGroup string) error {
 	draggedGroup = strings.TrimSpace(draggedGroup)
 	targetGroup = strings.TrimSpace(targetGroup)
