@@ -49,12 +49,14 @@
     const groupIconSearch = document.getElementById('group-icon-search');
     const groupIconSearchStatus = document.getElementById('group-icon-search-status');
     const groupIconResults = document.getElementById('group-icon-results');
-    const groupIconCustom = document.getElementById('group-icon-custom');
     const groupIconUpload = document.getElementById('group-icon-upload');
     const groupIconSelection = document.getElementById('group-icon-selection');
     const groupIconPreview = document.getElementById('group-icon-preview');
     const groupIconPreviewFrame = document.getElementById('group-icon-preview-frame');
     const groupNewNameField = document.getElementById('group-new-name-field');
+    const groupIconSearchButton = document.getElementById('group-icon-search-button');
+    const groupIconConsentPanel = document.getElementById('group-icon-consent-panel');
+    const groupIconConsentConfirm = document.getElementById('group-icon-consent-confirm');
     const nameField = document.getElementById('monitor-name');
     const kindField = document.getElementById('monitor-kind');
     const groupField = document.getElementById('monitor-group');
@@ -655,7 +657,7 @@
       const currentRef = String(groupIconSlugField?.value || '').trim();
       const slug = isUploadedIconRef(currentRef)
         ? currentRef
-        : normalizeIconSlug(currentRef || groupIconCustom?.value || '');
+        : normalizeIconSlug(currentRef);
       if (groupIconSlugField) {
         groupIconSlugField.value = slug;
       }
@@ -713,9 +715,6 @@
         useCustomButton.appendChild(customBody);
         useCustomButton.addEventListener('click', () => {
           clearGroupIconUploadSelection();
-          if (groupIconCustom) {
-            groupIconCustom.value = normalizedQuery;
-          }
           if (groupIconSlugField) {
             groupIconSlugField.value = normalizedQuery;
           }
@@ -755,9 +754,6 @@
         });
         button.addEventListener('click', () => {
           clearGroupIconUploadSelection();
-          if (groupIconCustom) {
-            groupIconCustom.value = result.source === 'upload' ? '' : result.slug;
-          }
           if (groupIconSlugField) {
             groupIconSlugField.value = result.value;
           }
@@ -806,6 +802,20 @@
       }
     };
 
+    const hasIconSearchConsent = () =>
+      localStorage.getItem('goup_icon_search_consent') === '1';
+
+    const triggerIconSearch = () => {
+      const query = groupIconSearch?.value || '';
+      if (!hasIconSearchConsent()) {
+        if (groupIconConsentPanel) groupIconConsentPanel.hidden = false;
+        if (groupIconSearchStatus) groupIconSearchStatus.textContent = '';
+        return;
+      }
+      if (groupIconConsentPanel) groupIconConsentPanel.hidden = true;
+      scheduleIconSearch(query);
+    };
+
     const scheduleIconSearch = (query) => {
       if (iconSearchTimer) {
         window.clearTimeout(iconSearchTimer);
@@ -814,7 +824,7 @@
     };
 
     const openGroupDialog = (button) => {
-      if (!groupModalTitle || !groupNameField || !groupIconCustom || !groupIconSearch || !groupIconSlugField || !groupDialog) {
+      if (!groupModalTitle || !groupNameField || !groupIconSearch || !groupIconSlugField || !groupDialog) {
         return;
       }
       const groupName = button.dataset.group || tr('groupFallback', 'Group');
@@ -823,11 +833,11 @@
       groupNameField.value = groupName;
       if (groupNewNameField) groupNewNameField.value = groupName;
       clearGroupIconUploadSelection();
-      groupIconCustom.value = isUploadedIconRef(iconValue) ? '' : normalizeIconSlug(iconValue);
       groupIconSearch.value = !isUploadedIconRef(iconValue) && iconValue ? normalizeIconSlug(iconValue) : groupName;
       groupIconSlugField.value = iconValue;
       updateGroupIconPreview();
-      scheduleIconSearch(groupIconSearch.value);
+      renderIconResults([], groupIconSearch?.value || '');
+      if (groupIconConsentPanel) groupIconConsentPanel.hidden = true;
       groupDialog.showModal();
     };
 
@@ -1774,9 +1784,6 @@
     bindDialogBackdropClose(trendDetailModal);
     groupResetButton?.addEventListener('click', () => {
       clearGroupIconUploadSelection();
-      if (groupIconCustom) {
-        groupIconCustom.value = '';
-      }
       if (groupIconSearch) {
         groupIconSearch.value = groupNameField?.value || '';
       }
@@ -1785,7 +1792,6 @@
       }
       updateGroupIconPreview();
       renderIconResults([], groupIconSearch?.value || '');
-      scheduleIconSearch(groupIconSearch?.value || '');
     });
     kindField?.addEventListener('change', applyKindRules);
     tlsModeField?.addEventListener('change', () => {
@@ -1995,19 +2001,20 @@
     });
     useHTTPSField?.addEventListener('change', applyKindRules);
     verifyCertField?.addEventListener('change', applyKindRules);
-    groupIconSearch?.addEventListener('input', () => scheduleIconSearch(groupIconSearch.value));
-    groupIconCustom?.addEventListener('input', () => {
-      clearGroupIconUploadSelection();
-      if (groupIconSlugField) {
-        groupIconSlugField.value = normalizeIconSlug(groupIconCustom.value || '');
+    groupIconSearch?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        triggerIconSearch();
       }
-      updateGroupIconPreview();
+    });
+    groupIconSearchButton?.addEventListener('click', () => triggerIconSearch());
+    groupIconConsentConfirm?.addEventListener('click', () => {
+      localStorage.setItem('goup_icon_search_consent', '1');
+      if (groupIconConsentPanel) groupIconConsentPanel.hidden = true;
+      scheduleIconSearch(groupIconSearch?.value || '');
     });
     groupIconUpload?.addEventListener('change', () => {
       if (groupIconUpload?.files?.length) {
-        if (groupIconCustom) {
-          groupIconCustom.value = '';
-        }
         if (groupIconSlugField) {
           groupIconSlugField.value = '';
         }
