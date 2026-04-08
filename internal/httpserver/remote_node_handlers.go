@@ -269,6 +269,11 @@ func (s *Server) handleSettingsRemoteNodesLive(w http.ResponseWriter, r *http.Re
 				return
 			}
 		case <-pollTicker.C:
+			if _, sessErr := s.sessionForRequest(r); sessErr != nil {
+				_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+				_ = conn.WriteJSON(map[string]string{"type": "session_expired"})
+				return
+			}
 			_, nextSignature, snapshotErr := s.loadSettingsRemoteNodesLiveSnapshot(r)
 			if snapshotErr != nil {
 				s.logger.Warn("load settings remote nodes live data failed", "error", snapshotErr)

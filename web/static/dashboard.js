@@ -467,6 +467,7 @@
       setLiveConnectionState('connecting');
       const wsURL = new URL(`${appBase}live?trend=${encodeURIComponent(currentTrend)}`, window.location.href);
       wsURL.protocol = wsURL.protocol === 'https:' ? 'wss:' : 'ws:';
+      let wasConnected = false;
 
       try {
         liveSocket = new window.WebSocket(wsURL.toString());
@@ -477,6 +478,7 @@
       }
 
       liveSocket.addEventListener('open', () => {
+        wasConnected = true;
         setLiveConnectionState('connected');
         liveReconnectDelayMS = 1000;
       });
@@ -484,6 +486,11 @@
       liveSocket.addEventListener('message', (event) => {
         try {
           const payload = JSON.parse(event.data);
+          if (payload?.type === 'session_expired') {
+            liveUpdatesEnabled = false;
+            window.location.href = `${appBase}login`;
+            return;
+          }
           if (payload?.type === 'refresh') {
             const parts = Array.isArray(payload.parts) ? payload.parts : [];
             if (parts.length > 0) {
@@ -519,6 +526,19 @@
         setLiveConnectionState('disconnected');
         liveSocket = null;
         liveSnapshotInFlight = false;
+        if (!wasConnected) {
+          window.fetch(window.location.href, { redirect: 'follow', credentials: 'include' })
+            .then((resp) => {
+              if (resp.url && resp.url.includes('/login')) {
+                liveUpdatesEnabled = false;
+                window.location.href = resp.url;
+              } else {
+                queueLiveReconnect();
+              }
+            })
+            .catch(() => queueLiveReconnect());
+          return;
+        }
         queueLiveReconnect();
       });
     };
