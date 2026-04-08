@@ -276,6 +276,8 @@
   "dashboard.group.actions_aria": "Actions for group %s",
   "dashboard.group.configure_icon_aria": "Configure group icon for %s",
   "dashboard.group.edit_icon": "Edit icon",
+  "dashboard.group.settings": "Settings",
+  "dashboard.group_modal.name_label": "Group name",
   "dashboard.group.delete_confirm": "Delete this group including all monitors?",
   "dashboard.group.delete": "Delete group",
   "dashboard.group.no_monitors": "No monitors in this group.",

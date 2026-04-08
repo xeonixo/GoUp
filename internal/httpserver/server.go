@@ -2033,6 +2033,17 @@ func (s *Server) handleSaveGroup(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Ungültige Gruppe"), http.StatusSeeOther)
 		return
 	}
+	newGroupName := strings.TrimSpace(r.FormValue("new_name"))
+	if newGroupName == "" {
+		newGroupName = groupName
+	}
+	if newGroupName != groupName {
+		if err := appStore.RenameMonitorGroup(r.Context(), groupName, newGroupName); err != nil {
+			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Gruppe konnte nicht umbenannt werden: "+err.Error()), http.StatusSeeOther)
+			return
+		}
+		groupName = newGroupName
+	}
 	iconRef := normalizeGroupIconReference(strings.TrimSpace(r.FormValue("icon_slug")))
 	uploadedIconRef, err := s.storeUploadedGroupIcon(r, groupName)
 	if err != nil {
@@ -2053,7 +2064,7 @@ func (s *Server) handleSaveGroup(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "Gruppen-Icon gespeichert", ""), http.StatusSeeOther)
+	http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "Gruppe gespeichert", ""), http.StatusSeeOther)
 }
 
 func (s *Server) handleDeleteGroup(w http.ResponseWriter, r *http.Request) {

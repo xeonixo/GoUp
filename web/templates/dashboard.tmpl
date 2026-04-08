@@ -336,6 +336,11 @@
       <button class="modal-close-button" type="button" id="group-cancel" aria-label="{{index $.Translations "dashboard.group_modal.close_aria"}}">×</button>
     </div>
 
+    <label>
+      <span>{{index $.Translations "dashboard.group_modal.name_label"}}</span>
+      <input type="text" name="new_name" id="group-new-name-field" required autocomplete="off" spellcheck="false">
+    </label>
+
     <div class="group-icon-preview-panel">
       <div class="group-icon-preview-frame" id="group-icon-preview-frame" hidden>
         <img id="group-icon-preview" alt="{{index $.Translations "dashboard.group_modal.icon_preview_alt"}}">
@@ -488,7 +493,7 @@
                       type="button"
                       data-group="{{.Title}}"
                       data-icon-slug="{{.IconSlug}}"
-                      aria-label="{{printf (index $.Translations "dashboard.group.configure_icon_aria") .Title}}">{{index $.Translations "dashboard.group.edit_icon"}}</button>
+                      aria-label="{{printf (index $.Translations "dashboard.group.configure_icon_aria") .Title}}">{{index $.Translations "dashboard.group.settings"}}</button>
                     <form method="post" action="{{$.AppBase}}groups/delete" class="action-menu-form" data-confirm="{{index $.Translations "dashboard.group.delete_confirm"}}">
                       <input type="hidden" name="group" value="{{.Title}}">
                       <button class="action-menu-item action-menu-item-danger" type="submit">{{index $.Translations "dashboard.group.delete"}}</button>
