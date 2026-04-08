@@ -1724,6 +1724,11 @@ func (s *Server) handleDashboardLive(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case <-pollTicker.C:
+			if _, sessErr := s.sessionForRequest(r); sessErr != nil {
+				_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+				_ = conn.WriteJSON(map[string]string{"type": "session_expired"})
+				return
+			}
 			nextData, dataErr := s.loadDashboardPageData(r, appStore, trendValue, "", "")
 			if dataErr != nil {
 				s.logger.Warn("load dashboard live data failed", "error", dataErr)

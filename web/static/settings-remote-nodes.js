@@ -210,6 +210,8 @@
         return;
       }
 
+      let wasConnected = false;
+
       try {
         socket = new window.WebSocket(buildWSURL());
       } catch (_) {
@@ -218,6 +220,7 @@
       }
 
       socket.addEventListener('open', () => {
+        wasConnected = true;
         reconnectDelayMS = 1000;
         fetchSnapshot();
       });
@@ -225,6 +228,11 @@
       socket.addEventListener('message', (event) => {
         try {
           const payload = JSON.parse(event.data);
+          if (payload?.type === 'session_expired') {
+            active = false;
+            window.location.href = `${appBase}login`;
+            return;
+          }
           if (payload?.type === 'refresh') {
             fetchSnapshot();
           }
@@ -241,6 +249,19 @@
 
       socket.addEventListener('close', () => {
         socket = null;
+        if (!wasConnected) {
+          window.fetch(window.location.href, { redirect: 'follow', credentials: 'include' })
+            .then((resp) => {
+              if (resp.url && resp.url.includes('/login')) {
+                active = false;
+                window.location.href = resp.url;
+              } else {
+                queueReconnect();
+              }
+            })
+            .catch(() => queueReconnect());
+          return;
+        }
         queueReconnect();
       });
     };
