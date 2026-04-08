@@ -162,6 +162,13 @@ func buildHTMLEmail(transition monitor.Transition, dashboardURL string, translat
 			htmlpkg.EscapeString(msg) + `</div></td></tr>`
 	}
 
+	groupRow := ""
+	if grp := strings.TrimSpace(transition.Monitor.Group); grp != "" {
+		groupRow = `<div style="font-size:13px;color:#6b7280;margin-top:2px;">` +
+			htmlpkg.EscapeString(emailText(translations, "email.status_transition.group_label", "Group")) + `: ` +
+			htmlpkg.EscapeString(grp) + `</div>`
+	}
+
 	return strings.NewReplacer(
 		"{headerBg}", headerBg,
 		"{badgeBg}", badgeBg,
@@ -173,6 +180,7 @@ func buildHTMLEmail(transition monitor.Transition, dashboardURL string, translat
 		"{monitorName}", htmlpkg.EscapeString(transition.Monitor.Name),
 		"{monitorKind}", strings.ToUpper(string(transition.Monitor.Kind)),
 		"{monitorTarget}", htmlpkg.EscapeString(transition.Monitor.Target),
+		"{groupRow}", groupRow,
 		"{timestampLabel}", htmlpkg.EscapeString(emailText(translations, "email.status_transition.timestamp", "Timestamp")),
 		"{checkedAt}", checkedAt,
 		"{detailRow}", detailRow,
@@ -199,6 +207,7 @@ const emailHTMLTemplate = `<!DOCTYPE html>
   <tr><td style="padding:8px 32px 0;">
     <div style="font-size:22px;font-weight:700;color:#e8e9ef;">{monitorName}</div>
     <div style="font-size:13px;color:#6b7280;margin-top:4px;">{monitorKind} &middot; {monitorTarget}</div>
+    {groupRow}
   </td></tr>
   <tr><td style="padding:20px 32px 0;">
     <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #2a2d3a;border-radius:8px;overflow:hidden;">

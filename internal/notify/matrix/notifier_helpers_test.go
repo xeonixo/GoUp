@@ -27,7 +27,7 @@ func TestFormatTransitionMessage(t *testing.T) {
 		Current:      monitor.StatusUp,
 		CheckedAt:    time.Now().UTC(),
 		ResultDetail: "ok",
-	})
+	}, "en")
 	if !strings.Contains(msg, "DB") || !strings.Contains(msg, "db:5432") {
 		t.Fatalf("unexpected message: %q", msg)
 	}
