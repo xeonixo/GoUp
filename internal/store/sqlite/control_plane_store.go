@@ -118,10 +118,11 @@ type UserNotificationSettings struct {
 }
 
 type MatrixNotificationTarget struct {
-	UserID        int64
-	HomeserverURL string
-	RoomID        string
-	AccessToken   string
+	UserID            int64
+	HomeserverURL     string
+	RoomID            string
+	AccessToken       string
+	PreferredLanguage string
 }
 
 type NotificationRecipient struct {
@@ -2149,10 +2150,11 @@ func (s *ControlPlaneStore) ListTenantMatrixNotificationTargets(ctx context.Cont
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-SELECT unc.user_id, unc.config_json, unc.secret_ciphertext
+SELECT unc.user_id, unc.config_json, unc.secret_ciphertext, COALESCE(NULLIF(trim(u.preferred_language), ''), 'en')
 FROM user_notification_channels unc
 JOIN tenant_memberships tm ON tm.tenant_id = unc.tenant_id AND tm.user_id = unc.user_id
 JOIN tenants t ON t.id = tm.tenant_id
+JOIN users u ON u.id = unc.user_id
 WHERE unc.tenant_id = ?
 	AND unc.kind = 'matrix'
 	AND unc.enabled = 1
@@ -2167,11 +2169,12 @@ ORDER BY unc.user_id ASC
 	items := make([]MatrixNotificationTarget, 0)
 	for rows.Next() {
 		var (
-			userID           int64
-			configJSON       string
-			secretCiphertext string
+			userID            int64
+			configJSON        string
+			secretCiphertext  string
+			preferredLanguage string
 		)
-		if err := rows.Scan(&userID, &configJSON, &secretCiphertext); err != nil {
+		if err := rows.Scan(&userID, &configJSON, &secretCiphertext, &preferredLanguage); err != nil {
 			return nil, fmt.Errorf("scan matrix notification target: %w", err)
 		}
 		if strings.TrimSpace(secretCiphertext) == "" || len(s.secretKey) == 0 {
@@ -2194,10 +2197,11 @@ ORDER BY unc.user_id ASC
 			continue
 		}
 		items = append(items, MatrixNotificationTarget{
-			UserID:        userID,
-			HomeserverURL: homeserverURL,
-			RoomID:        roomID,
-			AccessToken:   token,
+			UserID:            userID,
+			HomeserverURL:     homeserverURL,
+			RoomID:            roomID,
+			AccessToken:       token,
+			PreferredLanguage: preferredLanguage,
 		})
 	}
 	if err := rows.Err(); err != nil {

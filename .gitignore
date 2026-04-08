@@ -12,4 +12,4 @@ coverage.out
 tmp_*
 .vscode/
 codeql-custom-queries-go/
-CLAUDE.md/
+CLAUDE.md

@@ -827,6 +827,12 @@
   "email.status_transition.label": "Status change",
   "email.status_transition.timestamp": "Timestamp",
   "email.status_transition.details_label": "Details",
+  "email.status_transition.group_label": "Group",
+  "matrix.group": "Group",
+  "matrix.kind": "Kind",
+  "matrix.target": "Target",
+  "matrix.timestamp": "Time",
+  "matrix.details": "Details",
   "email.status_transition.open_dashboard": "Open dashboard →",
   "email.status_transition.footer": "This message was generated automatically by GoUp."
 }
