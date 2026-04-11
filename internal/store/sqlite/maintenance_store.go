@@ -68,7 +68,27 @@ func (s *Store) RunMaintenance(ctx context.Context, now time.Time) (MaintenanceR
 	}
 	result.Optimized = optimized
 
+	if err := s.pruneOldNotificationRetries(ctx, now); err != nil {
+		return result, err
+	}
+
 	return result, nil
+}
+
+func (s *Store) pruneOldNotificationRetries(ctx context.Context, now time.Time) error {
+	cutoff := now.AddDate(0, 0, -7)
+	_, err := s.db.ExecContext(ctx, `
+DELETE FROM notification_retries
+WHERE status IN ('succeeded', 'abandoned')
+  AND updated_at < ?
+`, cutoff)
+	if err != nil {
+		if isMalformedSQLiteError(err) {
+			return nil
+		}
+		return fmt.Errorf("prune old notification retries: %w", err)
+	}
+	return nil
 }
 
 func upsertHourlyRollup(ctx context.Context, execer sqlExecutor, monitorID int64, checkedAt time.Time, status monitor.Status, latencyMS int) error {

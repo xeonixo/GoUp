@@ -187,8 +187,49 @@ func (s *Store) initSchema(ctx context.Context) error {
 	if err := s.ensureMonitorRetryColumns(ctx); err != nil {
 		return err
 	}
+	if err := s.ensureNotificationRetriesTable(ctx); err != nil {
+		return err
+	}
 	if err := s.repairCorruptedHistoryTables(ctx); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (s *Store) ensureNotificationRetriesTable(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS notification_retries (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    monitor_id       INTEGER NOT NULL,
+    endpoint_id      INTEGER NOT NULL,
+    event_type       TEXT NOT NULL,
+    monitor_name     TEXT NOT NULL DEFAULT '',
+    monitor_kind     TEXT NOT NULL DEFAULT '',
+    monitor_target   TEXT NOT NULL DEFAULT '',
+    monitor_group    TEXT NOT NULL DEFAULT '',
+    previous_status  TEXT NOT NULL DEFAULT '',
+    current_status   TEXT NOT NULL DEFAULT '',
+    checked_at       DATETIME NOT NULL,
+    result_detail    TEXT NOT NULL DEFAULT '',
+    attempt_count    INTEGER NOT NULL DEFAULT 0,
+    max_attempts     INTEGER NOT NULL DEFAULT 3,
+    next_attempt_at  DATETIME NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'pending',
+    error_message    TEXT NOT NULL DEFAULT '',
+    created_at       DATETIME NOT NULL,
+    updated_at       DATETIME NOT NULL,
+    FOREIGN KEY(monitor_id)  REFERENCES monitors(id) ON DELETE CASCADE,
+    FOREIGN KEY(endpoint_id) REFERENCES notification_endpoints(id) ON DELETE CASCADE
+)`)
+	if err != nil {
+		return fmt.Errorf("create notification_retries table: %w", err)
+	}
+	_, err = s.db.ExecContext(ctx, `
+CREATE INDEX IF NOT EXISTS idx_notification_retries_due
+ON notification_retries(status, next_attempt_at)
+WHERE status = 'pending'`)
+	if err != nil {
+		return fmt.Errorf("create notification_retries index: %w", err)
 	}
 	return nil
 }
@@ -200,6 +241,15 @@ func (s *Store) repairCorruptedHistoryTables(ctx context.Context) error {
 		}
 		if recreateErr := s.recreateNotificationEventsTable(ctx); recreateErr != nil {
 			return fmt.Errorf("recreate notification_events: %w", recreateErr)
+		}
+	}
+
+	if err := s.ensureTableReadable(ctx, "notification_retries"); err != nil {
+		if !isMalformedSQLiteError(err) {
+			return fmt.Errorf("check notification_retries: %w", err)
+		}
+		if recreateErr := s.recreateNotificationRetriesTable(ctx); recreateErr != nil {
+			return fmt.Errorf("recreate notification_retries: %w", recreateErr)
 		}
 	}
 
@@ -217,13 +267,20 @@ func (s *Store) repairCorruptedHistoryTables(ctx context.Context) error {
 
 func (s *Store) ensureTableReadable(ctx context.Context, table string) error {
 	switch table {
-	case "notification_events", "monitor_hourly_rollups":
+	case "notification_events", "notification_retries", "monitor_hourly_rollups":
 	default:
 		return fmt.Errorf("unsupported table readability check: %s", table)
 	}
 	query := fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", table)
 	_, err := s.db.ExecContext(ctx, query)
 	return err
+}
+
+func (s *Store) recreateNotificationRetriesTable(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS notification_retries`); err != nil {
+		return err
+	}
+	return s.ensureNotificationRetriesTable(ctx)
 }
 
 func (s *Store) recreateNotificationEventsTable(ctx context.Context) error {
