@@ -11,6 +11,7 @@ type MonitorStateEvent struct {
 	ID          int64
 	MonitorID   int64
 	MonitorName string
+	GroupName   string
 	CheckedAt   time.Time
 	FromStatus  string
 	ToStatus    string
@@ -80,6 +81,7 @@ SELECT
 	e.id,
 	e.monitor_id,
 	COALESCE(m.name, ''),
+	COALESCE(m.group_name, ''),
 	e.checked_at,
 	e.from_status,
 	e.to_status,
@@ -104,6 +106,7 @@ LIMIT ?
 			&item.ID,
 			&item.MonitorID,
 			&item.MonitorName,
+			&item.GroupName,
 			&item.CheckedAt,
 			&item.FromStatus,
 			&item.ToStatus,

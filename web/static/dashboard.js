@@ -2332,6 +2332,7 @@
       bindStateEventListeners();
       applyStateEventFilters();
       bindNotificationEventListeners();
+      applyNotificationEventPagination();
     };
 
     bindGlobalDashboardListeners();
@@ -2944,10 +2945,12 @@
       if (typeof payload.state_events_hash === 'string' && payload.state_events_hash !== liveSnapshotHashes.stateEvents) {
         updates.push(replaceSectionByID('dashboard-live-state-events', payload.state_events_html));
         liveSnapshotHashes.stateEvents = payload.state_events_hash;
+        stateEventsPage = 1;
       }
       if (typeof payload.notification_events_hash === 'string' && payload.notification_events_hash !== liveSnapshotHashes.notificationEvents) {
         updates.push(replaceSectionByID('dashboard-live-notification-events', payload.notification_events_html));
         liveSnapshotHashes.notificationEvents = payload.notification_events_hash;
+        notificationEventsPage = 1;
       }
 
       const groupOptions = document.getElementById('monitor-group-options');
@@ -3489,12 +3492,13 @@
       const filteredRows = [];
       stateEventRows.forEach((row) => {
         const monitor = (row.dataset.monitor || '').toLowerCase();
+        const group = (row.dataset.group || '').toLowerCase();
         const fromStatus = (row.dataset.from || '').toLowerCase();
         const toStatus = (row.dataset.to || '').toLowerCase();
         const message = (row.dataset.message || '').toLowerCase();
         const when = (row.dataset.when || '').toLowerCase();
 
-        const matchesQuery = !query || monitor.includes(query) || message.includes(query) || when.includes(query) || fromStatus.includes(query) || toStatus.includes(query);
+        const matchesQuery = !query || monitor.includes(query) || group.includes(query) || message.includes(query) || when.includes(query) || fromStatus.includes(query) || toStatus.includes(query);
         const matchesStatus = statusFilter === 'all' || toStatus === statusFilter;
         const matchesIncidentsOnly = !incidentsOnly || toStatus === 'down' || toStatus === 'degraded';
         const rowVisible = matchesQuery && matchesStatus && matchesIncidentsOnly;
@@ -3577,9 +3581,10 @@
       };
 
       const lines = [
-        [tr('csvHeaderTime', 'Time'), tr('csvHeaderMonitor', 'Monitor'), tr('csvHeaderFrom', 'From'), tr('csvHeaderTo', 'To'), tr('csvHeaderDetails', 'Details')],
+        [tr('csvHeaderTime', 'Time'), tr('csvHeaderGroup', 'Group'), tr('csvHeaderMonitor', 'Monitor'), tr('csvHeaderFrom', 'From'), tr('csvHeaderTo', 'To'), tr('csvHeaderDetails', 'Details')],
         ...visibleRows.map((row) => [
           row.dataset.when || '',
+          row.dataset.group || '',
           row.dataset.monitor || '',
           row.dataset.from || '',
           row.dataset.to || '',

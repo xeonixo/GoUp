@@ -318,6 +318,7 @@
   "dashboard.state_events.incidents_only": "Incidents only",
   "dashboard.state_events.export_csv": "Export CSV",
   "dashboard.state_events.time": "Time",
+  "dashboard.state_events.group": "Group",
   "dashboard.state_events.monitor": "Monitor",
   "dashboard.state_events.from": "From",
   "dashboard.state_events.to": "To",
