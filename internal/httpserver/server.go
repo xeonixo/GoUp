@@ -377,6 +377,7 @@ type monitorStateEventView struct {
 	ID        int64
 	When      string
 	WhenRaw   string
+	Group     string
 	Monitor   string
 	From      string
 	FromClass string
@@ -1207,13 +1208,13 @@ func (s *Server) loadDashboardPageData(r *http.Request, appStore *store.Store, t
 		return pageData{}, err
 	}
 
-	events, err := appStore.ListRecentNotificationEvents(r.Context(), 20)
+	events, err := appStore.ListRecentNotificationEvents(r.Context(), 100)
 	if err != nil {
 		s.logger.Warn("load notification events failed", "error", err)
 		events = nil
 	}
 
-	stateEvents, err := appStore.ListRecentMonitorStateEvents(r.Context(), 40)
+	stateEvents, err := appStore.ListRecentMonitorStateEvents(r.Context(), 200)
 	if err != nil {
 		s.logger.Warn("load monitor state events failed", "error", err)
 		stateEvents = nil
@@ -4668,6 +4669,7 @@ func buildMonitorStateEventViews(items []store.MonitorStateEvent) []monitorState
 			ID:      item.ID,
 			When:    item.CheckedAt.UTC().Format(time.RFC3339),
 			WhenRaw: item.CheckedAt.UTC().Format(time.RFC3339),
+			Group:   item.GroupName,
 			Monitor: item.MonitorName,
 			From:    strings.ToUpper(strings.TrimSpace(item.FromStatus)),
 			To:      strings.ToUpper(strings.TrimSpace(item.ToStatus)),

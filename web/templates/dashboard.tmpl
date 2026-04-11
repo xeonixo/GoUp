@@ -709,6 +709,7 @@
       <thead>
         <tr>
           <th>{{index $.Translations "dashboard.state_events.time"}}</th>
+          <th>{{index $.Translations "dashboard.state_events.group"}}</th>
           <th>{{index $.Translations "dashboard.state_events.monitor"}}</th>
           <th>{{index $.Translations "dashboard.state_events.from"}}</th>
           <th>{{index $.Translations "dashboard.state_events.to"}}</th>
@@ -717,8 +718,9 @@
       </thead>
       <tbody id="state-events-body">
         {{range .StateEvents}}
-        <tr data-monitor="{{.Monitor}}" data-from="{{.From}}" data-to="{{.To}}" data-message="{{.Message}}" data-when="{{.WhenRaw}}">
+        <tr data-group="{{.Group}}" data-monitor="{{.Monitor}}" data-from="{{.From}}" data-to="{{.To}}" data-message="{{.Message}}" data-when="{{.WhenRaw}}">
           <td><time class="client-time" datetime="{{.WhenRaw}}" data-format="datetime">{{.When}}</time></td>
+          <td>{{if .Group}}{{.Group}}{{else}}—{{end}}</td>
           <td>{{.Monitor}}</td>
           <td><span class="status-pill {{.FromClass}}">{{.From}}</span></td>
           <td><span class="status-pill {{.ToClass}}">{{.To}}</span></td>
@@ -726,7 +728,7 @@
         </tr>
         {{end}}
         <tr id="state-events-empty-row" hidden>
-          <td colspan="5" class="muted">{{index $.Translations "dashboard.state_events.empty_filtered"}}</td>
+          <td colspan="6" class="muted">{{index $.Translations "dashboard.state_events.empty_filtered"}}</td>
         </tr>
       </tbody>
     </table>
