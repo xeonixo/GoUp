@@ -255,6 +255,8 @@
   "dashboard.modal.icmp_family_hint": "Used only for ICMP and hostnames. Not needed for direct IP addresses.",
   "dashboard.modal.interval_seconds_label": "Interval (seconds)",
   "dashboard.modal.timeout_seconds_label": "Timeout (seconds)",
+  "dashboard.modal.retry_count_label": "Retries before down",
+  "dashboard.modal.retry_interval_seconds_label": "Retry interval (seconds)",
   "dashboard.modal.expected_http_status_optional": "Expected HTTP status (optional)",
   "dashboard.modal.expected_keywords_optional": "Expected keywords (optional)",
   "dashboard.modal.expected_keywords_hint": "Separate multiple keywords with commas. All keywords must appear in the body.",

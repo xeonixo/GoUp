@@ -115,6 +115,8 @@
     const verifyCertLabelField = document.getElementById('monitor-verify-cert-label');
     const enabledField = document.getElementById('monitor-enabled');
     const notifyField = document.getElementById('monitor-notify');
+    const retryCountField = document.getElementById('monitor-retry-count');
+    const retryIntervalField = document.getElementById('monitor-retry-interval');
     const tlsModeRow = document.getElementById('tls-mode-row');
     const httpsModeRow = document.getElementById('https-mode-row');
     const httpsVerifyRow = document.getElementById('https-verify-row');
@@ -1528,6 +1530,8 @@
       verifyCertField.checked = true;
       enabledField.checked = true;
       notifyField.checked = true;
+      if (retryCountField) retryCountField.value = '0';
+      if (retryIntervalField) retryIntervalField.value = '0';
       applyKindRules();
       dialog.showModal();
     };
@@ -1771,6 +1775,8 @@
       }
       enabledField.checked = button.dataset.enabled === '1';
       notifyField.checked = button.dataset.notifyOnRecovery === '1';
+      if (retryCountField) retryCountField.value = button.dataset.retryCount || '0';
+      if (retryIntervalField) retryIntervalField.value = button.dataset.retryInterval || '0';
       applyKindRules();
       dialog.showModal();
     };

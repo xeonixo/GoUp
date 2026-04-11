@@ -140,6 +140,26 @@ func (r *Runner) runSnapshot(ctx context.Context, snapshot Snapshot) {
 	result := checker.Check(runCtx, snapshot.Monitor)
 	cancel()
 
+	if result.Status != StatusUp && snapshot.Monitor.RetryCount > 0 {
+		for attempt := 0; attempt < snapshot.Monitor.RetryCount; attempt++ {
+			if snapshot.Monitor.RetryInterval > 0 {
+				select {
+				case <-time.After(snapshot.Monitor.RetryInterval):
+				case <-ctx.Done():
+					goto doneRetrying
+				}
+			}
+			retryCtx, retryCancel := context.WithTimeout(ctx, snapshot.Monitor.Timeout+2*time.Second)
+			retryResult := checker.Check(retryCtx, snapshot.Monitor)
+			retryCancel()
+			result = retryResult
+			if result.Status == StatusUp {
+				break
+			}
+		}
+	}
+doneRetrying:
+
 	if err := r.store.SaveMonitorResult(ctx, result); err != nil {
 		r.logger.Error("save monitor result failed", "monitor_id", snapshot.Monitor.ID, "error", err)
 		return

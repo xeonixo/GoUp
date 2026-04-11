@@ -184,6 +184,9 @@ func (s *Store) initSchema(ctx context.Context) error {
 	if err := s.ensureMonitorGroupIconColumn(ctx); err != nil {
 		return err
 	}
+	if err := s.ensureMonitorRetryColumns(ctx); err != nil {
+		return err
+	}
 	if err := s.repairCorruptedHistoryTables(ctx); err != nil {
 		return err
 	}
@@ -503,6 +506,54 @@ func (s *Store) ensureMonitorGroupIconColumn(ctx context.Context) error {
 	return nil
 }
 
+func (s *Store) ensureMonitorRetryColumns(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(monitors)`)
+	if err != nil {
+		return fmt.Errorf("inspect monitor columns for retry: %w", err)
+	}
+
+	hasRetryCount := false
+	hasRetryInterval := false
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan monitor retry column: %w", err)
+		}
+		switch name {
+		case "retry_count":
+			hasRetryCount = true
+		case "retry_interval_seconds":
+			hasRetryInterval = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("iterate monitor columns for retry: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close monitor retry inspection: %w", err)
+	}
+
+	if !hasRetryCount {
+		if _, err := s.db.ExecContext(ctx, `ALTER TABLE monitors ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("add monitor retry_count column: %w", err)
+		}
+	}
+	if !hasRetryInterval {
+		if _, err := s.db.ExecContext(ctx, `ALTER TABLE monitors ADD COLUMN retry_interval_seconds INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("add monitor retry_interval_seconds column: %w", err)
+		}
+	}
+
+	return nil
+}
+
 func sqliteDSN(path string) string {
 	values := url.Values{}
 	values.Add("_pragma", "foreign_keys(1)")
@@ -547,6 +598,8 @@ CREATE TABLE IF NOT EXISTS monitors (
     expected_status_code INTEGER,
     expected_text TEXT,
     notify_on_recovery INTEGER NOT NULL DEFAULT 1,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    retry_interval_seconds INTEGER NOT NULL DEFAULT 0,
     config_json TEXT NOT NULL DEFAULT '{}',
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL

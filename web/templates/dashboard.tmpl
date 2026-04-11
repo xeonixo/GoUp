@@ -292,6 +292,17 @@
       </label>
     </div>
 
+    <div class="inline-grid">
+      <label>
+        <span>{{index $.Translations "dashboard.modal.retry_count_label"}}</span>
+        <input type="number" name="retry_count" id="monitor-retry-count" min="0" max="10" value="0">
+      </label>
+      <label>
+        <span>{{index $.Translations "dashboard.modal.retry_interval_seconds_label"}}</span>
+        <input type="number" name="retry_interval_seconds" id="monitor-retry-interval" min="0" value="0">
+      </label>
+    </div>
+
     <label id="expected-status-row" hidden>
       <span>{{index $.Translations "dashboard.modal.expected_http_status_optional"}}</span>
       <input type="number" name="expected_status_code" id="monitor-expected-status" min="100" max="599" placeholder="{{index $.Translations "dashboard.modal.expected_status_placeholder"}}">
@@ -568,6 +579,8 @@
                   data-timeout="{{.TimeoutSeconds}}"
                   data-enabled="{{if .Enabled}}1{{else}}0{{end}}"
                   data-notify-on-recovery="{{if .NotifyOnRecovery}}1{{else}}0{{end}}"
+                  data-retry-count="{{.RetryCount}}"
+                  data-retry-interval="{{.RetryIntervalSeconds}}"
                   data-expected-status="{{.ExpectedStatus}}"
                   data-expected-text="{{.ExpectedText}}">
                   {{index $.Translations "common.edit"}}

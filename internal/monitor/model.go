@@ -49,6 +49,8 @@ type Monitor struct {
 	ExpectedStatusCode *int
 	ExpectedText       string
 	NotifyOnRecovery   bool
+	RetryCount         int
+	RetryInterval      time.Duration
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }
