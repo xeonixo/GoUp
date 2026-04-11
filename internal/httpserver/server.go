@@ -338,8 +338,10 @@ type monitorView struct {
 	ExecutorRef      string
 	ExecutorValue    string
 	ExecutorLabel    string
-	NotifyOnRecovery bool
-	ExpectedStatus   string
+	NotifyOnRecovery    bool
+	RetryCount          int
+	RetryIntervalSeconds int
+	ExpectedStatus      string
 	ExpectedText     string
 	TrendLabel       string
 	StatusLabel      string
@@ -2335,6 +2337,11 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 		ExpectedStatusCode: expectedStatusCode,
 		ExpectedText:       expectedText,
 		NotifyOnRecovery:   r.FormValue("notify_on_recovery") == "on",
+		RetryCount:         func() int { v, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("retry_count"))); return v }(),
+		RetryInterval:      func() time.Duration {
+			v, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("retry_interval_seconds")))
+			return time.Duration(v) * time.Second
+		}(),
 	}
 
 	if monitorID > 0 {
@@ -3598,9 +3605,11 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 			IntervalSeconds:  int(item.Monitor.Interval / time.Second),
 			Timeout:          item.Monitor.Timeout.String(),
 			TimeoutSeconds:   int(item.Monitor.Timeout / time.Second),
-			Enabled:          item.Monitor.Enabled,
-			NotifyOnRecovery: item.Monitor.NotifyOnRecovery,
-			TrendLabel:       selectedTrend.Label,
+			Enabled:              item.Monitor.Enabled,
+			NotifyOnRecovery:     item.Monitor.NotifyOnRecovery,
+			RetryCount:           item.Monitor.RetryCount,
+			RetryIntervalSeconds: int(item.Monitor.RetryInterval / time.Second),
+			TrendLabel:           selectedTrend.Label,
 			TrendPoints:      buildTrendPoints(rollupsByMonitor[item.Monitor.ID], now, selectedTrend),
 		}
 		if view.ExecutorKind == "" {

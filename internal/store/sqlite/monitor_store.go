@@ -27,6 +27,8 @@ type CreateMonitorParams struct {
 	ExpectedStatusCode *int
 	ExpectedText       string
 	NotifyOnRecovery   bool
+	RetryCount         int
+	RetryInterval      time.Duration
 }
 
 type UpdateMonitorParams struct {
@@ -77,9 +79,10 @@ func (s *Store) CreateMonitor(ctx context.Context, params CreateMonitorParams) (
 INSERT INTO monitors (
 	name, group_name, sort_order, executor_kind, executor_ref, kind, target, interval_seconds, timeout_seconds, enabled,
     tls_mode, expected_status_code, expected_text, notify_on_recovery,
+    retry_count, retry_interval_seconds,
     created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, params.Name, strings.TrimSpace(params.Group), nextSortOrder, executorKind, executorRef, string(params.Kind), params.Target, int(params.Interval.Seconds()), int(params.Timeout.Seconds()), boolToInt(params.Enabled), string(params.TLSMode), params.ExpectedStatusCode, strings.TrimSpace(params.ExpectedText), boolToInt(params.NotifyOnRecovery), now, now)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, params.Name, strings.TrimSpace(params.Group), nextSortOrder, executorKind, executorRef, string(params.Kind), params.Target, int(params.Interval.Seconds()), int(params.Timeout.Seconds()), boolToInt(params.Enabled), string(params.TLSMode), params.ExpectedStatusCode, strings.TrimSpace(params.ExpectedText), boolToInt(params.NotifyOnRecovery), params.RetryCount, int(params.RetryInterval.Seconds()), now, now)
 	if err != nil {
 		return 0, fmt.Errorf("create monitor: %w", err)
 	}
@@ -122,6 +125,8 @@ SET
     expected_status_code = ?,
     expected_text = ?,
     notify_on_recovery = ?,
+    retry_count = ?,
+    retry_interval_seconds = ?,
     updated_at = ?
 WHERE id = ?
 `,
@@ -138,6 +143,8 @@ WHERE id = ?
 		params.ExpectedStatusCode,
 		strings.TrimSpace(params.ExpectedText),
 		boolToInt(params.NotifyOnRecovery),
+		params.RetryCount,
+		int(params.RetryInterval.Seconds()),
 		now,
 		params.ID,
 	)
@@ -409,6 +416,8 @@ SELECT
     m.expected_status_code,
     m.expected_text,
     m.notify_on_recovery,
+    m.retry_count,
+    m.retry_interval_seconds,
     m.created_at,
     m.updated_at,
     r.id,
@@ -468,6 +477,8 @@ SELECT
     expected_status_code,
     expected_text,
     notify_on_recovery,
+    retry_count,
+    retry_interval_seconds,
     created_at,
     updated_at
 FROM monitors
@@ -481,14 +492,16 @@ ORDER BY sort_order ASC, id ASC
 	snapshots := make([]monitor.Snapshot, 0)
 	for rows.Next() {
 		var (
-			item               monitor.Snapshot
-			kindRaw            string
-			tlsModeRaw         string
-			intervalSeconds    int
-			timeoutSeconds     int
-			enabledRaw         int
-			notifyOnRecovery   int
-			expectedStatusCode sql.NullInt64
+			item                  monitor.Snapshot
+			kindRaw               string
+			tlsModeRaw            string
+			intervalSeconds       int
+			timeoutSeconds        int
+			enabledRaw            int
+			notifyOnRecovery      int
+			retryCount            int
+			retryIntervalSeconds  int
+			expectedStatusCode    sql.NullInt64
 		)
 
 		if err := rows.Scan(
@@ -507,6 +520,8 @@ ORDER BY sort_order ASC, id ASC
 			&expectedStatusCode,
 			&item.Monitor.ExpectedText,
 			&notifyOnRecovery,
+			&retryCount,
+			&retryIntervalSeconds,
 			&item.Monitor.CreatedAt,
 			&item.Monitor.UpdatedAt,
 		); err != nil {
@@ -522,6 +537,8 @@ ORDER BY sort_order ASC, id ASC
 		item.Monitor.Timeout = time.Duration(timeoutSeconds) * time.Second
 		item.Monitor.Enabled = enabledRaw == 1
 		item.Monitor.NotifyOnRecovery = notifyOnRecovery == 1
+		item.Monitor.RetryCount = retryCount
+		item.Monitor.RetryInterval = time.Duration(retryIntervalSeconds) * time.Second
 		if expectedStatusCode.Valid {
 			value := int(expectedStatusCode.Int64)
 			item.Monitor.ExpectedStatusCode = &value
@@ -1273,6 +1290,12 @@ func validateCreateMonitorParams(params CreateMonitorParams) error {
 	if params.Timeout > params.Interval {
 		return errors.New("timeout must not exceed interval")
 	}
+	if params.RetryCount < 0 || params.RetryCount > 10 {
+		return errors.New("retry count must be between 0 and 10")
+	}
+	if params.RetryInterval < 0 {
+		return errors.New("retry interval must not be negative")
+	}
 	expectedText := strings.TrimSpace(params.ExpectedText)
 	if expectedText != "" && params.Kind != monitor.KindHTTPS && params.Kind != monitor.KindDNS && params.Kind != monitor.KindUDP {
 		return errors.New("expected value is only valid for HTTPS, DNS and UDP monitors")
@@ -1409,6 +1432,8 @@ func scanMonitorSnapshot(scanner interface{ Scan(dest ...any) error }) (monitor.
 	var timeoutSeconds int
 	var enabled int
 	var notifyOnRecovery int
+	var retryCount int
+	var retryIntervalSeconds int
 	var sortOrder int
 	var executorKind string
 	var executorRef string
@@ -1442,6 +1467,8 @@ func scanMonitorSnapshot(scanner interface{ Scan(dest ...any) error }) (monitor.
 		&expectedStatusCode,
 		&expectedText,
 		&notifyOnRecovery,
+		&retryCount,
+		&retryIntervalSeconds,
 		&item.Monitor.CreatedAt,
 		&item.Monitor.UpdatedAt,
 		&resultID,
@@ -1470,6 +1497,8 @@ func scanMonitorSnapshot(scanner interface{ Scan(dest ...any) error }) (monitor.
 	item.Monitor.TLSMode = monitor.TLSMode(tlsMode)
 	item.Monitor.ExpectedText = expectedText
 	item.Monitor.NotifyOnRecovery = notifyOnRecovery == 1
+	item.Monitor.RetryCount = retryCount
+	item.Monitor.RetryInterval = time.Duration(retryIntervalSeconds) * time.Second
 	if expectedStatusCode.Valid {
 		value := int(expectedStatusCode.Int64)
 		item.Monitor.ExpectedStatusCode = &value
