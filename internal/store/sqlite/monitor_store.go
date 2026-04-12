@@ -1380,7 +1380,8 @@ func validateMonitorKindSettings(kind monitor.Kind, target string, tlsMode monit
 		if expectedStatusCode != nil {
 			return errors.New("expected HTTP status is only valid for HTTPS monitors")
 		}
-		if tlsMode != monitor.TLSModeTLS && tlsMode != monitor.TLSModeSTARTTLS {
+		tlsSecurityMode := monitor.NormalizeMailTLSSecurityMode(tlsMode)
+		if tlsSecurityMode != monitor.TLSModeTLS && tlsSecurityMode != monitor.TLSModeSTARTTLS {
 			return errors.New("mail monitors require tls or starttls mode")
 		}
 	case monitor.KindDNS:
