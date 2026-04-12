@@ -9,6 +9,7 @@
     const currentTrend = page.dataset.trendValue || '24h';
     const dashboardStateOwner = page.dataset.stateOwner || 'anonymous';
     const isAdmin = page.dataset.isAdmin === '1';
+    let draggedMonitorPayload = null;
 
     const dialog = document.getElementById('monitor-modal');
     const monitorCloseButton = document.getElementById('monitor-close');
@@ -2275,28 +2276,28 @@
           }
           card.dataset.boundMonitorDrag = '1';
           card.addEventListener('dragstart', (event) => {
-            const payload = JSON.stringify({
+            draggedMonitorPayload = {
               id: card.dataset.monitorId || '',
               group: card.dataset.group || ''
-            });
+            };
             card.classList.add('is-dragging');
             event.dataTransfer.effectAllowed = 'move';
-            event.dataTransfer.setData('text/plain', payload);
+            event.dataTransfer.setData('text/plain', JSON.stringify(draggedMonitorPayload));
+            event.stopPropagation();
           });
           card.addEventListener('dragend', () => {
+            draggedMonitorPayload = null;
             card.classList.remove('is-dragging');
             document.querySelectorAll('.monitor-card.drop-target').forEach((item) => item.classList.remove('drop-target'));
           });
           card.addEventListener('dragover', (event) => {
-            let dragged = null;
-            try {
-              dragged = JSON.parse(event.dataTransfer.getData('text/plain') || '{}');
-            } catch (_) {
+            if (!draggedMonitorPayload) {
               return;
             }
+            event.stopPropagation();
             const targetId = card.dataset.monitorId || '';
             const targetGroup = card.dataset.group || '';
-            if (!dragged || dragged.id === targetId || dragged.group !== targetGroup) {
+            if (draggedMonitorPayload.id === targetId || draggedMonitorPayload.group !== targetGroup) {
               return;
             }
             event.preventDefault();
@@ -2306,21 +2307,19 @@
             card.classList.remove('drop-target');
           });
           card.addEventListener('drop', (event) => {
-            event.preventDefault();
-            let dragged = null;
-            try {
-              dragged = JSON.parse(event.dataTransfer.getData('text/plain') || '{}');
-            } catch (_) {
+            if (!draggedMonitorPayload) {
               return;
             }
+            event.preventDefault();
+            event.stopPropagation();
             const targetId = card.dataset.monitorId || '';
             const targetGroup = card.dataset.group || '';
             card.classList.remove('drop-target');
-            if (!dragged || !targetId || dragged.id === targetId || dragged.group !== targetGroup) {
+            if (!targetId || draggedMonitorPayload.id === targetId || draggedMonitorPayload.group !== targetGroup) {
               return;
             }
             submitPost(appBase + 'monitors/reorder', {
-              dragged_id: dragged.id,
+              dragged_id: draggedMonitorPayload.id,
               target_id: targetId,
               group: targetGroup,
               trend: currentTrend
