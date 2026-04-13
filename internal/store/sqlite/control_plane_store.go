@@ -349,10 +349,11 @@ JOIN users u ON u.id = lc.user_id
 JOIN tenant_memberships tm ON tm.user_id = u.id
 JOIN tenants t ON t.id = tm.tenant_id
 WHERE tm.tenant_id = ?
+	AND lc.tenant_id = ?
 	AND t.active = 1
 	AND lower(lc.login_name) = lower(?)
 LIMIT 1
-`, tenantID, loginName).Scan(&userID, &passwordHash)
+`, tenantID, tenantID, loginName).Scan(&userID, &passwordHash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ResolvedUser{}, sql.ErrNoRows
@@ -537,9 +538,9 @@ VALUES (?, ?, ?, ?, ?)
 	}
 
 	if _, err := tx.ExecContext(ctx, `
-INSERT INTO local_credentials (user_id, login_name, password_hash, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?)
-`, userID, loginName, string(passwordHash), now, now); err != nil {
+INSERT INTO local_credentials (user_id, tenant_id, login_name, password_hash, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?)
+`, userID, tenantID, loginName, string(passwordHash), now, now); err != nil {
 		return LocalUser{}, fmt.Errorf("insert local user credentials: %w", err)
 	}
 
@@ -656,8 +657,7 @@ func (s *ControlPlaneStore) DeleteLocalUserFromTenant(ctx context.Context, tenan
 	err := s.db.QueryRowContext(ctx, `
 SELECT COUNT(*)
 FROM local_credentials lc
-JOIN tenant_memberships tm ON tm.user_id = lc.user_id
-WHERE tm.tenant_id = ? AND lc.user_id = ?
+WHERE lc.tenant_id = ? AND lc.user_id = ?
 `, tenantID, userID).Scan(&hasLocalCredentials)
 	if err != nil {
 		return fmt.Errorf("check local user before delete: %w", err)
@@ -1070,10 +1070,12 @@ CREATE TABLE IF NOT EXISTS auth_providers (
 
 CREATE TABLE IF NOT EXISTS local_credentials (
 	user_id INTEGER PRIMARY KEY,
-	login_name TEXT NOT NULL UNIQUE,
+	tenant_id INTEGER NOT NULL DEFAULT 0,
+	login_name TEXT NOT NULL,
 	password_hash TEXT NOT NULL,
 	created_at DATETIME NOT NULL,
 	updated_at DATETIME NOT NULL,
+	UNIQUE(login_name, tenant_id),
 	FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -1144,6 +1146,9 @@ func (s *ControlPlaneStore) initSchema(ctx context.Context) error {
 	if err := s.ensureRemoteNodesTable(ctx); err != nil {
 		return err
 	}
+	if err := s.ensureLocalCredentialsTenantScoped(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1194,7 +1199,7 @@ func (s *ControlPlaneStore) ensureTenantMembershipNotificationColumn(ctx context
 
 func (s *ControlPlaneStore) tableHasColumn(ctx context.Context, tableName, columnName string) (bool, error) {
 	switch tableName {
-	case "users", "tenant_memberships", "remote_nodes":
+	case "users", "tenant_memberships", "remote_nodes", "local_credentials":
 	default:
 		return false, fmt.Errorf("unsupported table inspection: %s", tableName)
 	}
@@ -1246,6 +1251,60 @@ CREATE TABLE IF NOT EXISTS user_notification_channels (
 )
 `); err != nil {
 		return fmt.Errorf("create user notification channels table: %w", err)
+	}
+	return nil
+}
+
+func (s *ControlPlaneStore) ensureLocalCredentialsTenantScoped(ctx context.Context) error {
+	hasColumn, err := s.tableHasColumn(ctx, "local_credentials", "tenant_id")
+	if err != nil {
+		return fmt.Errorf("inspect local_credentials tenant_id column: %w", err)
+	}
+	if hasColumn {
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin local_credentials migration transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
+CREATE TABLE local_credentials_new (
+	user_id INTEGER PRIMARY KEY,
+	tenant_id INTEGER NOT NULL DEFAULT 0,
+	login_name TEXT NOT NULL,
+	password_hash TEXT NOT NULL,
+	created_at DATETIME NOT NULL,
+	updated_at DATETIME NOT NULL,
+	UNIQUE(login_name, tenant_id),
+	FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+)
+`); err != nil {
+		return fmt.Errorf("create local_credentials_new table: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO local_credentials_new (user_id, tenant_id, login_name, password_hash, created_at, updated_at)
+SELECT lc.user_id,
+       COALESCE((SELECT tm.tenant_id FROM tenant_memberships tm WHERE tm.user_id = lc.user_id LIMIT 1), 0),
+       lc.login_name, lc.password_hash, lc.created_at, lc.updated_at
+FROM local_credentials lc
+`); err != nil {
+		return fmt.Errorf("copy local_credentials data: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `DROP TABLE local_credentials`); err != nil {
+		return fmt.Errorf("drop old local_credentials table: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `ALTER TABLE local_credentials_new RENAME TO local_credentials`); err != nil {
+		return fmt.Errorf("rename local_credentials_new table: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit local_credentials migration: %w", err)
 	}
 	return nil
 }
