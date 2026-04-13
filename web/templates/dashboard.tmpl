@@ -734,6 +734,9 @@
     </table>
   </div>
   <div class="table-pagination" id="state-events-pagination" hidden></div>
+  <div class="section-footer-link">
+    <a href="{{$.AppBase}}state-events">{{index $.Translations "dashboard.state_events.view_all"}}</a>
+  </div>
   {{else}}
   <p class="muted">{{index $.Translations "dashboard.state_events.empty"}}</p>
   {{end}}
