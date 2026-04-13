@@ -1,0 +1,64 @@
+{{define "content"}}
+<div class="admin-section">
+  <nav class="admin-nav card">
+    <a href="{{$.AppBase}}" class="admin-nav-link">{{index $.Translations "settings.nav.dashboard"}}</a>
+  </nav>
+
+  <div class="admin-header">
+    <div>
+      <h1>{{index $.Translations "dashboard.state_events.history_title"}}</h1>
+      {{if .StateEventHistorySubtitle}}<p class="muted compact">{{.StateEventHistorySubtitle}}</p>{{end}}
+    </div>
+  </div>
+
+  <section class="card stack">
+    {{if .StateEvents}}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>{{index $.Translations "dashboard.state_events.time"}}</th>
+            <th>{{index $.Translations "dashboard.state_events.group"}}</th>
+            <th>{{index $.Translations "dashboard.state_events.monitor"}}</th>
+            <th>{{index $.Translations "dashboard.state_events.from"}}</th>
+            <th>{{index $.Translations "dashboard.state_events.to"}}</th>
+            <th>{{index $.Translations "dashboard.state_events.details"}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .StateEvents}}
+          <tr>
+            <td><time class="client-time" datetime="{{.WhenRaw}}" data-format="datetime">{{.When}}</time></td>
+            <td>{{if .Group}}{{.Group}}{{else}}—{{end}}</td>
+            <td>{{.Monitor}}</td>
+            <td><span class="status-pill {{.FromClass}}">{{.From}}</span></td>
+            <td><span class="status-pill {{.ToClass}}">{{.To}}</span></td>
+            <td class="break-all" title="{{.Message}}"><span class="event-message-cell">{{.Message}}</span></td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{if gt .Pagination.PageCount 1}}
+    <div class="table-pagination-nav">
+      <div class="table-pagination-summary">{{.StateEventHistoryPageLabel}}</div>
+      <div class="table-pagination-actions">
+        {{if .Pagination.HasPrev}}
+        <a class="button button-secondary button-small" href="{{.Pagination.BaseURL}}?page={{.Pagination.PrevPage}}">{{index $.Translations "dashboard.pagination.prev"}}</a>
+        {{else}}
+        <button class="button button-secondary button-small" disabled>{{index $.Translations "dashboard.pagination.prev"}}</button>
+        {{end}}
+        {{if .Pagination.HasNext}}
+        <a class="button button-secondary button-small" href="{{.Pagination.BaseURL}}?page={{.Pagination.NextPage}}">{{index $.Translations "dashboard.pagination.next"}}</a>
+        {{else}}
+        <button class="button button-secondary button-small" disabled>{{index $.Translations "dashboard.pagination.next"}}</button>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
+    {{else}}
+    <p class="muted">{{index $.Translations "dashboard.state_events.empty"}}</p>
+    {{end}}
+  </section>
+</div>
+{{end}}

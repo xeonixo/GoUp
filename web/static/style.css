@@ -1702,6 +1702,21 @@ th {
   flex-wrap: wrap;
 }
 
+.section-footer-link {
+  font-size: 0.9rem;
+  padding-top: 0.5rem;
+  text-align: right;
+}
+
+.table-pagination-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding-top: 0.85rem;
+}
+
 .action-menu-item {
   width: 100%;
   border: 0;

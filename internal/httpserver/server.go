@@ -159,7 +159,21 @@ type pageData struct {
 	TOTPEnabled          bool
 	TOTPSecret           string
 	TOTPProvisioningURI  string
-	LanguageOptions      []languageOptionView
+	LanguageOptions              []languageOptionView
+	Pagination                   paginationView
+	StateEventHistorySubtitle    string
+	StateEventHistoryPageLabel   string
+}
+
+type paginationView struct {
+	Page       int
+	PageCount  int
+	Total      int64
+	HasPrev    bool
+	HasNext    bool
+	PrevPage   int
+	NextPage   int
+	BaseURL    string
 }
 
 type languageOptionView struct {
@@ -879,6 +893,7 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/monitors/enabled", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSetMonitorEnabled))))
 	mux.Handle("/monitors/check-now", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleCheckMonitorNow))))
 	mux.Handle("/monitors/latency-history", s.requireAuth(http.HandlerFunc(s.handleMonitorLatencyHistory)))
+	mux.Handle("/state-events", s.requireAuth(http.HandlerFunc(s.handleStateEventsHistory)))
 	mux.Handle("/settings/profile", s.requireAuth(http.HandlerFunc(s.handleSettingsProfile)))
 	mux.Handle("/settings/profile/save", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileSave)))
 	mux.Handle("/settings/profile/notifiers/delete", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileNotifierDelete)))
@@ -2639,6 +2654,82 @@ func (s *Server) handleMonitorLatencyHistory(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+func (s *Server) handleStateEventsHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	appStore, err := s.appStore(r)
+	if err != nil {
+		http.Error(w, "unable to resolve tenant", http.StatusInternalServerError)
+		return
+	}
+
+	const pageSize = 50
+	page := 1
+	if p, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("page"))); err == nil && p > 1 {
+		page = p
+	}
+	offset := (page - 1) * pageSize
+
+	total, err := appStore.CountMonitorStateEvents(r.Context())
+	if err != nil {
+		s.logger.Warn("count monitor state events failed", "error", err)
+		total = 0
+	}
+
+	events, err := appStore.ListMonitorStateEventsPaginated(r.Context(), pageSize, offset)
+	if err != nil {
+		s.logger.Warn("load monitor state events history failed", "error", err)
+		events = nil
+	}
+
+	pageCount := 1
+	if total > 0 {
+		pageCount = int((total + pageSize - 1) / pageSize)
+	}
+	if page > pageCount {
+		page = pageCount
+	}
+
+	baseURL := s.tenantAppBase(r) + "state-events"
+
+	curUser := s.currentUser(r)
+	lang := defaultUILanguage
+	if curUser != nil {
+		lang = normalizeUILanguage(curUser.PreferredLanguage)
+	}
+	translations := s.translationsForLanguage(lang)
+
+	subtitle := strings.ReplaceAll(translations["dashboard.state_events.history_subtitle"], "{total}", fmt.Sprintf("%d", total))
+	pageLabel := strings.ReplaceAll(strings.ReplaceAll(translations["dashboard.state_events.page_of"], "{page}", fmt.Sprintf("%d", page)), "{total}", fmt.Sprintf("%d", pageCount))
+
+	data := pageData{
+		Title:                      "Statusänderungen · GoUp",
+		UILanguage:                 lang,
+		Translations:               translations,
+		AppBase:                    s.tenantAppBase(r),
+		User:                       curUser,
+		IsAdmin:                    curUser == nil || strings.EqualFold(strings.TrimSpace(curUser.Role), "admin"),
+		StateEvents:                buildMonitorStateEventViews(events),
+		StateEventHistorySubtitle:  subtitle,
+		StateEventHistoryPageLabel: pageLabel,
+		Pagination: paginationView{
+			Page:      page,
+			PageCount: pageCount,
+			Total:     total,
+			HasPrev:   page > 1,
+			HasNext:   page < pageCount,
+			PrevPage:  page - 1,
+			NextPage:  page + 1,
+			BaseURL:   baseURL,
+		},
+	}
+	s.render(w, "state_events_history", data)
+}
+
 func (s *Server) handleUpdateMonitorTarget(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -3454,7 +3545,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 }
 
 func parseTemplates() (map[string]*template.Template, error) {
-	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_providers_overview", "admin_provider_form", "admin_local_users", "admin_users_overview", "admin_local_user_form", "admin_remote_nodes", "admin_remote_nodes_overview", "settings_users", "settings_profile", "settings_providers", "settings_provider_form", "settings_remote_nodes", "admin_access", "admin_setup", "admin_security", "no_tenant"}
+	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_providers_overview", "admin_provider_form", "admin_local_users", "admin_users_overview", "admin_local_user_form", "admin_remote_nodes", "admin_remote_nodes_overview", "settings_users", "settings_profile", "settings_providers", "settings_provider_form", "settings_remote_nodes", "admin_access", "admin_setup", "admin_security", "no_tenant", "state_events_history"}
 	parsed := make(map[string]*template.Template, len(pages))
 	for _, page := range pages {
 		tmpl, err := template.ParseFS(web.FS, "templates/layout.tmpl", "templates/"+page+".tmpl")
