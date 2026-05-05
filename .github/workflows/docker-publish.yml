@@ -50,19 +50,3 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
-
-      - name: Delete old untagged images
-        uses: actions/delete-package-versions@v5
-        with:
-          package-name: goup
-          package-type: container
-          min-versions-to-keep: 0
-          delete-only-untagged-versions: true
-
-      - name: Delete old sha- images (keep last 5)
-        uses: actions/delete-package-versions@v5
-        with:
-          package-name: goup
-          package-type: container
-          min-versions-to-keep: 5
-          ignore-versions: "^(latest|v\\d+\\.\\d+\\.\\d+)$"
