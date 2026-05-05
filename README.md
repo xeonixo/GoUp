@@ -418,7 +418,6 @@ docs/                   Architecture notes and project documentation
 - [ ] Public status page
 - [ ] Webhook notifications
 - [ ] Finer-grained roles and permissions
-
 - [ ] Additional monitor types
 
 ---

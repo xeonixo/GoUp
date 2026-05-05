@@ -1,46 +1,80 @@
-# GoUp Remote-Node-Agent
+# GoUp Remote Node Agent
 
-Dieser Unterordner dokumentiert den **Remote-Node-Agent im selben Repo**.
+This folder documents the **Remote Node Agent** that is part of the same GoUp repository.
 
-## Ziel
+## What problem this solves
 
-Eine kleine interne Node führt Checks in nicht erreichbaren Netzen aus (z. B. interne DNS/API/Container) und reportet die Ergebnisse verschlüsselt an die Control-Plane.
+Some checks must run inside private networks that the main GoUp instance (Control Plane) cannot directly reach.
 
-## Architektur (Push + Poll)
+The Remote Node Agent runs in that internal network, executes assigned monitors (for example internal DNS, APIs, containers), and sends encrypted results back to the Control Plane.
 
-- **Nur Outbound HTTPS** von der Remote-Node zur Control-Plane.
-- **Bootstrap** mit `REMOTE_NODE_ID` + einmaligem `REMOTE_NODE_BOOTSTRAP_KEY`.
-- Danach **kurzlebige Access-Tokens** (Rotation bei jedem Poll-Response).
-- Remote-Node ruft regelmäßig Provisioning ab (`/node/poll`).
-- Remote-Node führt zugewiesene Monitore aus und sendet gebündelte Ergebnisse (`/node/report`).
-- Control-Plane schreibt Ergebnisse in dieselben Tabellen/Flows wie lokale Checks (Resultate, States, Incidents, Notifications).
+## How the connection to the Control Plane works
 
-## mTLS vs. TLS (kurz)
+The design is intentionally simple and firewall-friendly:
 
-- **TLS (normal):** nur der Server weist sich mit Zertifikat aus.
-- **mTLS:** zusätzlich muss der Client ein Zertifikat vorweisen.
-- Vorteil mTLS: deutlich stärkere Client-Authentifizierung auf Transportebene.
-- Nachteil: höherer Betriebsaufwand (PKI, Zertifikat-Rotation, Revocation).
+- The Remote Node opens **outbound HTTPS only**.
+- The Control Plane never needs to open an inbound connection to the Remote Node.
+- Communication is based on a **bootstrap + poll + report** cycle.
 
-Aktuell ist TLS Pflicht, mTLS ist als optionaler nächster Schritt vorgesehen.
+### 1) Bootstrap (initial trust)
 
-## Komponenten im Repo
+The agent starts with:
 
-- Agent-Binary: cmd/remote-node/main.go
-- Agent-Logik: internal/remotenode/agent.go
-- Control-Plane-API + Tenant-UI: internal/httpserver/remote_node_handlers.go, internal/httpserver/server.go, web/templates/dashboard.tmpl
-- Persistenz: internal/store/sqlite/remote_node_store.go + Monitor-Executor-Felder in Tenant-DB
+- `REMOTE_NODE_ID`
+- `REMOTE_NODE_BOOTSTRAP_KEY`
+- `REMOTE_NODE_CONTROL_PLANE_URL` (base URL, for example `https://example.com`)
 
-## Schnellstart
+It authenticates once against the Control Plane bootstrap endpoint and receives a short-lived access token.
 
-1. Im Tenant-Dashboard als Admin eine Remote-Node anlegen.
-2. Aus der Notice kopieren:
+### 2) Poll (get work)
+
+At a fixed interval (`REMOTE_NODE_POLL_SECONDS`), the agent calls `/node/poll` using the current access token.
+
+The poll response contains:
+
+- monitor assignments for this node
+- token rotation data (new short-lived token)
+
+### 3) Execute + Report (send results)
+
+The agent executes assigned checks locally and sends batched results to `/node/report`.
+
+The Control Plane stores those results in the same internal flows used for local checks:
+
+- results
+- states
+- incidents
+- notifications
+
+## Authentication and transport security
+
+- **TLS is required** for all traffic.
+- **mTLS is planned** as an additional hardening step.
+- Access tokens are short-lived and rotated regularly (on poll responses).
+- Bootstrap keys and tokens are encrypted at rest in the Control Plane database.
+
+### TLS vs. mTLS in one sentence
+
+- TLS: only the server proves its identity.
+- mTLS: server and client both present certificates.
+
+## Repository components
+
+- Agent binary: `cmd/remote-node/main.go`
+- Agent logic: `internal/remotenode/agent.go`
+- Control Plane API + UI: `internal/httpserver/remote_node_handlers.go`, `internal/httpserver/server.go`, `web/templates/dashboard.tmpl`
+- Persistence: `internal/store/sqlite/remote_node_store.go` and monitor executor fields in the tenant DB
+
+## Quick start
+
+1. In the tenant dashboard (admin), create a Remote Node.
+2. Copy the generated values:
    - `REMOTE_NODE_ID`
    - `REMOTE_NODE_BOOTSTRAP_KEY`
-   - `REMOTE_NODE_CONTROL_PLANE_URL` als Basis-URL der GoUp-Instanz (`https://example.com`, nicht `.../node/bootstrap`)
-3. Agent-Container mit Env starten.
+   - `REMOTE_NODE_CONTROL_PLANE_URL` as the **base URL** of your GoUp instance (for example `https://example.com`, not `.../node/bootstrap`)
+3. Start the container with these environment variables.
 
-Beispiel-Variablen:
+Example:
 
 - `GOUP_MODE=remote-node`
 - `REMOTE_NODE_CONTROL_PLANE_URL=https://example.com`
@@ -48,35 +82,33 @@ Beispiel-Variablen:
 - `REMOTE_NODE_BOOTSTRAP_KEY=...`
 - `REMOTE_NODE_POLL_SECONDS=20`
 
-Wichtig: Das Container-Image enthält **Server und Agent**. Standardmäßig startet es den normalen GoUp-Server. Für eine Remote-Node muss daher `GOUP_MODE=remote-node` gesetzt sein.
+Important:
 
-Falls versehentlich doch `.../node/bootstrap` eingetragen wird, normalisiert der Agent das jetzt automatisch auf die Basis-URL.
+- The container image includes both server and agent.
+- By default it starts the regular GoUp server.
+- Set `GOUP_MODE=remote-node` to run the agent.
 
-Für ICMP-Monitore benötigt der Container zusätzlich `NET_RAW` (Compose: `cap_add: [NET_RAW]`).
+If `.../node/bootstrap` is configured by mistake, the agent normalizes it to the base URL automatically.
 
-## Monitor-Zuweisung
+For ICMP monitors, the container also needs `NET_RAW` (Compose: `cap_add: [NET_RAW]`).
 
-Wenn mindestens eine Remote-Node existiert, erscheint im Monitor-Dialog ein Feld **Ausführung**:
+## Monitor assignment
 
-- Control-Plane (lokal)
+When at least one Remote Node exists, the monitor form shows an **Execution** field:
+
+- Control Plane (local)
 - Remote: `<node_id>`
 
-Nur Monitore mit Executor `remote:<node_id>` werden vom Agent ausgeführt.
+Only monitors with executor `remote:<node_id>` are executed by that agent.
 
-## Heartbeat/Offline
+## Heartbeat and offline status
 
-- `last_seen_at` wird bei Poll/Report aktualisiert.
-- UI zeigt ONLINE/OFFLINE anhand des konfigurierten Heartbeat-Timeouts.
-- Bei längerer Inaktivität kann darauf Benachrichtigung aufgebaut werden (Status bereits im Datenmodell vorhanden).
+- `last_seen_at` is updated on poll/report.
+- The UI shows ONLINE/OFFLINE based on configured heartbeat timeout.
+- This status can be used for inactivity alerting.
 
-## Sicherheit
+## Bootstrap key rotation
 
-- Bootstrap-Key und Access-Token werden verschlüsselt in der Control-Plane-DB gespeichert (gleiches Secret-Handling wie andere Secrets).
-- Access-Tokens sind kurzlebig und werden regelmäßig rotiert.
-- Kommunikation ausschließlich über HTTPS.
-
-## Bootstrap-Key Rotation
-
-- Im Tenant-Dashboard kann pro Remote-Node der **Bootstrap-Key rotiert** werden.
-- Nach Rotation gilt nur noch der neue Key für zukünftige Bootstrap-Vorgänge.
-- Bereits laufende Nodes mit gültigem Access-Token laufen weiter; spätestens bei Re-Bootstrap muss der neue Key gesetzt sein.
+- You can rotate the bootstrap key per node in the tenant dashboard.
+- After rotation, only the new key can bootstrap future sessions.
+- Already running nodes with valid access tokens continue until re-bootstrap is needed.
