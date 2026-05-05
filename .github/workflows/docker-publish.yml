@@ -36,7 +36,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/goup
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
             type=sha,prefix=sha-
             type=ref,event=tag
 
