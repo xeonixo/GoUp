@@ -1723,10 +1723,12 @@ th {
   background: transparent;
   color: var(--text);
   text-align: left;
+  text-decoration: none;
   border-radius: 8px;
   padding: 0.5rem 0.6rem;
   font: inherit;
   cursor: pointer;
+  display: block;
 }
 
 .action-menu-item:hover {
@@ -2194,6 +2196,46 @@ li + li {
 
 .action-menu-item:disabled:hover {
   background: transparent;
+}
+
+textarea {
+  border: 1px solid var(--border);
+  background: rgba(9, 14, 28, 0.9);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 0.8rem 0.9rem;
+  font: inherit;
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.input-compact {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.9rem;
+  border-radius: 8px;
+  width: 100%;
+  min-width: 120px;
+}
+
+.input-narrow {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.9rem;
+  border-radius: 8px;
+  width: 5rem;
+}
+
+.import-preview-table-wrap {
+  overflow-x: auto;
+}
+
+.import-preview-table-wrap .admin-table td {
+  vertical-align: middle;
+  padding: 0.5rem 0.6rem;
+}
+
+.import-preview-table-wrap .admin-table th {
+  white-space: nowrap;
 }
 
 @media (max-width: 860px) {

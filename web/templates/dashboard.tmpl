@@ -9,7 +9,11 @@
   <a href="{{$.AppBase}}?trend={{.Value}}" class="button button-small {{if not .Selected}}button-secondary{{end}}" {{if .Selected}}aria-current="page"{{end}}>{{.Label}}</a>
   {{end}}
   </div>
-  {{if .IsAdmin}}<button class="button" type="button" id="open-create-monitor">{{index $.Translations "dashboard.topbar.create_monitor"}}</button>{{end}}
+  {{if .IsAdmin}}
+  <a href="{{$.AppBase}}monitors/export" class="button button-secondary button-small">{{index $.Translations "dashboard.topbar.export_monitors"}}</a>
+  <a href="{{$.AppBase}}monitors/import" class="button button-secondary button-small">{{index $.Translations "dashboard.topbar.import_monitors"}}</a>
+  <button class="button" type="button" id="open-create-monitor">{{index $.Translations "dashboard.topbar.create_monitor"}}</button>
+  {{end}}
 </div>
 {{end}}
 
@@ -585,6 +589,7 @@
                   data-expected-text="{{.ExpectedText}}">
                   {{index $.Translations "common.edit"}}
                 </button>
+                <a href="{{$.AppBase}}monitors/export?id={{.ID}}" class="action-menu-item">{{index $.Translations "dashboard.monitor.export"}}</a>
                 <form method="post" action="{{$.AppBase}}monitors/enabled" class="action-menu-form">
                   <input type="hidden" name="id" value="{{.ID}}">
                   <input type="hidden" name="enabled" value="{{if .Enabled}}0{{else}}1{{end}}">

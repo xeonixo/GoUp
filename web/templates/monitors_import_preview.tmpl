@@ -1,0 +1,78 @@
+{{define "content"}}
+<div class="admin-section">
+  <div class="admin-header">
+    <div>
+      <h1>{{index $.Translations "monitors.import.preview_title"}}</h1>
+      <p class="muted compact">{{index $.Translations "monitors.import.preview_subtitle"}}</p>
+    </div>
+  </div>
+
+  <form method="POST" action="{{$.AppBase}}monitors/import/confirm">
+    <input type="hidden" name="count" value="{{len .ImportRows}}">
+
+    <section class="card table-card">
+      <div class="import-preview-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>{{index $.Translations "monitors.import.col_skip"}}</th>
+              <th>{{index $.Translations "monitors.import.col_name"}}</th>
+              <th>{{index $.Translations "monitors.import.col_group"}}</th>
+              <th>{{index $.Translations "monitors.import.col_kind"}}</th>
+              <th>{{index $.Translations "monitors.import.col_target"}}</th>
+              <th>{{index $.Translations "monitors.import.col_interval"}}</th>
+              <th>{{index $.Translations "monitors.import.col_timeout"}}</th>
+              <th>{{index $.Translations "monitors.import.col_enabled"}}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .ImportRows}}
+            {{$i := .Index}}
+            <tr>
+              <td>
+                <input type="checkbox" name="skip_{{$i}}" id="skip_{{$i}}">
+              </td>
+              <td>
+                <input type="text" name="name_{{$i}}" value="{{.Name}}" required class="input-compact">
+              </td>
+              <td>
+                <input type="text" name="group_{{$i}}" value="{{.Group}}" class="input-compact">
+              </td>
+              <td>
+                <span class="status-badge">{{.Kind}}</span>
+                <input type="hidden" name="kind_{{$i}}"                   value="{{.Kind}}">
+                <input type="hidden" name="tls_mode_{{$i}}"               value="{{.TLSMode}}">
+                <input type="hidden" name="expected_status_code_{{$i}}"   value="{{.ExpectedStatusCode}}">
+                <input type="hidden" name="expected_text_{{$i}}"          value="{{.ExpectedText}}">
+                <input type="hidden" name="notify_on_recovery_{{$i}}"     value="{{if .NotifyOnRecovery}}on{{end}}">
+                <input type="hidden" name="retry_count_{{$i}}"            value="{{.RetryCount}}">
+                <input type="hidden" name="retry_interval_seconds_{{$i}}" value="{{.RetryIntervalSeconds}}">
+                <input type="hidden" name="executor_kind_{{$i}}"          value="{{.ExecutorKind}}">
+                <input type="hidden" name="executor_ref_{{$i}}"           value="{{.ExecutorRef}}">
+              </td>
+              <td>
+                <input type="text" name="target_{{$i}}" value="{{.Target}}" required class="input-compact">
+              </td>
+              <td>
+                <input type="number" name="interval_seconds_{{$i}}" value="{{.IntervalSeconds}}" min="15" class="input-narrow">
+              </td>
+              <td>
+                <input type="number" name="timeout_seconds_{{$i}}" value="{{.TimeoutSeconds}}" min="1" class="input-narrow">
+              </td>
+              <td>
+                <input type="checkbox" name="enabled_{{$i}}" {{if .Enabled}}checked{{end}}>
+              </td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="form-actions" style="margin-top:1rem">
+      <button type="submit" class="button">{{index $.Translations "monitors.import.confirm_button"}}</button>
+      <a href="{{$.AppBase}}monitors/import" class="button button-secondary">{{index $.Translations "common.back"}}</a>
+    </div>
+  </form>
+</div>
+{{end}}

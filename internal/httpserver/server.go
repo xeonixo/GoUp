@@ -163,6 +163,7 @@ type pageData struct {
 	Pagination                   paginationView
 	StateEventHistorySubtitle    string
 	StateEventHistoryPageLabel   string
+	ImportRows                   []importPreviewRow
 }
 
 type paginationView struct {
@@ -893,6 +894,10 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/monitors/enabled", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSetMonitorEnabled))))
 	mux.Handle("/monitors/check-now", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleCheckMonitorNow))))
 	mux.Handle("/monitors/latency-history", s.requireAuth(http.HandlerFunc(s.handleMonitorLatencyHistory)))
+	mux.Handle("/monitors/export", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleMonitorExport))))
+	mux.Handle("/monitors/import", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleMonitorImport))))
+	mux.Handle("/monitors/import/preview", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleMonitorImportPreview))))
+	mux.Handle("/monitors/import/confirm", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleMonitorImportConfirm))))
 	mux.Handle("/state-events", s.requireAuth(http.HandlerFunc(s.handleStateEventsHistory)))
 	mux.Handle("/settings/profile", s.requireAuth(http.HandlerFunc(s.handleSettingsProfile)))
 	mux.Handle("/settings/profile/save", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileSave)))
@@ -3545,7 +3550,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 }
 
 func parseTemplates() (map[string]*template.Template, error) {
-	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_providers_overview", "admin_provider_form", "admin_local_users", "admin_users_overview", "admin_local_user_form", "admin_remote_nodes", "admin_remote_nodes_overview", "settings_users", "settings_profile", "settings_providers", "settings_provider_form", "settings_remote_nodes", "admin_access", "admin_setup", "admin_security", "no_tenant", "state_events_history"}
+	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_providers_overview", "admin_provider_form", "admin_local_users", "admin_users_overview", "admin_local_user_form", "admin_remote_nodes", "admin_remote_nodes_overview", "settings_users", "settings_profile", "settings_providers", "settings_provider_form", "settings_remote_nodes", "admin_access", "admin_setup", "admin_security", "no_tenant", "state_events_history", "monitors_import", "monitors_import_preview"}
 	parsed := make(map[string]*template.Template, len(pages))
 	for _, page := range pages {
 		tmpl, err := template.ParseFS(web.FS, "templates/layout.tmpl", "templates/"+page+".tmpl")

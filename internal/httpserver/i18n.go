@@ -116,6 +116,10 @@ var flashMessageTranslationKeys = map[string]string{
 	"Remote-Node konnte nicht gelöscht werden":                        "flash.remote_node_delete_failed",
 	"Remote-Node gelöscht. Zugewiesene Monitore laufen wieder lokal.": "flash.remote_node_deleted_monitors_local",
 	"Bootstrap-Key konnte nicht rotiert werden":                       "flash.bootstrap_key_rotate_failed",
+	"Keine Daten angegeben":                                           "flash.import_no_data",
+	"Ungültiges JSON-Format":                                          "flash.import_invalid_json",
+	"Nicht unterstützte Export-Version":                               "flash.import_unsupported_version",
+	"Keine Monitore in der Datei":                                     "flash.import_empty",
 }
 
 var (
@@ -123,7 +127,8 @@ var (
 	localLoginWaitPattern      = regexp.MustCompile(`^Zu viele Fehlversuche\. Bitte in (\d+) Minute\(n\) erneut versuchen$`)
 	monitorCreatedPattern      = regexp.MustCompile(`^([A-Z]+)-Monitor angelegt$`)
 	remoteNodeCreatedPattern   = regexp.MustCompile(`^Remote-Node erstellt\.\s+(REMOTE_NODE_ID=.*)$`)
-	bootstrapKeyRotatedPattern = regexp.MustCompile(`^Bootstrap-Key rotiert\.\s+(REMOTE_NODE_ID=.*)$`)
+	bootstrapKeyRotatedPattern  = regexp.MustCompile(`^Bootstrap-Key rotiert\.\s+(REMOTE_NODE_ID=.*)$`)
+	monitorsImportedPattern     = regexp.MustCompile(`^(\d+) Monitor\(e\) importiert$`)
 )
 
 type translationCatalog struct {
@@ -317,6 +322,9 @@ func localizeFlashMessage(translations map[string]string, message string) string
 	}
 	if matches := bootstrapKeyRotatedPattern.FindStringSubmatch(message); len(matches) == 2 {
 		return translateFlashMessage(translations, "flash.bootstrap_key_rotated", message, map[string]string{"details": matches[1]})
+	}
+	if matches := monitorsImportedPattern.FindStringSubmatch(message); len(matches) == 2 {
+		return translateFlashMessage(translations, "flash.monitors_imported", message, map[string]string{"count": matches[1]})
 	}
 	return message
 }

@@ -1,0 +1,35 @@
+{{define "content"}}
+<div class="admin-section">
+  {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+
+  <div class="admin-header">
+    <div>
+      <h1>{{index $.Translations "monitors.import.title"}}</h1>
+      <p class="muted compact">{{index $.Translations "monitors.import.subtitle"}}</p>
+    </div>
+    <a href="{{$.AppBase}}" class="button button-secondary">{{index $.Translations "common.back"}}</a>
+  </div>
+
+  <section class="card stack" style="max-width:720px">
+    <form method="POST" action="{{$.AppBase}}monitors/import/preview" enctype="multipart/form-data" class="stack">
+      <div class="form-group">
+        <label for="import-file">{{index $.Translations "monitors.import.file_label"}}</label>
+        <input id="import-file" name="file" type="file" accept=".json,application/json">
+        <p class="muted compact">{{index $.Translations "monitors.import.file_hint"}}</p>
+      </div>
+
+      <p class="muted" style="text-align:center;margin:0">— {{index $.Translations "monitors.import.or_text"}} —</p>
+
+      <div class="form-group">
+        <label for="import-paste">{{index $.Translations "monitors.import.paste_label"}}</label>
+        <textarea id="import-paste" name="json_paste" rows="8" placeholder='{"version":1,"monitors":[]}'></textarea>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="button">{{index $.Translations "monitors.import.preview_button"}}</button>
+        <a href="{{$.AppBase}}" class="button button-secondary">{{index $.Translations "common.cancel"}}</a>
+      </div>
+    </form>
+  </section>
+</div>
+{{end}}
