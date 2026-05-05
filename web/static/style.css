@@ -300,6 +300,18 @@ h3 {
   border: 0;
 }
 
+.app-version-link {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  margin-left: 0.25rem;
+  white-space: nowrap;
+}
+
+.app-version-link:hover {
+  text-decoration: underline;
+}
+
 .topbar-hamburger:hover {
   filter: brightness(1.06);
 }

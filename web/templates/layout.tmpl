@@ -54,6 +54,9 @@
           <span class="sr-only">{{index $.Translations "layout.logout_title"}}</span>
         </a>
         {{end}}
+        {{if .Version}}
+        <a class="app-version-link" href="https://github.com/xeonixo/goup/releases/tag/{{.Version}}" target="_blank" rel="noopener">{{.Version}}</a>
+        {{end}}
       </nav>
     </div>
   </header>

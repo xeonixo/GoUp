@@ -3,6 +3,7 @@ WORKDIR /src
 
 ARG TARGETOS
 ARG TARGETARCH
+ARG VERSION=dev
 
 COPY go.mod ./
 RUN go mod download
@@ -12,8 +13,8 @@ RUN set -eux; \
     export CGO_ENABLED=0; \
     export GOOS=${TARGETOS:-linux}; \
     if [ -n "${TARGETARCH:-}" ]; then export GOARCH="${TARGETARCH}"; fi; \
-    go build -trimpath -ldflags='-s -w' -o /out/goup ./cmd/goup; \
-    go build -trimpath -ldflags='-s -w' -o /out/remote-node ./cmd/remote-node
+    go build -trimpath -ldflags="-s -w -X goup/internal/version.Version=${VERSION}" -o /out/goup ./cmd/goup; \
+    go build -trimpath -ldflags="-s -w -X goup/internal/version.Version=${VERSION}" -o /out/remote-node ./cmd/remote-node
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates libcap-utils \

@@ -36,6 +36,7 @@ import (
 	"goup/internal/config"
 	"goup/internal/monitor"
 	store "goup/internal/store/sqlite"
+	"goup/internal/version"
 	"goup/web"
 
 	"github.com/gorilla/websocket"
@@ -165,6 +166,7 @@ type pageData struct {
 	StateEventHistorySubtitle  string
 	StateEventHistoryPageLabel string
 	ImportRows                 []importPreviewRow
+	Version                    string
 }
 
 type paginationView struct {
@@ -3511,6 +3513,7 @@ func (s *Server) render(w http.ResponseWriter, name string, data pageData) {
 	}
 	data.Error = localizeFlashMessage(data.Translations, data.Error)
 	data.Notice = localizeFlashMessage(data.Translations, data.Notice)
+	data.Version = version.Version
 
 	tmpl, ok := s.templates[name]
 	if !ok {
