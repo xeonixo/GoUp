@@ -1,0 +1,123 @@
+{{define "content"}}
+<div class="admin-section">
+  <nav class="admin-nav card">
+    <a href="{{$.AppBase}}" class="admin-nav-link">{{index $.Translations "settings.nav.dashboard"}}</a>
+    <a href="{{$.AppBase}}settings/profile" class="admin-nav-link">{{index $.Translations "settings.nav.profile"}}</a>
+    <a href="{{$.AppBase}}settings/users" class="admin-nav-link">{{index $.Translations "settings.nav.users"}}</a>
+    <a href="{{$.AppBase}}settings/webhooks" class="admin-nav-link is-active">{{index $.Translations "settings.nav.webhooks"}}</a>
+    <a href="{{$.AppBase}}settings/providers" class="admin-nav-link">{{index $.Translations "settings.nav.oidc_providers"}}</a>
+    <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link">{{index $.Translations "settings.nav.remote_nodes"}}</a>
+  </nav>
+
+  {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
+  {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+
+  <div class="admin-header">
+    <div>
+      <h1>{{index $.Translations "settings.webhooks.title"}}</h1>
+      <p class="muted compact">{{index $.Translations "settings.webhooks.subtitle"}}</p>
+    </div>
+  </div>
+
+  <form method="POST" action="{{$.AppBase}}settings/webhooks/save" class="admin-form card stack">
+    <h2>{{index $.Translations "settings.webhooks.new_title"}}</h2>
+    <div class="inline-grid">
+      <label>
+        <span>{{index $.Translations "settings.webhooks.name"}}</span>
+        <input type="text" name="name" maxlength="120" required>
+      </label>
+      <label>
+        <span>{{index $.Translations "settings.webhooks.url"}}</span>
+        <input type="url" name="url" placeholder="https://hooks.example.com/goup" required>
+      </label>
+    </div>
+    <div class="inline-grid">
+      <label>
+        <span>{{index $.Translations "settings.webhooks.timeout"}}</span>
+        <input type="number" name="timeout_seconds" min="1" max="30" value="10" required>
+      </label>
+      <label>
+        <span>{{index $.Translations "settings.webhooks.secret"}}</span>
+        <input type="password" name="secret" minlength="16" required>
+      </label>
+    </div>
+    <label class="toggle-row">
+      <input type="checkbox" name="enabled" checked>
+      <span>{{index $.Translations "settings.webhooks.enabled"}}</span>
+    </label>
+    <div class="form-actions">
+      <button type="submit" class="button">{{index $.Translations "settings.webhooks.create_button"}}</button>
+    </div>
+  </form>
+
+  <div class="card table-card">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>{{index $.Translations "settings.webhooks.name"}}</th>
+          <th>{{index $.Translations "settings.webhooks.url"}}</th>
+          <th>{{index $.Translations "settings.webhooks.timeout"}}</th>
+          <th>{{index $.Translations "settings.webhooks.secret_status"}}</th>
+          <th>{{index $.Translations "settings.webhooks.status"}}</th>
+          <th>{{index $.Translations "settings.webhooks.actions"}}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{if .AdminWebhookEndpoints}}
+        {{range .AdminWebhookEndpoints}}
+        <tr>
+          <td>{{.Name}}</td>
+          <td class="break-all">{{.URL}}</td>
+          <td>{{.TimeoutSeconds}}s</td>
+          <td>
+            {{if .SecretConfigured}}
+            <span class="status-badge status-badge-success">{{index $.Translations "settings.webhooks.secret_present"}}</span>
+            {{else}}
+            <span class="status-badge status-badge-muted">{{index $.Translations "settings.webhooks.secret_missing"}}</span>
+            {{end}}
+          </td>
+          <td>
+            {{if .Enabled}}
+            <span class="status-badge status-badge-success">{{index $.Translations "common.active"}}</span>
+            {{else}}
+            <span class="status-badge status-badge-muted">{{index $.Translations "common.inactive"}}</span>
+            {{end}}
+          </td>
+          <td>
+            <form method="POST" action="{{$.AppBase}}settings/webhooks/save" class="stack compact-form">
+              <input type="hidden" name="id" value="{{.ID}}">
+              <div class="inline-grid">
+                <input type="text" name="name" value="{{.Name}}" maxlength="120" required>
+                <input type="url" name="url" value="{{.URL}}" required>
+              </div>
+              <div class="inline-grid">
+                <input type="number" name="timeout_seconds" min="1" max="30" value="{{.TimeoutSeconds}}" required>
+                <input type="password" name="secret" placeholder="{{index $.Translations "settings.webhooks.secret_rotate_placeholder"}}">
+              </div>
+              <div class="admin-actions-inline">
+                <label class="toggle-row">
+                  <input type="checkbox" name="enabled" {{if .Enabled}}checked{{end}}>
+                  <span>{{index $.Translations "settings.webhooks.enabled"}}</span>
+                </label>
+                <button type="submit" class="button button-secondary button-small">{{index $.Translations "common.save"}}</button>
+              </div>
+            </form>
+            <form method="POST" action="{{$.AppBase}}settings/webhooks/{{.ID}}/test" class="inline-form">
+              <button type="submit" class="button button-secondary button-small" {{if or (not .Enabled) (not .SecretConfigured)}}disabled{{end}}>{{index $.Translations "settings.webhooks.test_button"}}</button>
+            </form>
+            <form method="POST" action="{{$.AppBase}}settings/webhooks/{{.ID}}/delete" class="inline-form" data-confirm="{{index $.Translations "settings.webhooks.delete_confirm"}}">
+              <button type="submit" class="button button-danger button-small">{{index $.Translations "common.delete"}}</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+        {{else}}
+        <tr>
+          <td colspan="6" class="muted">{{index $.Translations "settings.webhooks.empty"}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

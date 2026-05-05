@@ -95,86 +95,87 @@ type localLoginAttempt struct {
 }
 
 type pageData struct {
-	Title                string
-	UILanguage           string
-	Translations         map[string]string
-	HideTopbar           bool
-	User                 *auth.UserSession
-	IsAdmin              bool
-	Stats                store.DashboardStats
-	Error                string
-	Notice               string
-	FormAction           string
-	BackURL              string
-	IsEdit               bool
-	SettingsMode         bool
-	AuthEnabled          bool
-	AuthDisabled         bool
-	OIDCTenantOnly       bool
-	TrendValue           string
-	TrendLabel           string
-	TrendRanges          []trendRangeOptionView
-	Monitors             []monitorView
-	MonitorGroups        []monitorGroupView
-	AvailableGroups      []string
-	RemoteNodes          []remoteNodeView
-	HasRemoteNodes       bool
-	MonitorExecutors     []monitorExecutorOptionView
-	Events               []notificationEventView
-	StateEvents          []monitorStateEventView
-	AdminTenants         []store.Tenant
-	AdminMonitorCount    int
-	AdminRemoteNodeCount int
-	AdminTenant          store.Tenant
-	AdminProviders       []store.AuthProvider
-	AdminProviderRows    []adminProviderOverviewRow
-	AdminProvider        store.AuthProvider
-	AdminLocalUsers      []store.LocalUser
-	AdminTenantUsers     []store.TenantUser
-	AdminUserRows        []adminUserOverviewRow
-	AdminLocalUser       store.LocalUser
-	AdminRemoteNodeRows  []adminRemoteNodeOverviewRow
-	ProfileUser          store.TenantUser
-	ProfileNotify        store.UserNotificationSettings
-	AdminAuditEvents     []store.AuditEvent
-	AuditAction          string
-	AuditActor           string
-	AuditTargetType      string
-	AuditActions         []string
-	AuditTargetTypes     []string
-	GlobalSMTP           store.GlobalSMTPSettings
-	ControlPlaneAdmin    bool
-	AutoDBPath           string
-	TenantSlug           string
-	TenantName           string
-	AppBase              string
-	LoginProviders       []store.AuthProvider
-	HasLocalLogin        bool
-	HasOIDCLogin         bool
-	ResetEnabled         bool
-	ResetToken           string
-	AdminSetup           bool
-	AdminUsername        string
-	TOTPRequired         bool
-	TOTPEnabled          bool
-	TOTPSecret           string
-	TOTPProvisioningURI  string
-	LanguageOptions              []languageOptionView
-	Pagination                   paginationView
-	StateEventHistorySubtitle    string
-	StateEventHistoryPageLabel   string
-	ImportRows                   []importPreviewRow
+	Title                      string
+	UILanguage                 string
+	Translations               map[string]string
+	HideTopbar                 bool
+	User                       *auth.UserSession
+	IsAdmin                    bool
+	Stats                      store.DashboardStats
+	Error                      string
+	Notice                     string
+	FormAction                 string
+	BackURL                    string
+	IsEdit                     bool
+	SettingsMode               bool
+	AuthEnabled                bool
+	AuthDisabled               bool
+	OIDCTenantOnly             bool
+	TrendValue                 string
+	TrendLabel                 string
+	TrendRanges                []trendRangeOptionView
+	Monitors                   []monitorView
+	MonitorGroups              []monitorGroupView
+	AvailableGroups            []string
+	RemoteNodes                []remoteNodeView
+	HasRemoteNodes             bool
+	MonitorExecutors           []monitorExecutorOptionView
+	Events                     []notificationEventView
+	StateEvents                []monitorStateEventView
+	AdminTenants               []store.Tenant
+	AdminMonitorCount          int
+	AdminRemoteNodeCount       int
+	AdminTenant                store.Tenant
+	AdminProviders             []store.AuthProvider
+	AdminProviderRows          []adminProviderOverviewRow
+	AdminProvider              store.AuthProvider
+	AdminLocalUsers            []store.LocalUser
+	AdminTenantUsers           []store.TenantUser
+	AdminUserRows              []adminUserOverviewRow
+	AdminLocalUser             store.LocalUser
+	AdminRemoteNodeRows        []adminRemoteNodeOverviewRow
+	AdminWebhookEndpoints      []store.WebhookEndpoint
+	ProfileUser                store.TenantUser
+	ProfileNotify              store.UserNotificationSettings
+	AdminAuditEvents           []store.AuditEvent
+	AuditAction                string
+	AuditActor                 string
+	AuditTargetType            string
+	AuditActions               []string
+	AuditTargetTypes           []string
+	GlobalSMTP                 store.GlobalSMTPSettings
+	ControlPlaneAdmin          bool
+	AutoDBPath                 string
+	TenantSlug                 string
+	TenantName                 string
+	AppBase                    string
+	LoginProviders             []store.AuthProvider
+	HasLocalLogin              bool
+	HasOIDCLogin               bool
+	ResetEnabled               bool
+	ResetToken                 string
+	AdminSetup                 bool
+	AdminUsername              string
+	TOTPRequired               bool
+	TOTPEnabled                bool
+	TOTPSecret                 string
+	TOTPProvisioningURI        string
+	LanguageOptions            []languageOptionView
+	Pagination                 paginationView
+	StateEventHistorySubtitle  string
+	StateEventHistoryPageLabel string
+	ImportRows                 []importPreviewRow
 }
 
 type paginationView struct {
-	Page       int
-	PageCount  int
-	Total      int64
-	HasPrev    bool
-	HasNext    bool
-	PrevPage   int
-	NextPage   int
-	BaseURL    string
+	Page      int
+	PageCount int
+	Total     int64
+	HasPrev   bool
+	HasNext   bool
+	PrevPage  int
+	NextPage  int
+	BaseURL   string
 }
 
 type languageOptionView struct {
@@ -332,47 +333,47 @@ type trendPointView struct {
 }
 
 type monitorView struct {
-	ID               int64
-	Name             string
-	Group            string
-	SortOrder        int
-	CanMoveUp        bool
-	CanMoveDown      bool
-	KindValue        string
-	Kind             string
-	TLSMode          string
-	TLSModeValue     string
-	Target           string
-	TargetLabel      string
-	Interval         string
-	IntervalSeconds  int
-	Timeout          string
-	TimeoutSeconds   int
-	Enabled          bool
-	ExecutorKind     string
-	ExecutorRef      string
-	ExecutorValue    string
-	ExecutorLabel    string
-	NotifyOnRecovery    bool
-	RetryCount          int
+	ID                   int64
+	Name                 string
+	Group                string
+	SortOrder            int
+	CanMoveUp            bool
+	CanMoveDown          bool
+	KindValue            string
+	Kind                 string
+	TLSMode              string
+	TLSModeValue         string
+	Target               string
+	TargetLabel          string
+	Interval             string
+	IntervalSeconds      int
+	Timeout              string
+	TimeoutSeconds       int
+	Enabled              bool
+	ExecutorKind         string
+	ExecutorRef          string
+	ExecutorValue        string
+	ExecutorLabel        string
+	NotifyOnRecovery     bool
+	RetryCount           int
 	RetryIntervalSeconds int
-	ExpectedStatus      string
-	ExpectedText     string
-	TrendLabel       string
-	StatusLabel      string
-	StatusClass      string
-	StatusSummary    string
-	LastCheckedAt    string
-	LastCheckedAtRaw string
-	LastStatus       string
-	LastMessage      string
-	LastLatency      string
-	TrendPoints      []trendPointView
-	UptimeLabel      string
-	HTTPStatusCode   string
-	TLSDaysRemaining string
-	TLSNotAfter      string
-	TLSNotAfterRaw   string
+	ExpectedStatus       string
+	ExpectedText         string
+	TrendLabel           string
+	StatusLabel          string
+	StatusClass          string
+	StatusSummary        string
+	LastCheckedAt        string
+	LastCheckedAtRaw     string
+	LastStatus           string
+	LastMessage          string
+	LastLatency          string
+	TrendPoints          []trendPointView
+	UptimeLabel          string
+	HTTPStatusCode       string
+	TLSDaysRemaining     string
+	TLSNotAfter          string
+	TLSNotAfterRaw       string
 }
 
 type notificationEventView struct {
@@ -904,6 +905,10 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/settings/profile/notifiers/delete", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileNotifierDelete)))
 	mux.Handle("/settings/profile/password", s.requireAuth(http.HandlerFunc(s.handleSettingsProfilePassword)))
 	mux.Handle("/settings/users", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUsers)))
+	mux.Handle("/settings/webhooks", s.requireUserManagement(http.HandlerFunc(s.handleSettingsWebhooks)))
+	mux.Handle("/settings/webhooks/save", s.requireUserManagement(http.HandlerFunc(s.handleSettingsWebhooksSave)))
+	mux.Handle("/settings/webhooks/{id}/test", s.requireUserManagement(http.HandlerFunc(s.handleSettingsWebhookTest)))
+	mux.Handle("/settings/webhooks/{id}/delete", s.requireUserManagement(http.HandlerFunc(s.handleSettingsWebhookDelete)))
 	mux.Handle("/settings/providers", s.requireUserManagement(http.HandlerFunc(s.handleSettingsProviders)))
 	mux.Handle("/settings/providers/new", s.requireUserManagement(http.HandlerFunc(s.handleSettingsProviderForm)))
 	mux.Handle("/settings/providers/{providerKey}/edit", s.requireUserManagement(http.HandlerFunc(s.handleSettingsProviderForm)))
@@ -2359,7 +2364,7 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 		ExpectedText:       expectedText,
 		NotifyOnRecovery:   r.FormValue("notify_on_recovery") == "on",
 		RetryCount:         func() int { v, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("retry_count"))); return v }(),
-		RetryInterval:      func() time.Duration {
+		RetryInterval: func() time.Duration {
 			v, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("retry_interval_seconds")))
 			return time.Duration(v) * time.Second
 		}(),
@@ -3550,7 +3555,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 }
 
 func parseTemplates() (map[string]*template.Template, error) {
-	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_providers_overview", "admin_provider_form", "admin_local_users", "admin_users_overview", "admin_local_user_form", "admin_remote_nodes", "admin_remote_nodes_overview", "settings_users", "settings_profile", "settings_providers", "settings_provider_form", "settings_remote_nodes", "admin_access", "admin_setup", "admin_security", "no_tenant", "state_events_history", "monitors_import", "monitors_import_preview"}
+	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_providers_overview", "admin_provider_form", "admin_local_users", "admin_users_overview", "admin_local_user_form", "admin_remote_nodes", "admin_remote_nodes_overview", "settings_users", "settings_profile", "settings_webhooks", "settings_providers", "settings_provider_form", "settings_remote_nodes", "admin_access", "admin_setup", "admin_security", "no_tenant", "state_events_history", "monitors_import", "monitors_import_preview"}
 	parsed := make(map[string]*template.Template, len(pages))
 	for _, page := range pages {
 		tmpl, err := template.ParseFS(web.FS, "templates/layout.tmpl", "templates/"+page+".tmpl")
@@ -3686,28 +3691,28 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 		}
 
 		view := monitorView{
-			ID:               item.Monitor.ID,
-			Name:             item.Monitor.Name,
-			Group:            effectiveMonitorGroup(strings.TrimSpace(item.Monitor.Group), item.Monitor.Name, item.Monitor.Target),
-			SortOrder:        item.Monitor.SortOrder,
-			ExecutorKind:     strings.TrimSpace(item.Monitor.ExecutorKind),
-			ExecutorRef:      strings.TrimSpace(item.Monitor.ExecutorRef),
-			KindValue:        string(item.Monitor.Kind),
-			Kind:             kindLabel,
-			TLSMode:          tlsLabel,
-			TLSModeValue:     string(item.Monitor.TLSMode),
-			Target:           item.Monitor.Target,
-			TargetLabel:      monitorTargetLabel(item.Monitor),
-			Interval:         item.Monitor.Interval.String(),
-			IntervalSeconds:  int(item.Monitor.Interval / time.Second),
-			Timeout:          item.Monitor.Timeout.String(),
-			TimeoutSeconds:   int(item.Monitor.Timeout / time.Second),
+			ID:                   item.Monitor.ID,
+			Name:                 item.Monitor.Name,
+			Group:                effectiveMonitorGroup(strings.TrimSpace(item.Monitor.Group), item.Monitor.Name, item.Monitor.Target),
+			SortOrder:            item.Monitor.SortOrder,
+			ExecutorKind:         strings.TrimSpace(item.Monitor.ExecutorKind),
+			ExecutorRef:          strings.TrimSpace(item.Monitor.ExecutorRef),
+			KindValue:            string(item.Monitor.Kind),
+			Kind:                 kindLabel,
+			TLSMode:              tlsLabel,
+			TLSModeValue:         string(item.Monitor.TLSMode),
+			Target:               item.Monitor.Target,
+			TargetLabel:          monitorTargetLabel(item.Monitor),
+			Interval:             item.Monitor.Interval.String(),
+			IntervalSeconds:      int(item.Monitor.Interval / time.Second),
+			Timeout:              item.Monitor.Timeout.String(),
+			TimeoutSeconds:       int(item.Monitor.Timeout / time.Second),
 			Enabled:              item.Monitor.Enabled,
 			NotifyOnRecovery:     item.Monitor.NotifyOnRecovery,
 			RetryCount:           item.Monitor.RetryCount,
 			RetryIntervalSeconds: int(item.Monitor.RetryInterval / time.Second),
 			TrendLabel:           selectedTrend.Label,
-			TrendPoints:      buildTrendPoints(rollupsByMonitor[item.Monitor.ID], now, selectedTrend),
+			TrendPoints:          buildTrendPoints(rollupsByMonitor[item.Monitor.ID], now, selectedTrend),
 		}
 		if view.ExecutorKind == "" {
 			view.ExecutorKind = "local"

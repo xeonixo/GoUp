@@ -52,6 +52,18 @@ type Notifier interface {
 	Notify(ctx context.Context, transition Transition) error
 }
 
+type FanoutDeliveryResult struct {
+	EndpointID int64
+	Error      error
+}
+
+type FanoutNotifier interface {
+	Enabled() bool
+	EventType() string
+	NotifyAll(ctx context.Context, transition Transition) ([]FanoutDeliveryResult, error)
+	NotifyEndpoint(ctx context.Context, endpointID int64, transition Transition) error
+}
+
 func NewRunner(logger *slog.Logger, store Store, notifiers ...Notifier) *Runner {
 	return &Runner{
 		logger:              logger,
@@ -184,6 +196,11 @@ doneRetrying:
 				continue
 			}
 
+			if fanout, ok := notifier.(FanoutNotifier); ok {
+				r.dispatchFanoutTransition(ctx, snapshot.Monitor.ID, fanout, transition)
+				continue
+			}
+
 			notifyCtx, notifyCancel := context.WithTimeout(ctx, 5*time.Second)
 			err := notifier.Notify(notifyCtx, transition)
 			notifyCancel()
@@ -234,6 +251,49 @@ doneRetrying:
 	)
 }
 
+func (r *Runner) dispatchFanoutTransition(ctx context.Context, monitorID int64, notifier FanoutNotifier, transition Transition) {
+	notifyCtx, notifyCancel := context.WithTimeout(ctx, 5*time.Second)
+	results, err := notifier.NotifyAll(notifyCtx, transition)
+	notifyCancel()
+	if errors.Is(err, ErrNoRecipients) {
+		return
+	}
+	if err != nil {
+		r.logger.Error("send fanout notification failed", "monitor_id", monitorID, "event_type", notifier.EventType(), "error", err)
+		return
+	}
+	for _, result := range results {
+		if result.EndpointID <= 0 {
+			continue
+		}
+		var deliveredAt *time.Time
+		errorMessage := ""
+		if result.Error == nil {
+			now := time.Now().UTC()
+			deliveredAt = &now
+		} else {
+			errorMessage = result.Error.Error()
+		}
+
+		if recordErr := r.store.RecordNotificationEvent(ctx, monitorID, result.EndpointID, notifier.EventType(), deliveredAt, errorMessage); recordErr != nil {
+			r.logger.Error("record notification event failed", "monitor_id", monitorID, "endpoint_id", result.EndpointID, "error", recordErr)
+		}
+		if result.Error != nil && r.notifyMaxRetries > 0 {
+			retryParams := NotificationRetryParams{
+				MonitorID:     monitorID,
+				EndpointID:    result.EndpointID,
+				EventType:     notifier.EventType(),
+				Transition:    transition,
+				MaxAttempts:   r.notifyMaxRetries,
+				NextAttemptAt: time.Now().UTC().Add(r.notifyRetryInterval),
+			}
+			if enqErr := r.store.EnqueueNotificationRetry(ctx, retryParams); enqErr != nil {
+				r.logger.Error("enqueue notification retry failed", "monitor_id", monitorID, "endpoint_id", result.EndpointID, "error", enqErr)
+			}
+		}
+	}
+}
+
 func (r *Runner) runRetries(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -260,13 +320,21 @@ func (r *Runner) dispatchDueRetries(ctx context.Context) {
 
 func (r *Runner) dispatchRetry(ctx context.Context, retry NotificationRetry) {
 	var notifier Notifier
+	var fanout FanoutNotifier
 	for _, n := range r.notifiers {
-		if n != nil && n.Enabled() && n.EndpointID() == retry.EndpointID && n.EventType() == retry.EventType {
+		if n == nil || !n.Enabled() || n.EventType() != retry.EventType {
+			continue
+		}
+		if candidate, ok := n.(FanoutNotifier); ok {
+			fanout = candidate
+			break
+		}
+		if n.EndpointID() == retry.EndpointID {
 			notifier = n
 			break
 		}
 	}
-	if notifier == nil {
+	if notifier == nil && fanout == nil {
 		if err := r.store.UpdateNotificationRetry(ctx, retry.ID, false, "notifier not found", time.Time{}, true); err != nil {
 			r.logger.Error("abandon notification retry failed", "retry_id", retry.ID, "error", err)
 		}
@@ -275,7 +343,12 @@ func (r *Runner) dispatchRetry(ctx context.Context, retry NotificationRetry) {
 	}
 
 	notifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	err := notifier.Notify(notifyCtx, retry.Transition)
+	var err error
+	if fanout != nil {
+		err = fanout.NotifyEndpoint(notifyCtx, retry.EndpointID, retry.Transition)
+	} else {
+		err = notifier.Notify(notifyCtx, retry.Transition)
+	}
 	cancel()
 
 	if errors.Is(err, ErrNoRecipients) {

@@ -31,10 +31,10 @@ It is a good fit if you want:
 |---|---|
 | Monitor types | HTTPS, HTTP, TCP, ICMP (ping), SMTP, IMAP, DNS, UDP, WHOIS |
 | TLS inspection | Certificate validity, expiry date, remaining lifetime |
-| Notifications | Email via SMTP and Matrix |
+| Notifications | Email via SMTP, Matrix, and signed Webhooks |
 | Authentication | Separate control-plane admin login, plus tenant-level local auth and OIDC |
 | Multi-tenancy | Isolated tenants with their own monitor data and auth configuration |
-| Admin UI | Manage tenants, auth providers, users, SMTP settings, remote nodes, and security settings |
+| Admin UI | Manage tenants, auth providers, users, SMTP settings, webhooks, remote nodes, and security settings |
 | Remote execution | Run checks from remote nodes in other networks using outbound-only HTTPS |
 | Networking | IPv4, IPv6, and dual-stack support for selected monitor types |
 | Operations | Single main process, SQLite, Docker image for `amd64` and `arm64` |
@@ -343,6 +343,80 @@ Each user can configure Matrix settings in their profile at `/{tenantSlug}/setti
 - room ID
 - access token
 
+### Webhooks
+
+Tenant admins can configure webhooks at `/{tenantSlug}/settings/webhooks`.
+
+For a local verification receiver, see [docs/webhook_receiver_example.md](docs/webhook_receiver_example.md).
+
+Current behavior:
+
+- webhooks are configured per tenant and fan out to all enabled endpoints in that tenant
+- secrets are encrypted in the control-plane database
+- only `https` targets are accepted
+- redirects are blocked
+- loopback, private, link-local, multicast, and other non-public target ranges are blocked to reduce SSRF risk
+- each endpoint can be tested directly from the UI with **Send test**
+
+#### Payload
+
+GoUp sends JSON payloads like this for monitor state changes:
+
+```json
+{
+  "event_type": "status_transition_webhook",
+  "tenant_id": 7,
+  "endpoint_id": 3,
+  "occurred_at": "2026-05-05T12:00:00Z",
+  "monitor": {
+    "id": 42,
+    "name": "Public API",
+    "kind": "https",
+    "target": "https://api.example.com/health",
+    "group": "production"
+  },
+  "transition": {
+    "previous": "down",
+    "current": "up",
+    "checked_at": "2026-05-05T11:59:58Z",
+    "result_detail": "HTTP 200 in 143ms"
+  }
+}
+```
+
+Manual test sends use the same shape but with `event_type = "test_notification_webhook"` and a synthetic monitor like `GoUp Webhook Test`.
+
+#### Headers and signature
+
+Each webhook request includes these headers:
+
+- `Content-Type: application/json`
+- `User-Agent: GoUp-Webhook/1.0`
+- `X-GoUp-Event: <event type>`
+- `X-GoUp-Tenant-ID: <tenant id>`
+- `X-GoUp-Endpoint-ID: <endpoint id>`
+- `X-GoUp-Timestamp: <RFC3339 timestamp>`
+- `X-GoUp-Signature: v1=<hex hmac sha256>`
+
+The signature input is:
+
+```text
+<timestamp>.<raw-request-body>
+```
+
+The HMAC key is the configured webhook secret and the hash algorithm is SHA-256.
+
+Minimal verification example in Go:
+
+```go
+mac := hmac.New(sha256.New, []byte(secret))
+mac.Write([]byte(timestamp))
+mac.Write([]byte("."))
+mac.Write(body)
+expected := "v1=" + hex.EncodeToString(mac.Sum(nil))
+valid := hmac.Equal([]byte(signature), []byte(expected))
+```
+
 ---
 
 ## Running behind a reverse proxy
@@ -416,7 +490,6 @@ docs/                   Architecture notes and project documentation
 ## Roadmap
 
 - [ ] Public status page
-- [ ] Webhook notifications
 - [ ] Finer-grained roles and permissions
 - [ ] Additional monitor types
 

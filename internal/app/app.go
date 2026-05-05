@@ -16,6 +16,7 @@ import (
 	monitorrunner "goup/internal/monitor"
 	emailnotify "goup/internal/notify/email"
 	matrixnotify "goup/internal/notify/matrix"
+	webhooknotify "goup/internal/notify/webhook"
 	store "goup/internal/store/sqlite"
 )
 
@@ -369,6 +370,7 @@ func (a *App) checkRemoteNodesHeartbeat(ctx context.Context) {
 		notifiers := []monitorrunner.Notifier{
 			matrixnotify.NewTenantNotifier(a.controlStore, matrixEndpointID, node.TenantID),
 			emailnotify.NewNotifier(a.controlStore, emailEndpointID, node.TenantID, a.config.BaseURL, tenant.Slug),
+			webhooknotify.NewNotifier(appStore, a.controlStore, node.TenantID),
 		}
 		for _, notifier := range notifiers {
 			if notifier == nil || !notifier.Enabled() {
@@ -509,6 +511,7 @@ func buildTenantRunner(ctx context.Context, logger *slog.Logger, controlStore *s
 		ts,
 		matrixnotify.NewTenantNotifier(controlStore, matrixEndpointID, tenant.ID),
 		emailnotify.NewNotifier(controlStore, emailEndpointID, tenant.ID, cfg.BaseURL, tenant.Slug),
+		webhooknotify.NewNotifier(ts, controlStore, tenant.ID),
 	), nil
 }
 
