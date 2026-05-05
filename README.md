@@ -2,45 +2,103 @@
 
 ![GoUp Logo](assets/logo_goup_github.png)
 
-**Self-hosted Uptime-Monitoring** — ein einzelner Go-Prozess, SQLite-Datenbank, nahezu keine externen Abhängigkeiten.
+Self-hosted, multi-tenant uptime monitoring built as a single Go service with SQLite storage and very few operational dependencies.
 
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://go.dev)
 [![Docker](https://img.shields.io/badge/Docker-multi--arch-2496ED?logo=docker)](https://ghcr.io/xeonixo/goup)
 
-GoUp überwacht Dienste und benachrichtigt bei Statuswechseln. Es läuft als einzelner Prozess, braucht keine Datenbank-Server und ist in wenigen Minuten betriebsbereit.
+GoUp monitors services, records their status over time, and sends notifications when a monitor changes state. It is designed for operators who want a lightweight monitoring stack they can run and understand without also maintaining a database cluster, message bus, or large frontend application.
 
 ---
 
-## Features
+## What GoUp is
 
-| Bereich | Details |
+GoUp combines a control plane, monitor scheduler, web UI, and persistence layer into one deployable service.
+
+It is a good fit if you want:
+
+- a self-hosted uptime monitor for small to medium environments
+- tenant separation for teams, customers, or environments
+- server-side rendered UI instead of a SPA-heavy stack
+- SQLite-based storage that is easy to back up
+- local users or OIDC per tenant
+
+---
+
+## Key capabilities
+
+| Area | Details |
 |---|---|
-| **Monitor-Typen** | HTTPS, TCP, ICMP (Ping), SMTP, IMAP, DNS, UDP, WHOIS |
-| **TLS** | Zertifikatsauswertung inkl. Restlaufzeit |
-| **Benachrichtigungen** | E-Mail (SMTP) und Matrix bei Statuswechseln |
-| **Auth** | Lokal (Username/Passwort), OIDC pro Tenant, oder deaktiviert |
-| **Multi-Tenant** | Beliebig viele isolierte Tenants, je eigene DB und Auth-Provider |
-| **Admin-UI** | Tenants, Provider, Benutzer, SMTP, Audit-Log |
-| **Dashboard-Zeitformat** | „Last updated“ clientseitig als kompakte Dauer (z. B. `10 sec.`, `1 min. 25 sec.`, `1 h 45 min.`, `1 d 14 h 45 min.`), sprachabhängig nach Browser-Locale |
-| **One-shot Check (Admin)** | Klickbarer Zyklus-Kreis neben dem Status stößt einen einmaligen Sofort-Check an; regulärer Intervall bleibt unverändert |
-| **Control-Plane** | Eigener Admin-Zugang mit Username/Passwort + TOTP |
-| **Deployment** | Multi-Arch Docker Image (`amd64` + `arm64`) |
+| Monitor types | HTTPS, HTTP, TCP, ICMP (ping), SMTP, IMAP, DNS, UDP, WHOIS |
+| TLS inspection | Certificate validity, expiry date, remaining lifetime |
+| Notifications | Email via SMTP and Matrix |
+| Authentication | Separate control-plane admin login, plus tenant-level local auth and OIDC |
+| Multi-tenancy | Isolated tenants with their own monitor data and auth configuration |
+| Admin UI | Manage tenants, auth providers, users, SMTP settings, remote nodes, and security settings |
+| Remote execution | Run checks from remote nodes in other networks using outbound-only HTTPS |
+| Networking | IPv4, IPv6, and dual-stack support for selected monitor types |
+| Operations | Single main process, SQLite, Docker image for `amd64` and `arm64` |
 
 ---
 
-## Schnellstart
+## Architecture at a glance
 
-### Voraussetzungen
+GoUp uses two layers of data and access control:
 
-- Docker und Docker Compose
+- **Control plane**: global admin area, tenant registry, auth providers, admin account, shared settings, and operational metadata
+- **Tenant scope**: per-tenant monitor definitions, results, notification events, and user-facing dashboard data
 
-### 1. .env anlegen
+This keeps deployment simple while still allowing tenant isolation.
+
+### Remote nodes
+
+GoUp can run checks through a remote node agent when the control plane cannot directly reach the target network.
+
+Typical use cases:
+
+- monitoring services inside private LANs or VPN-only networks
+- checking internal DNS, APIs, or mail services from the network where they actually live
+- separating the monitoring control plane from execution points in other sites or customer environments
+
+The remote node model is intentionally simple:
+
+- the remote node connects outbound to the GoUp control plane over HTTPS
+- bootstrap uses a node ID plus a one-time bootstrap key
+- the agent then works with short-lived access tokens that rotate regularly
+- assigned checks are executed on the remote node and reported back to the control plane
+- results flow through the same result, state, incident, and notification pipeline as local checks
+
+From an operator perspective, the flow is:
+
+1. Create a remote node in the tenant admin UI
+2. Start the agent with the provided node ID and bootstrap key
+3. Assign selected monitors to that remote node in the monitor configuration
+4. Review status and heartbeat information in the UI
+
+Important operational notes:
+
+- remote nodes require outbound HTTPS to the GoUp instance, not inbound access from the control plane
+- for ICMP checks, the remote node container still needs `NET_RAW`
+- the container image can run both the main server and the agent; use `GOUP_MODE=remote-node` for agent mode
+
+For deployment details and the agent-specific environment variables, see [remote-node/README.md](remote-node/README.md).
+
+---
+
+## Quick start
+
+### Prerequisites
+
+- Docker
+- Docker Compose
+
+### 1. Create an environment file
 
 ```bash
 cp .env.example .env
 ```
 
-Minimale `.env` für den ersten Start:
+Minimal configuration for local startup:
 
 ```dotenv
 GOUP_ADDR=:8080
@@ -48,95 +106,60 @@ GOUP_BASE_URL=http://localhost:8080
 GOUP_DATA_DIR=/data
 GOUP_LOG_LEVEL=info
 ```
-### 2. Benutzer und Verzeichnis vorbereiten
 
-Der Container-Prozess läuft als **UID 100 / GID 101** (User `goup`, Gruppe `goup`).
+### 2. Review the Docker volume mapping
+
+The default [docker-compose.yml](docker-compose.yml) mounts `./data` into the container at `/data`.
+
+If you use a bind mount on Linux, ensure the target directory is writable by the container user (`UID 100`, `GID 101`). Example:
 
 ```bash
-# Gruppe und User anlegen (IDs müssen exakt passen)
-sudo groupadd --gid 101 goup
-sudo useradd --uid 100 --gid 101 --no-create-home --shell /sbin/nologin --system goup
-
-# Datenverzeichnis anlegen und Besitz setzen
-sudo mkdir -p [mountpfad]
-sudo chown -R 100:101 [mountpfad]
+sudo mkdir -p ./data
+sudo chown -R 100:101 ./data
 ```
 
-> Falls GID 101 auf dem Host bereits vergeben ist, reicht `sudo chown -R 100:101 [mountpfad]` —
-> Docker prüft nur die numerischen IDs, nicht die Namen.
-
-### 3. docker-compose.yml anpassen
-
-```yaml
-volumes:
-  - [mountpfad]:/data
-```
-
-### 4. Starten
+### 3. Start GoUp
 
 ```bash
 docker compose up -d
 ```
 
-### 5. Admin-Setup abschließen
+### 4. Complete the initial admin setup
 
-Beim ersten Start ist kein Admin-Account vorhanden. Rufe die Setup-Seite auf:
+On first start, no control-plane admin account exists. Open:
 
-```
+```text
 http://localhost:8080/admin/setup
 ```
 
-Dort legst du Benutzername und Passwort für den Control-Plane-Admin an.
-Optional kann direkt ein TOTP-Authenticator (z. B. Aegis, 1Password) eingerichtet werden.
+Create the admin username and password there. You can also enroll a TOTP authenticator during setup.
 
-### 6. Tenant anlegen
+### 5. Create your first tenant
 
-Melde dich unter `/admin/access` an, dann:
+After signing in at `/admin/access`:
 
-1. **Admin → Tenants → Neuer Tenant** — Slug wählen (z. B. `prod`)
-2. Optional: **Providers** — OIDC oder lokale Benutzer einrichten
-3. Dashboard aufrufen: `http://localhost:8080/prod/`
+1. Open **Admin → Tenants**
+2. Create a tenant slug such as `prod`
+3. Optionally add auth providers or local tenant users
+4. Open the tenant dashboard at `http://localhost:8080/prod/`
 
-> **Hinweis:** Der Tenant-Slug bestimmt die URL. Ein Tenant namens `prod` ist unter `/prod/` erreichbar.
-> Es gibt keinen erzwungenen `default`-Tenant — alle aktiven Tenants werden automatisch erkannt.
-> Nach dem Anlegen eines neuen Tenants ist ein **Neustart des Containers** nötig, damit der Monitor-Runner
-> für diesen Tenant startet.
+Important notes:
 
-### 7. Monitore hinzufügen
+- The tenant slug becomes part of the URL.
+- GoUp does not require a built-in `default` tenant.
+- After creating a new tenant, restart the container so the monitor runner for that tenant starts.
 
-Im Dashboard über **„+ Monitor"** lassen sich Dienste anlegen. Alle Checks starten automatisch.
+### 6. Add monitors
 
-### 8. Dashboard: Relative Zeiten & Sofort-Check
+Use **+ Monitor** in the tenant dashboard to create checks. New monitors are scheduled automatically.
 
-GoUp formatiert Zeitangaben im Dashboard für den Browser lokal und kompakt:
+### 7. Verify the service health endpoint
 
-- Letzter Lauf wird als Dauer statt als starre Uhrzeit dargestellt
-- Beispiele: `10 sec.`, `1 min. 25 sec.`, `1 h 45 min.`, `1 d 14 h 45 min.`
-- Ausgabe ist an die Browser-Sprache angepasst (z. B. de/en/fr/es)
-
-Zusätzlich zeigt jeder Monitor links neben dem Status einen kleinen Zyklus-Kreis:
-
-- Der Kreis rotiert rund um den erwarteten Prüfzeitpunkt (Intervall-basiert)
-- **Admin-Hinweis:** Für Benutzer mit Admin-Rechten ist der Kreis klickbar
-- Klick auf den Kreis startet genau **einen** Sofort-Check
-- Danach greift automatisch wieder der normale Intervall (kein dauerhafter Moduswechsel)
-- Während der Ausführung wird ein laufender Check visuell angezeigt
-
-Hinweis zur Berechtigung:
-
-- In Tenants mit aktivierter Authentifizierung können nur Admins den Sofort-Check auslösen
-- Ohne Admin-Rechte bleibt der Kreis rein informativ
-
-### Healthcheck
-
-```
+```text
 http://localhost:8080/healthz
 ```
 
----
-
-
-### Image aktualisieren
+### Updating an existing installation
 
 ```bash
 docker compose pull
@@ -145,209 +168,262 @@ docker compose up -d
 
 ---
 
-## Konfigurationsreferenz
+## First-run workflow
 
-Erste Einstellungen erfolgen über Umgebungsvariablen (`.env`-Datei oder direkt im Compose-File).
+If you are evaluating GoUp for the first time, the usual sequence is:
 
-### Pflicht / Basis
-
-| Variable | Standard | Beschreibung |
-|---|---|---|
-| `GOUP_ADDR` | `:8080` | Bind-Adresse |
-| `GOUP_BASE_URL` | `http://localhost:8080` | Externe Basis-URL (wichtig für CSRF, OIDC-Callback, Links in E-Mails) |
-| `GOUP_DATA_DIR` | `/data` | Datenverzeichnis für alle SQLite-Dateien |
-
-### Sicherheit
-
-| Variable | Beschreibung |
-|---|---|
-| `GOUP_SESSION_KEY` | HMAC-Schlüssel für Session-Cookies (min. 16 Zeichen). Wenn leer, wird automatisch ein Schlüssel generiert und in der DB persistiert. |
-| `GOUP_SSO_SECRET_KEY` | Verschlüsselungsschlüssel für OIDC-Client-Secrets und TOTP-Secrets in der DB. Fällt auf `GOUP_SESSION_KEY` zurück wenn leer. |
-
-> **Produktivbetrieb:** Beide Werte explizit setzen und sicher aufbewahren. Ein Verlust des Schlüssels
-> macht gespeicherte OIDC-Secrets und TOTP-Konfigurationen unbrauchbar.
-
-### Optional
-
-| Variable | Standard | Beschreibung |
-|---|---|---|
-| `GOUP_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
+1. Start the service and create the control-plane admin account
+2. Create one tenant per environment, team, or customer
+3. Configure tenant access with local users and/or OIDC
+4. Add monitors and notification settings
+5. Confirm the first successful check results in the dashboard
 
 ---
 
-## Auth
+## Configuration reference
 
-Auth ist in GoUp **per Tenant** konfiguriert, nicht global. Ob ein Tenant eine Anmeldung möglich ist, hängt davon ab, ob für ihn Provider angelegt sind:
+Configuration is provided through environment variables, typically via `.env` and Docker Compose.
 
-| Zustand | Verhalten |
+### Core settings
+
+| Variable | Default | Description |
+|---|---|---|
+| `GOUP_ADDR` | `:8080` | Bind address for the HTTP server |
+| `GOUP_BASE_URL` | `http://localhost:8080` | External base URL used for CSRF validation, OIDC callbacks, and generated links |
+| `GOUP_DATA_DIR` | `/data` | Directory containing all SQLite database files |
+| `GOUP_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+
+### Security-related settings
+
+| Variable | Description |
 |---|---|
-| Tenant hat **keine** Provider | kein Zugang |
-| Tenant hat **lokale Benutzer** | Login mit Username/Passwort über `/{tenantSlug}` |
-| Tenant hat **OIDC-Provider** | Login über den konfigurierten OIDC-Provider |
-| Tenant hat **beides** | Login-Seite zeigt beide Optionen an |
+| `GOUP_SESSION_KEY` | HMAC key for session cookies. If left empty, GoUp generates one automatically and persists it in the control-plane database. Use an explicit value in production. |
+| `GOUP_SSO_SECRET_KEY` | Encryption key for OIDC client secrets and TOTP secrets. If empty, GoUp falls back to `GOUP_SESSION_KEY`. |
 
-Provider werden im Admin-Bereich unter **Tenants → Provider** verwaltet. Lokale Benutzer können unter **Tenants → Benutzer** angelegt werden.
+Production recommendation:
 
-### Control-Plane Admin (getrennt von Tenant-Auth)
+- Set both keys explicitly
+- Store them securely
+- Treat key loss as credential loss for encrypted secrets stored in the database
 
-Der Admin-Bereich (`/admin/*`) hat einen **eigenen** Login, unabhängig von Tenant-Benutzern:
-
-- Einrichtung beim ersten Start unter `/admin/setup`
-- Login unter `/admin/access` mit Username + Passwort (+ optionalem TOTP)
-- TOTP-Verwaltung unter `/admin/security`
-
-## OCID SSO via Authentik
-
-- Issuer URL = OpenID-Konfigurations-Aussteller
-- Authentik Redirect URI = strict http(s)://domain.tld//{tenantSlug}/auth/callback
 ---
 
-## Monitor-Typen & Zielformate
+## Authentication model
 
-| Typ | Zielformat | Beispiel |
+GoUp separates **control-plane administration** from **tenant access**.
+
+### Control-plane admin
+
+The admin area under `/admin/*` has its own login independent of tenant users.
+
+- Initial setup: `/admin/setup`
+- Login: `/admin/access`
+- TOTP management: `/admin/security`
+
+### Tenant authentication
+
+Authentication is configured per tenant.
+
+| Tenant state | Result |
+|---|---|
+| No auth providers or tenant users configured | No tenant login is available |
+| Local users configured | Sign in with username and password |
+| OIDC provider configured | Sign in via the configured OIDC provider |
+| Both configured | The tenant login page offers both options |
+
+Auth providers are managed in the admin UI under **Tenants → Providers**. Local users are managed under **Tenants → Users**.
+
+### OIDC / Authentik note
+
+For an OIDC provider such as Authentik:
+
+- **Issuer URL** must match the OpenID Connect issuer
+- **Redirect URI** must point to `https://your-domain/{tenantSlug}/auth/callback`
+
+---
+
+## Monitor types and targets
+
+| Type | Expected target format | Example |
 |---|---|---|
 | `https` | URL | `https://example.com/health` |
 | `http` | URL | `http://internal-service:8080/` |
 | `tcp` | `host:port` | `db.internal:5432` |
-| `icmp` | Hostname oder IP | `192.168.1.1` |
+| `icmp` | Hostname or IP address | `192.168.1.1` |
 | `smtp` | `host:port` | `mail.example.com:587` |
 | `imap` | `host:port` | `mail.example.com:993` |
 | `dns` | Hostname | `example.com` |
 | `udp` | `host:port` | `ntp.example.com:123` |
-| `whois` | Domain | `example.com` |
+| `whois` | Domain name | `example.com` |
 
-SMTP und IMAP unterstützen `tls` und `starttls`. Bei `https` wird das TLS-Zertifikat automatisch ausgewertet (Restlaufzeit, Ablaufdatum).
+Additional behavior:
 
-### IPv6 / Dual-Stack Unterstützung
+- HTTPS monitors extract TLS certificate metadata automatically
+- SMTP and IMAP support both direct TLS and STARTTLS
+- Existing legacy URL-style HTTPS monitor entries remain supported
 
-- Für `https`, `tcp`, `icmp` und `udp` kann bei **Hostname** die IP-Familie gewählt werden: `IPv4`, `IPv6` oder `Dual Stack`.
-- Bei direkter IP (IPv4/IPv6) ist keine Familienauswahl nötig.
-- IPv6 kann in den Eingabefeldern ohne eckige Klammern eingegeben werden; GoUp formatiert intern korrekt.
-- Bei `Dual Stack` werden beide Familien aktiv geprüft (IPv4 + IPv6).
+### IPv4, IPv6, and dual-stack
 
-### HTTPS Eingabe (UI)
+For `https`, `tcp`, `icmp`, and `udp`, the UI can select the IP family when a hostname is used:
 
-Für HTTPS/HTTP gibt es im Dialog getrennte Felder:
+- `IPv4`
+- `IPv6`
+- `Dual Stack`
 
-- `IP / Hostname`
-- `Port` (optional)
-- `Pfad / Query` (optional)
+When the target is already a literal IP address, no family selection is required.
 
-Wenn kein Port gesetzt ist, gelten die Standards:
+### HTTP and HTTPS input model
 
-- HTTPS → `443`
-- HTTP → `80`
+The UI uses separate fields for:
 
-Bestehende Monitore bleiben kompatibel (legacy URL-Einträge werden weiter unterstützt).
+- host or IP
+- port
+- path and query
 
-### UDP Modi (neu)
+If no port is specified, GoUp uses:
 
-UDP-Monitore unterstützen jetzt auswählbare Probe-Typen:
+- `443` for HTTPS
+- `80` for HTTP
 
-- `DNS Erreichbarkeit` (aktive DNS-Query, gültige Antwort erforderlich)
-- `NTP Check` (NTP-Request, gültige Antwort erforderlich)
+### UDP probe modes
 
-Standardport-Vorschläge im UI:
+Current UDP monitors support the following active probe types in the UI:
 
-- DNS → `53`
-- NTP → `123`
+- DNS reachability
+- NTP check
 
-Hinweis: Der WireGuard-Modus ist aktuell **nicht mehr im Create/Edit-UI auswählbar**.
-Bestehende Legacy-Monitore bleiben backend-seitig kompatibel.
+Suggested default ports:
 
-Für neue UDP-Monitore stehen derzeit DNS und NTP im UI zur Verfügung.
+- DNS: `53`
+- NTP: `123`
+
+Legacy UDP monitor modes remain backend-compatible, but only the current supported modes are exposed in the create/edit UI.
 
 ---
 
-## Benachrichtigungen
+## Dashboard behavior
 
-### E-Mail
+The dashboard is meant to be readable without a heavy client-side app.
 
-Konfiguration im Admin-Bereich unter **Settings → SMTP**. Empfänger sind automatisch alle Tenant-Benutzer
-mit aktivierten E-Mail-Benachrichtigungen. Zusätzliche feste Empfänger über `GOUP_NOTIFY_EMAIL_TO`.
+Notable UI behavior:
+
+- “Last updated” timestamps are rendered client-side as compact relative durations such as `10 sec.`, `1 min. 25 sec.`, or `1 h 45 min.`
+- Relative time labels adapt to the browser locale
+- Each monitor shows a cycle indicator for the expected next check time
+
+### One-shot checks
+
+Admins can trigger an immediate one-off monitor run from the dashboard.
+
+- The cycle icon next to the status becomes clickable for admins
+- Clicking it triggers exactly one immediate check
+- The normal interval schedule remains unchanged afterward
+- Running checks are shown visually in the UI
+
+Permission behavior:
+
+- In tenants with authentication enabled, only admins can trigger one-shot checks
+- For non-admin users, the indicator remains informational only
+
+---
+
+## Notifications
+
+### Email
+
+Email delivery is configured in the admin UI under **Settings → SMTP**.
+
+GoUp sends notifications to tenant users who have email notifications enabled.
 
 ### Matrix
 
-Jeder Benutzer kann in seinen Profileinstellungen (`/{tenantSlug}/settings/profile`) einen
-Matrix-Homeserver, Room-ID und Access-Token hinterlegen.
+Each user can configure Matrix settings in their profile at `/{tenantSlug}/settings/profile`, including:
+
+- homeserver URL
+- room ID
+- access token
 
 ---
 
-## Betrieb hinter einem Reverse Proxy
+## Running behind a reverse proxy
 
-GoUp prüft bei schreibenden Anfragen `Origin` / `Referer` gegen `GOUP_BASE_URL` (CSRF-Schutz).
+GoUp validates `Origin` and `Referer` on state-changing requests against `GOUP_BASE_URL`.
 
-**Wichtig:**
-- `GOUP_BASE_URL` auf die **externe** URL setzen (inkl. Protokoll), z. B. `https://monitor.example.com`
-- Der Proxy muss den `Host`-Header korrekt weiterleiten
-- Für HTTPS-Betrieb werden `Secure`-Cookies und HSTS automatisch aktiviert
+That means:
 
-### Nginx-Beispiel
+- `GOUP_BASE_URL` must be set to the public external URL
+- the reverse proxy must forward the correct `Host` header
+- HTTPS deployments automatically enable secure cookies and HSTS behavior
+
+Minimal Nginx example:
 
 ```nginx
 location / {
-    proxy_pass http://127.0.0.1:8080;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
+  proxy_pass http://127.0.0.1:8080;
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
 }
 ```
 
 ---
 
-## ICMP / Ping
+## ICMP / ping requirements
 
-Für ICMP-Checks benötigt der Container die Capability `NET_RAW`. Diese ist in beiden Compose-Dateien bereits gesetzt.
+ICMP checks require the container capability `NET_RAW`.
+
+The provided Compose files already include that capability.
 
 ---
 
-## Datenhaltung & Backups
+## Data storage and backups
 
-GoUp nutzt zwei SQLite-Datenbanken:
+GoUp stores data in SQLite files inside `GOUP_DATA_DIR`.
 
-| Datei | Inhalt |
+| File | Purpose |
 |---|---|
-| `controlplane.db` | Tenants, Provider, Benutzer, Admin-Account, SMTP-Config, Audit-Log |
-| `<tenant>.db` (je Tenant) | Monitore, Ergebnisse, Notification-Events |
+| `controlplane.db` | Tenants, auth providers, users, admin account, SMTP settings, audit and operational metadata |
+| `<tenant>.db` | Tenant-specific monitors, results, and notification events |
 
-**Backup-Empfehlung:**
-- Alle `.db`-Dateien im Datenverzeichnis sichern
-- Ggf. auch `-wal` und `-shm`-Dateien einschließen (bei laufendem Betrieb)
-- Restore in einer Staging-Umgebung testen
+Backup recommendations:
+
+- back up all `.db` files in the data directory
+- include `-wal` and `-shm` files if the service is live during backup
+- test restore procedures in a staging environment
 
 ---
 
-## Projektstruktur
+## Repository structure
 
-```
-cmd/goup/               Einstiegspunkt
-internal/
-  app/                  Bootstrapping, Wiring
-  config/               Env-Konfiguration
-  auth/                 Sessions, OIDC, Dynamic OIDC, TOTP
-  httpserver/           HTTP-Handler, Middleware, Admin-UI
-  monitor/              Checker-Implementierungen, Runner
-  notify/email/         E-Mail-Notifier
-  notify/matrix/        Matrix-Client und Notifier
-  store/sqlite/         Control-Plane-Store, Tenant-Store, Migrations
-web/
-  templates/            Server-Side Rendered HTML Templates
-  static/               CSS, JavaScript
-docs/
-  architecture.md       Architektur-Dokumentation
+```text
+cmd/goup/               Main server entrypoint
+cmd/remote-node/        Remote node agent entrypoint
+internal/app/           Application bootstrap and wiring
+internal/config/        Environment-based configuration
+internal/auth/          Sessions, OIDC, dynamic OIDC, TOTP
+internal/httpserver/    Handlers, middleware, admin UI
+internal/monitor/       Monitor models, checkers, scheduler, runner
+internal/notify/email/  Email notification delivery
+internal/notify/matrix/ Matrix notification delivery
+internal/remotenode/    Remote node runtime logic
+internal/store/sqlite/  Control-plane and tenant persistence
+web/templates/          Server-rendered HTML templates
+web/static/             Frontend assets
+docs/                   Architecture notes and project documentation
 ```
 
 ---
 
 ## Roadmap
 
-- [ ] Public Status Page (read-only, ohne Login)
-- [ ] Webhook-Benachrichtigungen
-- [ ] Feinere Rollen und Berechtigungen
-- [ ] Export / Import von Monitor-Konfigurationen
-- [ ] Weitere Monitor-Typen
+- [ ] Public status page
+- [ ] Webhook notifications
+- [ ] Finer-grained roles and permissions
+
+- [ ] Additional monitor types
 
 ---
 
-## Lizenz
+## License
 
-MIT — self-hosted Betrieb erwünscht. Pull Requests willkommen.
+MIT. Self-hosting is encouraged and pull requests are welcome.
+
