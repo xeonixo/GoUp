@@ -1791,7 +1791,6 @@
     cancelButton?.addEventListener('click', () => dialog?.close());
     monitorCloseButton?.addEventListener('click', () => dialog?.close());
     groupCancelButton?.addEventListener('click', () => groupDialog?.close());
-    bindDialogBackdropClose(dialog);
     bindDialogBackdropClose(groupDialog);
     bindDialogBackdropClose(trendDetailModal);
     groupResetButton?.addEventListener('click', () => {
