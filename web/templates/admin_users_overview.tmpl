@@ -1,6 +1,6 @@
 {{define "content"}}
-<div class="admin-section">
-  <nav class="admin-nav card">
+<div class="admin-section admin-console">
+  <nav class="admin-nav admin-console-nav card" aria-label="{{index $.Translations "layout.control_plane"}}">
     <a href="/admin/" class="admin-nav-link">{{index $.Translations "admin.nav.general"}}</a>
     <a href="/admin/tenants" class="admin-nav-link">{{index $.Translations "admin.nav.tenants"}}</a>
     <a href="/admin/providers" class="admin-nav-link">{{index $.Translations "admin.nav.providers"}}</a>
@@ -11,13 +11,13 @@
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
 
-  <div class="admin-header">
+  <div class="admin-header admin-page-header">
     <div>
       <h1>{{index $.Translations "admin.nav.users"}}</h1>
     </div>
   </div>
 
-  <div class="card table-card">
+  <div class="card table-card admin-table-card">
     <table class="admin-table">
       <thead>
         <tr>
@@ -35,7 +35,7 @@
         {{if .AdminUserRows}}
         {{range .AdminUserRows}}
         <tr>
-          <td>{{.TenantName}}</td>
+          <td><strong>{{.TenantName}}</strong></td>
           <td>{{if .LoginName}}{{.LoginName}}{{else}}—{{end}}</td>
           <td>
             {{if .HasLocalCredentials}}<span class="status-badge">LOCAL</span>{{end}}
@@ -53,7 +53,7 @@
         {{end}}
         {{else}}
         <tr>
-          <td colspan="8" class="muted">{{index $.Translations "admin.users.no_users"}}</td>
+          <td colspan="8" class="muted admin-empty-row">{{index $.Translations "admin.users.no_users"}}</td>
         </tr>
         {{end}}
       </tbody>

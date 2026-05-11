@@ -1,10 +1,23 @@
 {{define "content"}}
-<section class="stack">
-  <article class="card stack">
-    <div>
-      <h1>{{index $.Translations "admin.security.title"}}</h1>
+<section class="admin-section admin-console">
+  <nav class="admin-nav admin-console-nav card" aria-label="{{index $.Translations "layout.control_plane"}}">
+    <a href="/admin/" class="admin-nav-link">{{index $.Translations "admin.nav.general"}}</a>
+    <a href="/admin/tenants" class="admin-nav-link">{{index $.Translations "admin.nav.tenants"}}</a>
+    <a href="/admin/providers" class="admin-nav-link">{{index $.Translations "admin.nav.providers"}}</a>
+    <a href="/admin/users" class="admin-nav-link">{{index $.Translations "admin.nav.users"}}</a>
+    <a href="/admin/remote-nodes" class="admin-nav-link">{{index $.Translations "admin.nav.remote_nodes"}}</a>
+  </nav>
+
+  <article class="card stack admin-panel">
+    <div class="admin-header admin-page-header">
+      <div>
+        <h1>{{index $.Translations "admin.security.title"}}</h1>
+      </div>
+      <span class="status-badge {{if .TOTPEnabled}}status-badge-success{{else}}status-badge-muted{{end}}">{{index $.Translations "admin.security.totp_status_label"}}: {{if .TOTPEnabled}}{{index $.Translations "admin.security.enabled"}}{{else}}{{index $.Translations "admin.security.disabled"}}{{end}}</span>
+    </div>
+
+    <div class="admin-security-meta">
       <p class="muted">{{index $.Translations "admin.security.username_label"}}: <strong>{{.AdminUsername}}</strong></p>
-      <p class="muted">{{index $.Translations "admin.security.totp_status_label"}}: {{if .TOTPEnabled}}{{index $.Translations "admin.security.enabled"}}{{else}}{{index $.Translations "admin.security.disabled"}}{{end}}</p>
     </div>
 
     {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}

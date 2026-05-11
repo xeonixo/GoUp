@@ -13,3 +13,4 @@ tmp_*
 .vscode/
 codeql-custom-queries-go/
 CLAUDE.md
+AGENDS.md

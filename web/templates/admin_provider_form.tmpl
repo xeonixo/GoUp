@@ -1,6 +1,6 @@
 {{define "content"}}
-<div class="admin-section">
-  <nav class="admin-nav card">
+<div class="admin-section admin-console">
+  <nav class="admin-nav admin-console-nav card" aria-label="{{index $.Translations "layout.control_plane"}}">
     <a href="/admin/" class="admin-nav-link">{{index $.Translations "admin.nav.general"}}</a>
     <a href="/admin/tenants" class="admin-nav-link">{{index $.Translations "admin.nav.tenants"}}</a>
     <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link is-active">{{index $.Translations "admin.nav.providers"}}</a>
@@ -8,12 +8,16 @@
     <a href="/admin/tenants/{{.AdminTenant.ID}}/remote-nodes" class="admin-nav-link">{{index $.Translations "admin.nav.remote_nodes"}}</a>
   </nav>
 
-  <h1>{{if .IsEdit}}{{index $.Translations "admin.provider_form.title_edit"}}{{else}}{{index $.Translations "admin.provider_form.title_new"}}{{end}}</h1>
+  <div class="admin-header admin-page-header">
+    <div>
+      <h1>{{if .IsEdit}}{{index $.Translations "admin.provider_form.title_edit"}}{{else}}{{index $.Translations "admin.provider_form.title_new"}}{{end}}</h1>
+    </div>
+  </div>
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
   
-  <form method="POST" action="{{.FormAction}}" class="admin-form card stack">
+  <form method="POST" action="{{.FormAction}}" class="admin-form admin-panel card stack">
     <div class="form-group">
       <label for="tenant_id">{{index $.Translations "admin.tenants.id"}} *</label>
       <input type="number" id="tenant_id" name="tenant_id" required readonly value="{{.AdminTenant.ID}}">

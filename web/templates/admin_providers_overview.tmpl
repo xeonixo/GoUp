@@ -1,6 +1,6 @@
 {{define "content"}}
-<div class="admin-section">
-  <nav class="admin-nav card">
+<div class="admin-section admin-console">
+  <nav class="admin-nav admin-console-nav card" aria-label="{{index $.Translations "layout.control_plane"}}">
     <a href="/admin/" class="admin-nav-link">{{index $.Translations "admin.nav.general"}}</a>
     <a href="/admin/tenants" class="admin-nav-link">{{index $.Translations "admin.nav.tenants"}}</a>
     <a href="/admin/providers" class="admin-nav-link is-active">{{index $.Translations "admin.nav.providers"}}</a>
@@ -11,13 +11,13 @@
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
 
-  <div class="admin-header">
+  <div class="admin-header admin-page-header">
     <div>
       <h1>{{index $.Translations "admin.providers.title"}}</h1>
     </div>
   </div>
 
-  <div class="card table-card">
+  <div class="card table-card admin-table-card">
     <table class="admin-table">
       <thead>
         <tr>
@@ -33,8 +33,8 @@
         {{if .AdminProviderRows}}
         {{range .AdminProviderRows}}
         <tr>
-          <td>{{.TenantName}}</td>
-          <td>{{.ProviderKey}}</td>
+          <td><strong>{{.TenantName}}</strong></td>
+          <td><code>{{.ProviderKey}}</code></td>
           <td><span class="status-badge">{{.Kind}}</span></td>
           <td>{{.DisplayName}}</td>
           <td>{{if .Enabled}}<span class="status-badge status-badge-success">{{index $.Translations "common.active"}}</span>{{else}}<span class="status-badge status-badge-muted">{{index $.Translations "common.inactive"}}</span>{{end}}</td>
@@ -45,7 +45,7 @@
         {{end}}
         {{else}}
         <tr>
-          <td colspan="6" class="muted">{{index $.Translations "admin.providers.no_providers"}}</td>
+          <td colspan="6" class="muted admin-empty-row">{{index $.Translations "admin.providers.no_providers"}}</td>
         </tr>
         {{end}}
       </tbody>

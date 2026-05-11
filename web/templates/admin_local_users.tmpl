@@ -1,6 +1,6 @@
 {{define "content"}}
-<div class="admin-section">
-  <nav class="admin-nav card">
+<div class="admin-section admin-console">
+  <nav class="admin-nav admin-console-nav card" aria-label="{{index $.Translations "layout.control_plane"}}">
     <a href="/admin/" class="admin-nav-link">{{index $.Translations "admin.nav.general"}}</a>
     <a href="/admin/tenants" class="admin-nav-link">{{index $.Translations "admin.nav.tenants"}}</a>
     <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link">{{index $.Translations "admin.nav.providers"}}</a>
@@ -11,7 +11,7 @@
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
 
-  <div class="admin-header">
+  <div class="admin-header admin-page-header">
     <div>
       <h1>{{index $.Translations "admin.nav.users"}} · {{.AdminTenant.Name}}</h1>
     </div>
@@ -21,7 +21,7 @@
     </div>
   </div>
 
-  <div class="card table-card">
+  <div class="card table-card admin-table-card">
   <table class="admin-table">
     <thead>
       <tr>
@@ -60,7 +60,7 @@
       {{end}}
       {{else}}
       <tr>
-        <td colspan="7" class="muted">{{index $.Translations "admin.users.no_users"}}</td>
+        <td colspan="7" class="muted admin-empty-row">{{index $.Translations "admin.users.no_users"}}</td>
       </tr>
       {{end}}
     </tbody>

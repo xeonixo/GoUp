@@ -7,7 +7,7 @@
     <a href="{{.AppBase}}settings/remote-nodes" class="admin-nav-link">{{index $.Translations "settings.nav.remote_nodes"}}</a>
   </nav>
   {{else}}
-  <nav class="admin-nav card">
+  <nav class="admin-nav admin-console-nav card" aria-label="{{index $.Translations "layout.control_plane"}}">
     <a href="/admin/" class="admin-nav-link">{{index $.Translations "admin.nav.general"}}</a>
     <a href="/admin/tenants" class="admin-nav-link">{{index $.Translations "admin.nav.tenants"}}</a>
     <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link">{{index $.Translations "admin.nav.providers"}}</a>
@@ -16,12 +16,16 @@
   </nav>
   {{end}}
 
-  <h1>{{if .IsEdit}}{{index $.Translations "admin.local_user_form.title_edit"}}{{else}}{{index $.Translations "admin.local_user_form.title_new"}}{{end}}</h1>
+  <div class="admin-header admin-page-header">
+    <div>
+      <h1>{{if .IsEdit}}{{index $.Translations "admin.local_user_form.title_edit"}}{{else}}{{index $.Translations "admin.local_user_form.title_new"}}{{end}}</h1>
+    </div>
+  </div>
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
 
-  <form method="POST" action="{{.FormAction}}" class="admin-form card stack{{if .SettingsMode}} settings-panel{{end}}">
+  <form method="POST" action="{{.FormAction}}" class="admin-form admin-panel card stack{{if .SettingsMode}} settings-panel{{end}}">
     <input type="hidden" name="user_id" value="{{if .IsEdit}}{{.AdminLocalUser.UserID}}{{end}}">
 
     <div class="form-group">

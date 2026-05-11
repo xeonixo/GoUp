@@ -1,6 +1,6 @@
 {{define "content"}}
-<div class="admin-section">
-  <nav class="admin-nav card">
+<div class="admin-section admin-console">
+  <nav class="admin-nav admin-console-nav card" aria-label="{{index $.Translations "layout.control_plane"}}">
     <a href="/admin/" class="admin-nav-link">{{index $.Translations "admin.nav.general"}}</a>
     <a href="/admin/tenants" class="admin-nav-link is-active">{{index $.Translations "admin.nav.tenants"}}</a>
     <a href="/admin/providers" class="admin-nav-link">{{index $.Translations "admin.nav.providers"}}</a>
@@ -11,14 +11,14 @@
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
 
-  <div class="admin-header">
+  <div class="admin-header admin-page-header">
     <div>
       <h1>{{index $.Translations "admin.nav.tenants"}}</h1>
     </div>
     <a href="/admin/tenants/new" class="button">+ {{index $.Translations "admin.tenants.new_tenant"}}</a>
   </div>
 
-  <div class="card table-card">
+  <div class="card table-card admin-table-card">
   <table class="admin-table">
     <thead>
       <tr>
@@ -35,8 +35,8 @@
       {{range .AdminTenants}}
       <tr>
         <td>{{.ID}}</td>
-        <td>{{.Slug}}</td>
-        <td>{{.Name}}</td>
+        <td><code>{{.Slug}}</code></td>
+        <td><strong>{{.Name}}</strong></td>
         <td class="break-all">{{.DBPath}}</td>
         <td>
           {{if .Active}}
@@ -63,7 +63,7 @@
       {{end}}
       {{else}}
       <tr>
-        <td colspan="6" class="muted">{{index $.Translations "admin.tenants.no_tenants"}}</td>
+        <td colspan="6" class="muted admin-empty-row">{{index $.Translations "admin.tenants.no_tenants"}}</td>
       </tr>
       {{end}}
     </tbody>

@@ -2,3 +2,6 @@
 .gitignore
 .env
 data
+AGENDS.md
+CLAUDE.md
+GEMINI.md
