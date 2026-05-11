@@ -761,6 +761,8 @@ func (s *Server) handleAdminTenantSave(w http.ResponseWriter, r *http.Request) {
 	slug := strings.ToLower(strings.TrimSpace(r.FormValue("slug")))
 	name := strings.TrimSpace(r.FormValue("name"))
 	active := r.FormValue("active") == "1"
+	stateEventRetentionDays := parseTenantRetentionDays(r.FormValue("state_event_retention_days"))
+	notificationEventRetentionDays := parseTenantRetentionDays(r.FormValue("notification_event_retention_days"))
 
 	if name == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
@@ -775,7 +777,7 @@ func (s *Server) handleAdminTenantSave(w http.ResponseWriter, r *http.Request) {
 		dbPath := autoTenantDBPath(s.cfg.DataDir, slug)
 
 		// Create new tenant
-		tenant, err := s.controlStore.CreateTenant(r.Context(), slug, name, dbPath)
+		tenant, err := s.controlStore.CreateTenantWithRetention(r.Context(), slug, name, dbPath, stateEventRetentionDays, notificationEventRetentionDays)
 		if err != nil {
 			s.logger.Error("create tenant failed", "error", err)
 			http.Redirect(w, r, "/admin/tenants/new?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
@@ -803,7 +805,7 @@ func (s *Server) handleAdminTenantSave(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid tenant id", http.StatusBadRequest)
 			return
 		}
-		_, err = s.controlStore.UpdateTenant(r.Context(), tenantID, name, tenant.DBPath, active)
+		_, err = s.controlStore.UpdateTenantWithRetention(r.Context(), tenantID, name, tenant.DBPath, active, stateEventRetentionDays, notificationEventRetentionDays)
 		if err != nil {
 			s.logger.Error("update tenant failed", "error", err)
 			http.Redirect(w, r, "/admin/tenants/"+id+"/edit?error="+url.QueryEscape("Tenant konnte nicht gespeichert werden"), http.StatusSeeOther)
@@ -816,9 +818,17 @@ func (s *Server) handleAdminTenantSave(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		s.writeAudit(r, "tenant.update", "tenant", tenantID, fmt.Sprintf("name=%s active=%t", name, active))
+		s.writeAudit(r, "tenant.update", "tenant", tenantID, fmt.Sprintf("name=%s active=%t state_event_retention_days=%d notification_event_retention_days=%d", name, active, stateEventRetentionDays, notificationEventRetentionDays))
 		http.Redirect(w, r, "/admin/tenants?notice="+url.QueryEscape("Tenant aktualisiert"), http.StatusSeeOther)
 	}
+}
+
+func parseTenantRetentionDays(value string) int {
+	days, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return store.NormalizeEventRetentionDays(0)
+	}
+	return store.NormalizeEventRetentionDays(days)
 }
 
 func autoTenantDBPath(dataDir string, slug string) string {

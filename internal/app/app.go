@@ -418,13 +418,21 @@ func (a *App) runMaintenanceOnce(ctx context.Context) {
 			a.logger.Warn("resolve tenant store for maintenance failed", "tenant", tenant.Slug, "error", err)
 			continue
 		}
-		result, err := tenantStore.RunMaintenance(ctx, now)
+		result, err := tenantStore.RunMaintenance(ctx, now, store.MaintenanceOptions{
+			StateEventRetentionDays:        tenant.StateEventRetentionDays,
+			NotificationEventRetentionDays: tenant.NotificationEventRetentionDays,
+		})
 		if err != nil {
 			a.logger.Error("database maintenance failed", "tenant", tenant.Slug, "error", err)
 			continue
 		}
 
-		if !result.BackfilledHourlyRollups && !result.Optimized && result.DeletedRawResults == 0 && result.DeletedHourlyRollups == 0 {
+		if !result.BackfilledHourlyRollups &&
+			!result.Optimized &&
+			result.DeletedRawResults == 0 &&
+			result.DeletedHourlyRollups == 0 &&
+			result.DeletedStateEvents == 0 &&
+			result.DeletedNotificationEvents == 0 {
 			continue
 		}
 
@@ -434,6 +442,8 @@ func (a *App) runMaintenanceOnce(ctx context.Context) {
 			"hourly_rollups_backfilled", result.BackfilledHourlyRollups,
 			"raw_results_deleted", result.DeletedRawResults,
 			"hourly_rollups_deleted", result.DeletedHourlyRollups,
+			"state_events_deleted", result.DeletedStateEvents,
+			"notification_events_deleted", result.DeletedNotificationEvents,
 			"optimized", result.Optimized,
 		)
 	}

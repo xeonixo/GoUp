@@ -1,0 +1,66 @@
+{{define "content"}}
+<div class="admin-section">
+  <nav class="admin-nav card">
+    <a href="{{$.AppBase}}" class="admin-nav-link">{{index $.Translations "settings.nav.dashboard"}}</a>
+  </nav>
+
+  <div class="admin-header">
+    <div>
+      <h1>{{index $.Translations "dashboard.notification_events.history_title"}}</h1>
+      {{if .NotificationEventHistorySubtitle}}<p class="muted compact">{{.NotificationEventHistorySubtitle}}</p>{{end}}
+    </div>
+  </div>
+
+  <section class="card stack">
+    {{if .Events}}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>{{index $.Translations "dashboard.notification_events.time"}}</th>
+            <th>{{index $.Translations "dashboard.notification_events.monitor"}}</th>
+            <th>{{index $.Translations "dashboard.notification_events.event"}}</th>
+            <th>{{index $.Translations "dashboard.notification_events.endpoint"}}</th>
+            <th>{{index $.Translations "dashboard.notification_events.result"}}</th>
+            <th>{{index $.Translations "dashboard.notification_events.error"}}</th>
+            <th>{{index $.Translations "dashboard.notification_events.delivered"}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Events}}
+          <tr>
+            <td><time class="client-time" datetime="{{.WhenRaw}}" data-format="datetime">{{.When}}</time></td>
+            <td>{{.Monitor}}</td>
+            <td>{{.EventType}}</td>
+            <td title="{{.Endpoint}}"><span class="notification-endpoint-cell">{{.Endpoint}}</span></td>
+            <td title="{{.Result}}"><span class="notification-result-cell">{{.Result}}</span></td>
+            <td class="break-all" title="{{.Error}}"><span class="notification-error-cell">{{.Error}}</span></td>
+            <td>{{if .DeliveredAtRaw}}<time class="client-time" datetime="{{.DeliveredAtRaw}}" data-format="datetime">{{.DeliveredAt}}</time>{{else}}—{{end}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{if gt .Pagination.PageCount 1}}
+    <div class="table-pagination-nav">
+      <div class="table-pagination-summary">{{.NotificationEventHistoryPageLabel}}</div>
+      <div class="table-pagination-actions">
+        {{if .Pagination.HasPrev}}
+        <a class="button button-secondary button-small" href="{{.Pagination.BaseURL}}?page={{.Pagination.PrevPage}}">{{index $.Translations "dashboard.pagination.prev"}}</a>
+        {{else}}
+        <button class="button button-secondary button-small" disabled>{{index $.Translations "dashboard.pagination.prev"}}</button>
+        {{end}}
+        {{if .Pagination.HasNext}}
+        <a class="button button-secondary button-small" href="{{.Pagination.BaseURL}}?page={{.Pagination.NextPage}}">{{index $.Translations "dashboard.pagination.next"}}</a>
+        {{else}}
+        <button class="button button-secondary button-small" disabled>{{index $.Translations "dashboard.pagination.next"}}</button>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
+    {{else}}
+    <p class="muted">{{index $.Translations "dashboard.notification_events.empty"}}</p>
+    {{end}}
+  </section>
+</div>
+{{end}}

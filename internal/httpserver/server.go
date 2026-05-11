@@ -96,77 +96,79 @@ type localLoginAttempt struct {
 }
 
 type pageData struct {
-	Title                      string
-	UILanguage                 string
-	Translations               map[string]string
-	HideTopbar                 bool
-	User                       *auth.UserSession
-	IsAdmin                    bool
-	Stats                      store.DashboardStats
-	Error                      string
-	Notice                     string
-	FormAction                 string
-	BackURL                    string
-	IsEdit                     bool
-	SettingsMode               bool
-	AuthEnabled                bool
-	AuthDisabled               bool
-	OIDCTenantOnly             bool
-	TrendValue                 string
-	TrendLabel                 string
-	TrendRanges                []trendRangeOptionView
-	Monitors                   []monitorView
-	MonitorGroups              []monitorGroupView
-	AvailableGroups            []string
-	RemoteNodes                []remoteNodeView
-	HasRemoteNodes             bool
-	MonitorExecutors           []monitorExecutorOptionView
-	Events                     []notificationEventView
-	StateEvents                []monitorStateEventView
-	AdminTenants               []store.Tenant
-	AdminMonitorCount          int
-	AdminRemoteNodeCount       int
-	AdminTenant                store.Tenant
-	AdminProviders             []store.AuthProvider
-	AdminProviderRows          []adminProviderOverviewRow
-	AdminProvider              store.AuthProvider
-	AdminLocalUsers            []store.LocalUser
-	AdminTenantUsers           []store.TenantUser
-	AdminUserRows              []adminUserOverviewRow
-	AdminLocalUser             store.LocalUser
-	AdminRemoteNodeRows        []adminRemoteNodeOverviewRow
-	AdminWebhookEndpoints      []store.WebhookEndpoint
-	ProfileUser                store.TenantUser
-	ProfileNotify              store.UserNotificationSettings
-	AdminAuditEvents           []store.AuditEvent
-	AuditAction                string
-	AuditActor                 string
-	AuditTargetType            string
-	AuditActions               []string
-	AuditTargetTypes           []string
-	GlobalSMTP                 store.GlobalSMTPSettings
-	ControlPlaneAdmin          bool
-	AutoDBPath                 string
-	TenantSlug                 string
-	TenantName                 string
-	AppBase                    string
-	LoginProviders             []store.AuthProvider
-	HasLocalLogin              bool
-	HasOIDCLogin               bool
-	ResetEnabled               bool
-	ResetToken                 string
-	AdminSetup                 bool
-	AdminUsername              string
-	TOTPRequired               bool
-	TOTPEnabled                bool
-	TOTPSecret                 string
-	TOTPProvisioningURI        string
-	LanguageOptions            []languageOptionView
-	Pagination                 paginationView
-	StateEventHistorySubtitle  string
-	StateEventHistoryPageLabel string
-	ImportRows                 []importPreviewRow
-	Version                    string
+	Title                             string
+	UILanguage                        string
+	Translations                      map[string]string
+	HideTopbar                        bool
+	User                              *auth.UserSession
+	IsAdmin                           bool
+	Stats                             store.DashboardStats
+	Error                             string
+	Notice                            string
+	FormAction                        string
+	BackURL                           string
+	IsEdit                            bool
+	SettingsMode                      bool
+	AuthEnabled                       bool
+	AuthDisabled                      bool
+	OIDCTenantOnly                    bool
+	TrendValue                        string
+	TrendLabel                        string
+	TrendRanges                       []trendRangeOptionView
+	Monitors                          []monitorView
+	MonitorGroups                     []monitorGroupView
+	AvailableGroups                   []string
+	RemoteNodes                       []remoteNodeView
+	HasRemoteNodes                    bool
+	MonitorExecutors                  []monitorExecutorOptionView
+	Events                            []notificationEventView
+	StateEvents                       []monitorStateEventView
+	AdminTenants                      []store.Tenant
+	AdminMonitorCount                 int
+	AdminRemoteNodeCount              int
+	AdminTenant                       store.Tenant
+	AdminProviders                    []store.AuthProvider
+	AdminProviderRows                 []adminProviderOverviewRow
+	AdminProvider                     store.AuthProvider
+	AdminLocalUsers                   []store.LocalUser
+	AdminTenantUsers                  []store.TenantUser
+	AdminUserRows                     []adminUserOverviewRow
+	AdminLocalUser                    store.LocalUser
+	AdminRemoteNodeRows               []adminRemoteNodeOverviewRow
+	AdminWebhookEndpoints             []store.WebhookEndpoint
+	ProfileUser                       store.TenantUser
+	ProfileNotify                     store.UserNotificationSettings
+	AdminAuditEvents                  []store.AuditEvent
+	AuditAction                       string
+	AuditActor                        string
+	AuditTargetType                   string
+	AuditActions                      []string
+	AuditTargetTypes                  []string
+	GlobalSMTP                        store.GlobalSMTPSettings
+	ControlPlaneAdmin                 bool
+	AutoDBPath                        string
+	TenantSlug                        string
+	TenantName                        string
+	AppBase                           string
+	LoginProviders                    []store.AuthProvider
+	HasLocalLogin                     bool
+	HasOIDCLogin                      bool
+	ResetEnabled                      bool
+	ResetToken                        string
+	AdminSetup                        bool
+	AdminUsername                     string
+	TOTPRequired                      bool
+	TOTPEnabled                       bool
+	TOTPSecret                        string
+	TOTPProvisioningURI               string
+	LanguageOptions                   []languageOptionView
+	Pagination                        paginationView
+	StateEventHistorySubtitle         string
+	StateEventHistoryPageLabel        string
+	NotificationEventHistorySubtitle  string
+	NotificationEventHistoryPageLabel string
+	ImportRows                        []importPreviewRow
+	Version                           string
 }
 
 type paginationView struct {
@@ -902,6 +904,7 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/monitors/import/preview", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleMonitorImportPreview))))
 	mux.Handle("/monitors/import/confirm", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleMonitorImportConfirm))))
 	mux.Handle("/state-events", s.requireAuth(http.HandlerFunc(s.handleStateEventsHistory)))
+	mux.Handle("/notification-events", s.requireAuth(http.HandlerFunc(s.handleNotificationEventsHistory)))
 	mux.Handle("/settings/profile", s.requireAuth(http.HandlerFunc(s.handleSettingsProfile)))
 	mux.Handle("/settings/profile/save", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileSave)))
 	mux.Handle("/settings/profile/notifiers/delete", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileNotifierDelete)))
@@ -2742,6 +2745,82 @@ func (s *Server) handleStateEventsHistory(w http.ResponseWriter, r *http.Request
 	s.render(w, "state_events_history", data)
 }
 
+func (s *Server) handleNotificationEventsHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	appStore, err := s.appStore(r)
+	if err != nil {
+		http.Error(w, "unable to resolve tenant", http.StatusInternalServerError)
+		return
+	}
+
+	const pageSize = 50
+	page := 1
+	if p, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("page"))); err == nil && p > 1 {
+		page = p
+	}
+	offset := (page - 1) * pageSize
+
+	total, err := appStore.CountNotificationEvents(r.Context())
+	if err != nil {
+		s.logger.Warn("count notification events failed", "error", err)
+		total = 0
+	}
+
+	events, err := appStore.ListNotificationEventsPaginated(r.Context(), pageSize, offset)
+	if err != nil {
+		s.logger.Warn("load notification events history failed", "error", err)
+		events = nil
+	}
+
+	pageCount := 1
+	if total > 0 {
+		pageCount = int((total + pageSize - 1) / pageSize)
+	}
+	if page > pageCount {
+		page = pageCount
+	}
+
+	baseURL := s.tenantAppBase(r) + "notification-events"
+
+	curUser := s.currentUser(r)
+	lang := defaultUILanguage
+	if curUser != nil {
+		lang = normalizeUILanguage(curUser.PreferredLanguage)
+	}
+	translations := s.translationsForLanguage(lang)
+
+	subtitle := strings.ReplaceAll(translations["dashboard.notification_events.history_subtitle"], "{total}", fmt.Sprintf("%d", total))
+	pageLabel := strings.ReplaceAll(strings.ReplaceAll(translations["dashboard.notification_events.page_of"], "{page}", fmt.Sprintf("%d", page)), "{total}", fmt.Sprintf("%d", pageCount))
+
+	data := pageData{
+		Title:                             "Notification-Events · GoUp",
+		UILanguage:                        lang,
+		Translations:                      translations,
+		AppBase:                           s.tenantAppBase(r),
+		User:                              curUser,
+		IsAdmin:                           curUser == nil || strings.EqualFold(strings.TrimSpace(curUser.Role), "admin"),
+		Events:                            buildNotificationEventViews(events),
+		NotificationEventHistorySubtitle:  subtitle,
+		NotificationEventHistoryPageLabel: pageLabel,
+		Pagination: paginationView{
+			Page:      page,
+			PageCount: pageCount,
+			Total:     total,
+			HasPrev:   page > 1,
+			HasNext:   page < pageCount,
+			PrevPage:  page - 1,
+			NextPage:  page + 1,
+			BaseURL:   baseURL,
+		},
+	}
+	s.render(w, "notification_events_history", data)
+}
+
 func (s *Server) handleUpdateMonitorTarget(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -3558,7 +3637,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 }
 
 func parseTemplates() (map[string]*template.Template, error) {
-	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_providers_overview", "admin_provider_form", "admin_local_users", "admin_users_overview", "admin_local_user_form", "admin_remote_nodes", "admin_remote_nodes_overview", "settings_users", "settings_profile", "settings_webhooks", "settings_providers", "settings_provider_form", "settings_remote_nodes", "admin_access", "admin_setup", "admin_security", "no_tenant", "state_events_history", "monitors_import", "monitors_import_preview"}
+	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_providers_overview", "admin_provider_form", "admin_local_users", "admin_users_overview", "admin_local_user_form", "admin_remote_nodes", "admin_remote_nodes_overview", "settings_users", "settings_profile", "settings_webhooks", "settings_providers", "settings_provider_form", "settings_remote_nodes", "admin_access", "admin_setup", "admin_security", "no_tenant", "state_events_history", "notification_events_history", "monitors_import", "monitors_import_preview"}
 	parsed := make(map[string]*template.Template, len(pages))
 	for _, page := range pages {
 		tmpl, err := template.ParseFS(web.FS, "templates/layout.tmpl", "templates/"+page+".tmpl")

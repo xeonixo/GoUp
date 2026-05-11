@@ -41,6 +41,7 @@
     <div class="metric {{if gt .Stats.OpenIncidentCount 0}}metric-danger{{end}}">{{.Stats.OpenIncidentCount}}</div>
   </article>
 
+  {{if gt .Stats.OpenIncidentCount 0}}
   <article class="attention-panel card">
     <div class="attention-panel-header">
       <h2>{{index $.Translations "dashboard.attention.title"}}</h2>
@@ -62,6 +63,7 @@
       {{end}}
     </div>
   </article>
+  {{end}}
 </section>
 
 {{if .IsAdmin}}
@@ -522,7 +524,7 @@
                   {{end}}
                   <div class="service-title-copy">
                     <h4>{{.Title}}</h4>
-                    <span>{{.StatusInfo}}</span>
+                    {{if ne .StatusLabel "UP"}}<span>{{.StatusInfo}}</span>{{end}}
                   </div>
                 </div>
                 <div class="service-summary-right">
@@ -720,7 +722,7 @@
   <summary class="activity-summary">
     <div>
       <h2>{{index $.Translations "dashboard.state_events.title"}}</h2>
-      {{if .StateEvents}}<span class="muted">{{len .StateEvents}} {{index $.Translations "common.entries"}}</span>{{end}}
+      {{if .StateEvents}}<span class="muted">{{index $.Translations "dashboard.events.latest_prefix"}} {{len .StateEvents}} {{index $.Translations "common.entries"}}</span>{{end}}
     </div>
     <span class="activity-summary-caret">⌄</span>
   </summary>
@@ -788,7 +790,7 @@
   <summary class="activity-summary">
     <div>
       <h2>{{index $.Translations "dashboard.notification_events.title"}}</h2>
-      {{if .Events}}<span class="muted">{{len .Events}} {{index $.Translations "common.entries"}}</span>{{end}}
+      {{if .Events}}<span class="muted">{{index $.Translations "dashboard.events.latest_prefix"}} {{len .Events}} {{index $.Translations "common.entries"}}</span>{{end}}
     </div>
     <span class="activity-summary-caret">⌄</span>
   </summary>
@@ -822,6 +824,9 @@
     </table>
   </div>
   <div class="table-pagination" id="notification-events-pagination" hidden></div>
+  <div class="section-footer-link">
+    <a href="{{$.AppBase}}notification-events">{{index $.Translations "dashboard.notification_events.view_all"}}</a>
+  </div>
   {{else}}
   <p class="muted">{{index $.Translations "dashboard.notification_events.empty"}}</p>
   {{end}}

@@ -1,6 +1,9 @@
 package sqlite
 
 import (
+	"context"
+	"database/sql"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -87,4 +90,186 @@ func TestMaintenanceInterval(t *testing.T) {
 	if MaintenanceInterval() <= 0 {
 		t.Fatalf("maintenance interval must be positive")
 	}
+}
+
+func TestTenantRetentionDefaultsAndPersistence(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	controlPath := filepath.Join(dir, "controlplane.db")
+
+	cp, err := OpenControlPlane(ctx, controlPath)
+	if err != nil {
+		t.Fatalf("open control plane: %v", err)
+	}
+	defer cp.Close()
+
+	tenant, err := cp.CreateTenant(ctx, "default-retention", "Default Retention", filepath.Join(dir, "default-retention.db"))
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	if tenant.StateEventRetentionDays != 365 {
+		t.Fatalf("unexpected state retention default: %d", tenant.StateEventRetentionDays)
+	}
+	if tenant.NotificationEventRetentionDays != 365 {
+		t.Fatalf("unexpected notification retention default: %d", tenant.NotificationEventRetentionDays)
+	}
+
+	updated, err := cp.UpdateTenantWithRetention(ctx, tenant.ID, tenant.Name, tenant.DBPath, true, 730, 90)
+	if err != nil {
+		t.Fatalf("update tenant retention: %v", err)
+	}
+	if updated.StateEventRetentionDays != 730 {
+		t.Fatalf("unexpected state retention: %d", updated.StateEventRetentionDays)
+	}
+	if updated.NotificationEventRetentionDays != 90 {
+		t.Fatalf("unexpected notification retention: %d", updated.NotificationEventRetentionDays)
+	}
+}
+
+func TestTenantRetentionMigrationDefaultsExistingRows(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	controlPath := filepath.Join(dir, "legacy-controlplane.db")
+
+	db, err := sql.Open("sqlite", sqliteDSN(controlPath))
+	if err != nil {
+		t.Fatalf("open legacy db: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+CREATE TABLE tenants (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	slug TEXT NOT NULL UNIQUE,
+	name TEXT NOT NULL,
+	db_path TEXT NOT NULL,
+	active INTEGER NOT NULL DEFAULT 1,
+	created_at DATETIME NOT NULL,
+	updated_at DATETIME NOT NULL
+)
+`); err != nil {
+		t.Fatalf("create legacy tenants table: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO tenants (slug, name, db_path, active, created_at, updated_at)
+VALUES ('legacy', 'Legacy', ?, 1, ?, ?)
+`, filepath.Join(dir, "legacy.db"), time.Now().UTC(), time.Now().UTC()); err != nil {
+		t.Fatalf("insert legacy tenant: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close initial control plane: %v", err)
+	}
+
+	reopened, err := OpenControlPlane(ctx, controlPath)
+	if err != nil {
+		t.Fatalf("reopen control plane: %v", err)
+	}
+	defer reopened.Close()
+
+	tenant, err := reopened.GetTenantBySlug(ctx, "legacy")
+	if err != nil {
+		t.Fatalf("get migrated tenant: %v", err)
+	}
+	if tenant.StateEventRetentionDays != 365 || tenant.NotificationEventRetentionDays != 365 {
+		t.Fatalf("unexpected migrated retention values: state=%d notification=%d", tenant.StateEventRetentionDays, tenant.NotificationEventRetentionDays)
+	}
+}
+
+func TestRunMaintenancePrunesEventHistoryByRetention(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	store, err := Open(ctx, filepath.Join(dir, "tenant.db"))
+	if err != nil {
+		t.Fatalf("open tenant store: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Date(2026, 5, 11, 12, 0, 0, 0, time.UTC)
+	monitorID := insertMaintenanceMonitor(t, ctx, store)
+	endpointID := insertMaintenanceNotificationEndpoint(t, ctx, store)
+
+	insertStateEvent := func(checkedAt time.Time) {
+		t.Helper()
+		if _, err := store.db.ExecContext(ctx, `
+INSERT INTO monitor_state_events (monitor_id, checked_at, from_status, to_status, message)
+VALUES (?, ?, 'up', 'down', 'test')
+`, monitorID, checkedAt); err != nil {
+			t.Fatalf("insert state event: %v", err)
+		}
+	}
+	insertNotificationEvent := func(createdAt time.Time) {
+		t.Helper()
+		if _, err := store.db.ExecContext(ctx, `
+INSERT INTO notification_events (monitor_id, endpoint_id, event_type, created_at, delivered_at, error_message)
+VALUES (?, ?, 'incident', ?, ?, '')
+`, monitorID, endpointID, createdAt, createdAt); err != nil {
+			t.Fatalf("insert notification event: %v", err)
+		}
+	}
+
+	insertStateEvent(now.AddDate(0, 0, -8))
+	insertStateEvent(now.AddDate(0, 0, -2))
+	insertNotificationEvent(now.AddDate(0, 0, -8))
+	insertNotificationEvent(now.AddDate(0, 0, -2))
+
+	result, err := store.RunMaintenance(ctx, now, MaintenanceOptions{
+		StateEventRetentionDays:        7,
+		NotificationEventRetentionDays: 7,
+	})
+	if err != nil {
+		t.Fatalf("run maintenance: %v", err)
+	}
+	if result.DeletedStateEvents != 1 {
+		t.Fatalf("unexpected deleted state events: %d", result.DeletedStateEvents)
+	}
+	if result.DeletedNotificationEvents != 1 {
+		t.Fatalf("unexpected deleted notification events: %d", result.DeletedNotificationEvents)
+	}
+
+	stateCount, err := store.CountMonitorStateEvents(ctx)
+	if err != nil {
+		t.Fatalf("count state events: %v", err)
+	}
+	if stateCount != 1 {
+		t.Fatalf("unexpected remaining state events: %d", stateCount)
+	}
+	notificationCount, err := store.CountNotificationEvents(ctx)
+	if err != nil {
+		t.Fatalf("count notification events: %v", err)
+	}
+	if notificationCount != 1 {
+		t.Fatalf("unexpected remaining notification events: %d", notificationCount)
+	}
+}
+
+func insertMaintenanceMonitor(t *testing.T, ctx context.Context, store *Store) int64 {
+	t.Helper()
+	now := time.Now().UTC()
+	result, err := store.db.ExecContext(ctx, `
+INSERT INTO monitors (name, kind, target, created_at, updated_at)
+VALUES ('monitor', 'https', 'example.com', ?, ?)
+`, now, now)
+	if err != nil {
+		t.Fatalf("insert monitor: %v", err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		t.Fatalf("monitor last insert id: %v", err)
+	}
+	return id
+}
+
+func insertMaintenanceNotificationEndpoint(t *testing.T, ctx context.Context, store *Store) int64 {
+	t.Helper()
+	now := time.Now().UTC()
+	result, err := store.db.ExecContext(ctx, `
+INSERT INTO notification_endpoints (kind, name, created_at, updated_at)
+VALUES ('email', 'email', ?, ?)
+`, now, now)
+	if err != nil {
+		t.Fatalf("insert notification endpoint: %v", err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		t.Fatalf("endpoint last insert id: %v", err)
+	}
+	return id
 }

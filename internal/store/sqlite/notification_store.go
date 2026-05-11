@@ -447,3 +447,84 @@ LIMIT ?
 
 	return items, nil
 }
+
+func (s *Store) CountNotificationEvents(ctx context.Context) (int64, error) {
+	var count int64
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM notification_events`).Scan(&count)
+	if err != nil {
+		if isMalformedSQLiteError(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("count notification events: %w", err)
+	}
+	return count, nil
+}
+
+func (s *Store) ListNotificationEventsPaginated(ctx context.Context, limit, offset int) ([]NotificationEvent, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT
+    e.id,
+    e.monitor_id,
+    COALESCE(m.name, ''),
+    e.endpoint_id,
+    COALESCE(ne.name, ''),
+    e.event_type,
+    e.created_at,
+    e.delivered_at,
+    e.error_message
+FROM notification_events e
+LEFT JOIN monitors m ON m.id = e.monitor_id
+LEFT JOIN notification_endpoints ne ON ne.id = e.endpoint_id
+ORDER BY e.id DESC
+LIMIT ? OFFSET ?
+`, limit, offset)
+	if err != nil {
+		if isMalformedSQLiteError(err) {
+			return []NotificationEvent{}, nil
+		}
+		return nil, fmt.Errorf("list notification events paginated: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]NotificationEvent, 0, limit)
+	for rows.Next() {
+		var item NotificationEvent
+		var deliveredAt sql.NullTime
+		if err := rows.Scan(
+			&item.ID,
+			&item.MonitorID,
+			&item.MonitorName,
+			&item.EndpointID,
+			&item.Endpoint,
+			&item.EventType,
+			&item.CreatedAt,
+			&deliveredAt,
+			&item.Error,
+		); err != nil {
+			if isMalformedSQLiteError(err) {
+				return []NotificationEvent{}, nil
+			}
+			return nil, fmt.Errorf("scan notification event: %w", err)
+		}
+		if deliveredAt.Valid {
+			value := deliveredAt.Time
+			item.DeliveredAt = &value
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		if isMalformedSQLiteError(err) {
+			return []NotificationEvent{}, nil
+		}
+		return nil, fmt.Errorf("iterate notification events: %w", err)
+	}
+
+	return items, nil
+}

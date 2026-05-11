@@ -32,11 +32,13 @@ type ControlPlaneStore struct {
 }
 
 type Tenant struct {
-	ID     int64
-	Slug   string
-	Name   string
-	DBPath string
-	Active bool
+	ID                             int64
+	Slug                           string
+	Name                           string
+	DBPath                         string
+	Active                         bool
+	StateEventRetentionDays        int
+	NotificationEventRetentionDays int
 }
 
 type ResolvedUser struct {
@@ -241,7 +243,7 @@ ON CONFLICT(tenant_id, provider_key) DO UPDATE SET
 
 func (s *ControlPlaneStore) GetTenantBySlug(ctx context.Context, slug string) (Tenant, error) {
 	return s.getTenant(ctx, `
-SELECT id, slug, name, db_path, active
+SELECT id, slug, name, db_path, active, state_event_retention_days, notification_event_retention_days
 FROM tenants
 WHERE slug = ?
 `, slug)
@@ -249,7 +251,7 @@ WHERE slug = ?
 
 func (s *ControlPlaneStore) GetTenantByID(ctx context.Context, tenantID int64) (Tenant, error) {
 	return s.getTenant(ctx, `
-SELECT id, slug, name, db_path, active
+SELECT id, slug, name, db_path, active, state_event_retention_days, notification_event_retention_days
 FROM tenants
 WHERE id = ?
 `, tenantID)
@@ -258,11 +260,21 @@ WHERE id = ?
 func (s *ControlPlaneStore) getTenant(ctx context.Context, query string, args ...any) (Tenant, error) {
 	var tenant Tenant
 	var active int
-	err := s.db.QueryRowContext(ctx, query, args...).Scan(&tenant.ID, &tenant.Slug, &tenant.Name, &tenant.DBPath, &active)
+	err := s.db.QueryRowContext(ctx, query, args...).Scan(
+		&tenant.ID,
+		&tenant.Slug,
+		&tenant.Name,
+		&tenant.DBPath,
+		&active,
+		&tenant.StateEventRetentionDays,
+		&tenant.NotificationEventRetentionDays,
+	)
 	if err != nil {
 		return Tenant{}, fmt.Errorf("get tenant: %w", err)
 	}
 	tenant.Active = active == 1
+	tenant.StateEventRetentionDays = normalizeEventRetentionDays(tenant.StateEventRetentionDays)
+	tenant.NotificationEventRetentionDays = normalizeEventRetentionDays(tenant.NotificationEventRetentionDays)
 	return tenant, nil
 }
 
@@ -1021,6 +1033,8 @@ CREATE TABLE IF NOT EXISTS tenants (
 	name TEXT NOT NULL,
 	db_path TEXT NOT NULL,
 	active INTEGER NOT NULL DEFAULT 1,
+	state_event_retention_days INTEGER NOT NULL DEFAULT 365,
+	notification_event_retention_days INTEGER NOT NULL DEFAULT 365,
 	created_at DATETIME NOT NULL,
 	updated_at DATETIME NOT NULL
 );
@@ -1154,6 +1168,9 @@ func (s *ControlPlaneStore) initSchema(ctx context.Context) error {
 	if err := s.ensureUsersSuperAdminColumnRemoved(ctx); err != nil {
 		return err
 	}
+	if err := s.ensureTenantRetentionColumns(ctx); err != nil {
+		return err
+	}
 	if err := s.ensureTenantMembershipNotificationColumn(ctx); err != nil {
 		return err
 	}
@@ -1165,6 +1182,29 @@ func (s *ControlPlaneStore) initSchema(ctx context.Context) error {
 	}
 	if err := s.ensureLocalCredentialsTenantScoped(ctx); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (s *ControlPlaneStore) ensureTenantRetentionColumns(ctx context.Context) error {
+	columns := []struct {
+		name string
+		sql  string
+	}{
+		{"state_event_retention_days", `ALTER TABLE tenants ADD COLUMN state_event_retention_days INTEGER NOT NULL DEFAULT 365`},
+		{"notification_event_retention_days", `ALTER TABLE tenants ADD COLUMN notification_event_retention_days INTEGER NOT NULL DEFAULT 365`},
+	}
+	for _, column := range columns {
+		hasColumn, err := s.tableHasColumn(ctx, "tenants", column.name)
+		if err != nil {
+			return fmt.Errorf("inspect tenants %s column: %w", column.name, err)
+		}
+		if hasColumn {
+			continue
+		}
+		if _, err := s.db.ExecContext(ctx, column.sql); err != nil {
+			return fmt.Errorf("add tenants %s column: %w", column.name, err)
+		}
 	}
 	return nil
 }
@@ -1216,7 +1256,7 @@ func (s *ControlPlaneStore) ensureTenantMembershipNotificationColumn(ctx context
 
 func (s *ControlPlaneStore) tableHasColumn(ctx context.Context, tableName, columnName string) (bool, error) {
 	switch tableName {
-	case "users", "tenant_memberships", "remote_nodes", "local_credentials":
+	case "tenants", "users", "tenant_memberships", "remote_nodes", "local_credentials":
 	default:
 		return false, fmt.Errorf("unsupported table inspection: %s", tableName)
 	}
@@ -1331,7 +1371,7 @@ FROM local_credentials lc
 // GetAllTenants returns all tenants, optionally filtered by active status
 func (s *ControlPlaneStore) GetAllTenants(ctx context.Context) ([]Tenant, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, slug, name, db_path, active
+SELECT id, slug, name, db_path, active, state_event_retention_days, notification_event_retention_days
 FROM tenants
 ORDER BY created_at ASC
 `)
@@ -1344,10 +1384,20 @@ ORDER BY created_at ASC
 	for rows.Next() {
 		var t Tenant
 		var active int
-		if err := rows.Scan(&t.ID, &t.Slug, &t.Name, &t.DBPath, &active); err != nil {
+		if err := rows.Scan(
+			&t.ID,
+			&t.Slug,
+			&t.Name,
+			&t.DBPath,
+			&active,
+			&t.StateEventRetentionDays,
+			&t.NotificationEventRetentionDays,
+		); err != nil {
 			return nil, fmt.Errorf("scan tenant: %w", err)
 		}
 		t.Active = active == 1
+		t.StateEventRetentionDays = normalizeEventRetentionDays(t.StateEventRetentionDays)
+		t.NotificationEventRetentionDays = normalizeEventRetentionDays(t.NotificationEventRetentionDays)
 		tenants = append(tenants, t)
 	}
 	if err := rows.Err(); err != nil {
@@ -1358,6 +1408,10 @@ ORDER BY created_at ASC
 
 // CreateTenant creates a new tenant and returns it
 func (s *ControlPlaneStore) CreateTenant(ctx context.Context, slug, name, dbPath string) (Tenant, error) {
+	return s.CreateTenantWithRetention(ctx, slug, name, dbPath, defaultEventRetentionDays, defaultEventRetentionDays)
+}
+
+func (s *ControlPlaneStore) CreateTenantWithRetention(ctx context.Context, slug, name, dbPath string, stateEventRetentionDays, notificationEventRetentionDays int) (Tenant, error) {
 	slug = strings.ToLower(strings.TrimSpace(slug))
 	if !tenantSlugPattern.MatchString(slug) {
 		return Tenant{}, fmt.Errorf("invalid tenant slug %q (allowed: a-z, 0-9, -; length 2-63)", slug)
@@ -1368,6 +1422,8 @@ func (s *ControlPlaneStore) CreateTenant(ctx context.Context, slug, name, dbPath
 	if strings.TrimSpace(dbPath) == "" {
 		return Tenant{}, fmt.Errorf("tenant db_path is required")
 	}
+	stateEventRetentionDays = normalizeEventRetentionDays(stateEventRetentionDays)
+	notificationEventRetentionDays = normalizeEventRetentionDays(notificationEventRetentionDays)
 
 	// Validate slug is unique
 	_, err := s.GetTenantBySlug(ctx, slug)
@@ -1380,9 +1436,17 @@ func (s *ControlPlaneStore) CreateTenant(ctx context.Context, slug, name, dbPath
 
 	now := time.Now().UTC()
 	result, err := s.db.ExecContext(ctx, `
-INSERT INTO tenants (slug, name, db_path, active, created_at, updated_at)
-VALUES (?, ?, ?, 1, ?, ?)
-`, slug, name, dbPath, now, now)
+INSERT INTO tenants (
+	slug,
+	name,
+	db_path,
+	active,
+	state_event_retention_days,
+	notification_event_retention_days,
+	created_at,
+	updated_at
+) VALUES (?, ?, ?, 1, ?, ?, ?, ?)
+`, slug, name, dbPath, stateEventRetentionDays, notificationEventRetentionDays, now, now)
 	if err != nil {
 		return Tenant{}, fmt.Errorf("insert tenant: %w", err)
 	}
@@ -1405,17 +1469,27 @@ VALUES (?, ?, ?, 1, ?, ?)
 
 // UpdateTenant updates an existing tenant
 func (s *ControlPlaneStore) UpdateTenant(ctx context.Context, id int64, name, dbPath string, active bool) (Tenant, error) {
+	current, err := s.GetTenantByID(ctx, id)
+	if err != nil {
+		return Tenant{}, err
+	}
+	return s.UpdateTenantWithRetention(ctx, id, name, dbPath, active, current.StateEventRetentionDays, current.NotificationEventRetentionDays)
+}
+
+func (s *ControlPlaneStore) UpdateTenantWithRetention(ctx context.Context, id int64, name, dbPath string, active bool, stateEventRetentionDays, notificationEventRetentionDays int) (Tenant, error) {
 	now := time.Now().UTC()
 	activeInt := 0
 	if active {
 		activeInt = 1
 	}
+	stateEventRetentionDays = normalizeEventRetentionDays(stateEventRetentionDays)
+	notificationEventRetentionDays = normalizeEventRetentionDays(notificationEventRetentionDays)
 
 	_, err := s.db.ExecContext(ctx, `
 UPDATE tenants
-SET name = ?, db_path = ?, active = ?, updated_at = ?
+SET name = ?, db_path = ?, active = ?, state_event_retention_days = ?, notification_event_retention_days = ?, updated_at = ?
 WHERE id = ?
-`, name, dbPath, activeInt, now, id)
+`, name, dbPath, activeInt, stateEventRetentionDays, notificationEventRetentionDays, now, id)
 	if err != nil {
 		return Tenant{}, fmt.Errorf("update tenant: %w", err)
 	}
@@ -1429,6 +1503,23 @@ WHERE id = ?
 	}
 
 	return tenant, nil
+}
+
+const (
+	defaultEventRetentionDays = 365
+	minEventRetentionDays     = 1
+	maxEventRetentionDays     = 3650
+)
+
+func NormalizeEventRetentionDays(days int) int {
+	return normalizeEventRetentionDays(days)
+}
+
+func normalizeEventRetentionDays(days int) int {
+	if days < minEventRetentionDays || days > maxEventRetentionDays {
+		return defaultEventRetentionDays
+	}
+	return days
 }
 
 func ensureTenantDatabaseReady(ctx context.Context, dbPath string) error {

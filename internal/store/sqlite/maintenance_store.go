@@ -12,19 +12,28 @@ import (
 const (
 	rawResultRetentionDays         = 30
 	hourlyRollupRetentionDays      = 365
+	defaultStoreEventRetentionDays = 365
 	maintenanceInterval            = 6 * time.Hour
 	retentionRunInterval           = 24 * time.Hour
 	hourlyRollupBackfillSettingKey = "hourly_rollup_backfill_v2_completed_at"
 	lastRetentionRunSettingKey     = "last_raw_retention_run_at"
 	lastRollupRetentionRunSetting  = "last_hourly_rollup_retention_run_at"
+	lastEventRetentionRunSetting   = "last_event_retention_run_at"
 	lastOptimizeMonthSettingKey    = "last_sqlite_optimize_month"
 )
 
 type MaintenanceResult struct {
-	BackfilledHourlyRollups bool
-	DeletedRawResults       int64
-	DeletedHourlyRollups    int64
-	Optimized               bool
+	BackfilledHourlyRollups   bool
+	DeletedRawResults         int64
+	DeletedHourlyRollups      int64
+	DeletedStateEvents        int64
+	DeletedNotificationEvents int64
+	Optimized                 bool
+}
+
+type MaintenanceOptions struct {
+	StateEventRetentionDays        int
+	NotificationEventRetentionDays int
 }
 
 type sqlExecutor interface {
@@ -35,12 +44,13 @@ func MaintenanceInterval() time.Duration {
 	return maintenanceInterval
 }
 
-func (s *Store) RunMaintenance(ctx context.Context, now time.Time) (MaintenanceResult, error) {
+func (s *Store) RunMaintenance(ctx context.Context, now time.Time, options ...MaintenanceOptions) (MaintenanceResult, error) {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	} else {
 		now = now.UTC()
 	}
+	opts := normalizeMaintenanceOptions(options...)
 
 	result := MaintenanceResult{}
 
@@ -62,6 +72,13 @@ func (s *Store) RunMaintenance(ctx context.Context, now time.Time) (MaintenanceR
 	}
 	result.DeletedHourlyRollups = deletedRollups
 
+	deletedStateEvents, deletedNotificationEvents, err := s.pruneEventsIfDue(ctx, now, opts)
+	if err != nil {
+		return result, err
+	}
+	result.DeletedStateEvents = deletedStateEvents
+	result.DeletedNotificationEvents = deletedNotificationEvents
+
 	optimized, err := s.optimizeIfDue(ctx, now)
 	if err != nil {
 		return result, err
@@ -73,6 +90,26 @@ func (s *Store) RunMaintenance(ctx context.Context, now time.Time) (MaintenanceR
 	}
 
 	return result, nil
+}
+
+func normalizeMaintenanceOptions(options ...MaintenanceOptions) MaintenanceOptions {
+	opts := MaintenanceOptions{
+		StateEventRetentionDays:        defaultStoreEventRetentionDays,
+		NotificationEventRetentionDays: defaultStoreEventRetentionDays,
+	}
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	opts.StateEventRetentionDays = normalizeRetentionDays(opts.StateEventRetentionDays)
+	opts.NotificationEventRetentionDays = normalizeRetentionDays(opts.NotificationEventRetentionDays)
+	return opts
+}
+
+func normalizeRetentionDays(days int) int {
+	if days <= 0 {
+		return defaultStoreEventRetentionDays
+	}
+	return days
 }
 
 func (s *Store) pruneOldNotificationRetries(ctx context.Context, now time.Time) error {
@@ -254,6 +291,51 @@ WHERE hour_bucket < ?
 	}
 
 	return deleted, nil
+}
+
+func (s *Store) pruneEventsIfDue(ctx context.Context, now time.Time, opts MaintenanceOptions) (int64, int64, error) {
+	due, err := s.shouldRunAfter(ctx, lastEventRetentionRunSetting, retentionRunInterval, now)
+	if err != nil {
+		return 0, 0, fmt.Errorf("check event retention schedule: %w", err)
+	}
+	if !due {
+		return 0, 0, nil
+	}
+
+	stateCutoff := now.AddDate(0, 0, -opts.StateEventRetentionDays)
+	stateResult, err := s.db.ExecContext(ctx, `
+DELETE FROM monitor_state_events
+WHERE checked_at < ?
+`, stateCutoff)
+	if err != nil {
+		return 0, 0, fmt.Errorf("delete expired monitor state events: %w", err)
+	}
+	deletedStateEvents, err := stateResult.RowsAffected()
+	if err != nil {
+		return 0, 0, fmt.Errorf("read deleted monitor state event rows: %w", err)
+	}
+
+	notificationCutoff := now.AddDate(0, 0, -opts.NotificationEventRetentionDays)
+	notificationResult, err := s.db.ExecContext(ctx, `
+DELETE FROM notification_events
+WHERE created_at < ?
+`, notificationCutoff)
+	if err != nil {
+		if isMalformedSQLiteError(err) {
+			return deletedStateEvents, 0, nil
+		}
+		return 0, 0, fmt.Errorf("delete expired notification events: %w", err)
+	}
+	deletedNotificationEvents, err := notificationResult.RowsAffected()
+	if err != nil {
+		return 0, 0, fmt.Errorf("read deleted notification event rows: %w", err)
+	}
+
+	if err := s.setSetting(ctx, lastEventRetentionRunSetting, now.Format(time.RFC3339Nano)); err != nil {
+		return 0, 0, fmt.Errorf("store event retention run timestamp: %w", err)
+	}
+
+	return deletedStateEvents, deletedNotificationEvents, nil
 }
 
 func (s *Store) optimizeIfDue(ctx context.Context, now time.Time) (bool, error) {
