@@ -40,6 +40,8 @@
     const trendDetailLatencyXStart = document.getElementById('trend-detail-latency-x-start');
     const trendDetailLatencyXEnd = document.getElementById('trend-detail-latency-x-end');
     const trendDetailLatencyRangeButtons = Array.from(document.querySelectorAll('.trend-detail-latency-range'));
+    const trendDetailHistoryTitle = document.getElementById('trend-detail-history-title');
+    const trendDetailHistorySummary = document.getElementById('trend-detail-history-summary');
     const trendDetailHistory = document.getElementById('trend-detail-history');
     const title = document.getElementById('monitor-modal-title');
     const idField = document.getElementById('monitor-id');
@@ -305,6 +307,9 @@
     const monitorVerifyCertFallback = String(verifyCertLabelField?.textContent || 'Verify certificate').trim() || 'Verify certificate';
     const expectedKeywordsOptionalFallback = String(expectedTextLabelField?.textContent || 'Expected keywords (optional)').trim() || 'Expected keywords (optional)';
     const expectedKeywordsHintFallback = String(expectedTextHintField?.textContent || 'Separate multiple keywords with commas. All keywords must appear in the body.').trim() || 'Separate multiple keywords with commas. All keywords must appear in the body.';
+    const entriesLabelFallback = String(document.querySelector('#dashboard-live-state-events summary .muted')?.textContent || '')
+      .replace(/[0-9]+/g, '')
+      .trim() || 'entries';
     const tr = (key, fallback, values = {}) => {
       let text = (typeof i18n[key] === 'string' && i18n[key].trim() !== '') ? i18n[key] : fallback;
       Object.entries(values).forEach(([name, value]) => {
@@ -3029,7 +3034,7 @@
       '1h': { durationMS: 60 * 60 * 1000, slotMS: 60 * 1000, format: 'minute' },
       '6h': { durationMS: 6 * 60 * 60 * 1000, slotMS: 5 * 60 * 1000, format: 'hour' },
       '24h': { durationMS: 24 * 60 * 60 * 1000, slotMS: 30 * 60 * 1000, format: 'hour' },
-      '7d': { durationMS: 7 * 24 * 60 * 60 * 1000, slotMS: 6 * 60 * 60 * 1000, format: 'date' }
+      '7d': { durationMS: 7 * 24 * 60 * 60 * 1000, slotMS: 24 * 60 * 60 * 1000, format: 'date', align: 'day' }
     };
 
     const normalizeLatencyRange = (value) => {
@@ -3125,7 +3130,11 @@
     const buildLatencyTimelineSlots = (points, rangeValue) => {
       const selectedRange = normalizeLatencyRange(rangeValue);
       const config = latencyRangeConfig[selectedRange] || latencyRangeConfig['1h'];
-      const endMS = Date.now();
+      const now = new Date();
+      const endDate = config.align === 'day'
+        ? new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+        : now;
+      const endMS = endDate.getTime();
       const startMS = endMS - config.durationMS;
       const slotCount = Math.max(1, Math.floor(config.durationMS / config.slotMS));
       const slots = Array.from({ length: slotCount }, (_, index) => ({
@@ -3133,7 +3142,15 @@
         latencyMS: 0,
         status: '',
         hasValue: false,
-        hasStatus: false
+        hasStatus: false,
+        totalChecks: 0,
+        upChecks: 0,
+        downChecks: 0,
+        degradedChecks: 0,
+        latencyChecks: 0,
+        latencySumMS: 0,
+        latencyMinMS: 0,
+        latencyMaxMS: 0
       }));
 
       const safePoints = Array.isArray(points) ? points : [];
@@ -3149,12 +3166,39 @@
         }
         const status = String(point?.status || '').trim().toLowerCase();
         const latencyMS = Number(point?.latency_ms || 0);
-        if (Number.isFinite(latencyMS) && latencyMS >= 0) {
-          slot.latencyMS = latencyMS;
-          slot.hasValue = true;
-        }
         if (status) {
           slot.status = status;
+          slot.hasStatus = true;
+          slot.totalChecks += 1;
+          if (status === 'up') {
+            slot.upChecks += 1;
+          } else if (status === 'down') {
+            slot.downChecks += 1;
+          } else if (status === 'degraded') {
+            slot.degradedChecks += 1;
+          }
+        }
+        if (Number.isFinite(latencyMS) && latencyMS >= 0 && status !== 'down') {
+          slot.latencyChecks += 1;
+          slot.latencySumMS += latencyMS;
+          slot.latencyMinMS = slot.latencyChecks === 1 ? latencyMS : Math.min(slot.latencyMinMS, latencyMS);
+          slot.latencyMaxMS = Math.max(slot.latencyMaxMS, latencyMS);
+        }
+      });
+
+      slots.forEach((slot) => {
+        if (slot.latencyChecks > 0) {
+          slot.latencyMS = Math.round(slot.latencySumMS / slot.latencyChecks);
+          slot.hasValue = true;
+        }
+        if (slot.totalChecks > 0) {
+          if (slot.downChecks > 0 && slot.upChecks === 0 && slot.degradedChecks === 0) {
+            slot.status = 'down';
+          } else if (slot.downChecks > 0 || slot.degradedChecks > 0) {
+            slot.status = 'degraded';
+          } else {
+            slot.status = 'up';
+          }
           slot.hasStatus = true;
         }
       });
@@ -3164,7 +3208,7 @@
         config,
         slots,
         startDate: new Date(startMS),
-        endDate: new Date(endMS)
+        endDate: config.align === 'day' ? new Date(endMS - 1) : new Date(endMS)
       };
     };
 
@@ -3284,6 +3328,61 @@
       trendDetailLatencyCaption.textContent = '';
     };
 
+    const renderTrendHistoryFromLatency = (points, rangeValue) => {
+      if (!trendDetailHistory) {
+        return;
+      }
+      const historyTitleFallback = String(trendDetailHistoryTitle?.textContent || '').trim() || 'History';
+      const timeline = buildLatencyTimelineSlots(points, rangeValue);
+      const selectedRange = timeline.selectedRange;
+      const rows = timeline.slots
+        .filter((slot) => slot.totalChecks > 0)
+        .reverse();
+
+      trendDetailHistory.innerHTML = '';
+      if (trendDetailHistoryTitle) {
+        trendDetailHistoryTitle.textContent = `${tr('trendHistoryTitle', historyTitleFallback)} ${latencyRangeLabels[selectedRange] || selectedRange}`.trim();
+      }
+      if (trendDetailHistorySummary) {
+        trendDetailHistorySummary.textContent = rows.length > 0
+          ? `${rows.length} ${tr('paginationEntries', entriesLabelFallback)}`
+          : tr('trendNoData', 'No data');
+      }
+
+      if (rows.length === 0) {
+        const row = document.createElement('tr');
+        const empty = document.createElement('td');
+        empty.colSpan = 2;
+        empty.className = 'muted';
+        empty.textContent = tr('trendNoData', 'No data');
+        row.appendChild(empty);
+        trendDetailHistory.appendChild(row);
+        return;
+      }
+
+      rows.forEach((slot) => {
+        const row = document.createElement('tr');
+        const when = document.createElement('td');
+        when.textContent = formatDateValue(new Date(slot.startMS).toISOString(), timeline.config.format || 'hour');
+
+        const result = document.createElement('td');
+        const percent = slot.totalChecks > 0 ? Math.round((slot.upChecks / slot.totalChecks) * 100) : 0;
+        const badge = document.createElement('span');
+        badge.className = `history-status-badge status-${String(slot.status || 'unknown').toUpperCase()}`;
+        badge.textContent = String(slot.status || 'unknown').toUpperCase();
+        const text = document.createElement('span');
+        const latencyText = slot.latencyChecks > 0
+          ? ` · Ø ${formatLatency(slot.latencyMS)} · ${formatLatency(slot.latencyMinMS)}-${formatLatency(slot.latencyMaxMS)}`
+          : '';
+        text.textContent = `${percent}% · ${slot.totalChecks} Checks${latencyText}`;
+        result.appendChild(badge);
+        result.appendChild(text);
+        row.appendChild(when);
+        row.appendChild(result);
+        trendDetailHistory.appendChild(row);
+      });
+    };
+
     const loadTrendLatencyRange = async (monitorID, rangeValue = '1h') => {
       if (!trendDetailLatencyChart || !trendDetailLatencyCaption) {
         return;
@@ -3335,7 +3434,9 @@
         }
         const payload = await response.json();
         const payloadRange = normalizeLatencyRange(payload?.range || selectedRange);
-        renderLatencyChart(payload?.points || [], payload?.average_ms, payloadRange);
+        const points = payload?.points || [];
+        renderLatencyChart(points, payload?.average_ms, payloadRange);
+        renderTrendHistoryFromLatency(points, payloadRange);
         setLatencyRangeButtonsState(payloadRange, false);
       } catch (_) {
         if (trendDetailLatencyPlot) {
@@ -3407,7 +3508,8 @@
       trendDetailLatencyRangeButtons.forEach((button) => {
         button.dataset.monitorId = Number.isFinite(monitorID) ? String(monitorID) : '';
       });
-      setLatencyRangeButtonsState('1h', false);
+      const initialLatencyRange = normalizeLatencyRange(currentTrend);
+      setLatencyRangeButtonsState(initialLatencyRange, false);
 
       bars.forEach((bar) => {
         const clone = document.createElement('span');
@@ -3433,7 +3535,7 @@
       });
 
       trendDetailModal.showModal();
-      loadTrendLatencyRange(monitorID, '1h');
+      loadTrendLatencyRange(monitorID, initialLatencyRange);
     };
 
     trendDetailClose?.addEventListener('click', () => trendDetailModal?.close());

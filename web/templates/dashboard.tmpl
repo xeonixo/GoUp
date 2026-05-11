@@ -40,6 +40,28 @@
     <h2>{{index $.Translations "dashboard.stats.incidents_title"}}</h2>
     <div class="metric {{if gt .Stats.OpenIncidentCount 0}}metric-danger{{end}}">{{.Stats.OpenIncidentCount}}</div>
   </article>
+
+  <article class="attention-panel card">
+    <div class="attention-panel-header">
+      <h2>{{index $.Translations "dashboard.attention.title"}}</h2>
+    </div>
+    <div class="attention-list">
+      {{range .MonitorGroups}}
+      {{range .Services}}
+      {{if ne .StatusLabel "UP"}}
+      <div class="attention-item {{.StatusClass}}">
+        <span class="attention-status-dot" aria-hidden="true"></span>
+        <span class="attention-item-main">
+          <strong>{{.Title}}</strong>
+          <span>{{.StatusInfo}}</span>
+        </span>
+        <span class="attention-item-meta">{{len .Monitors}} · {{.StatusLabel}}</span>
+      </div>
+      {{end}}
+      {{end}}
+      {{end}}
+    </div>
+  </article>
 </section>
 
 {{if .IsAdmin}}
@@ -463,10 +485,13 @@
       </div>
     </section>
 
-    <section class="card stack">
-      <h3>{{index $.Translations "dashboard.trend_detail.history"}}</h3>
+    <section class="card stack trend-detail-history-card">
+      <div class="trend-detail-section-head">
+        <h3 id="trend-detail-history-title">{{index $.Translations "dashboard.trend_detail.history"}}</h3>
+        <span class="muted compact" id="trend-detail-history-summary">—</span>
+      </div>
       <div class="table-wrap">
-        <table>
+        <table class="trend-detail-history-table">
           <thead>
             <tr>
               <th>{{index $.Translations "dashboard.trend_detail.period"}}</th>
@@ -495,8 +520,9 @@
                   {{if .IconURL}}
                   <img class="group-icon" src="{{.IconURL}}" alt="{{.Title}} Icon" loading="lazy" referrerpolicy="no-referrer">
                   {{end}}
-                  <div>
+                  <div class="service-title-copy">
                     <h4>{{.Title}}</h4>
+                    <span>{{.StatusInfo}}</span>
                   </div>
                 </div>
                 <div class="service-summary-right">
@@ -626,13 +652,15 @@
         </button>
 
         <div class="monitor-card-body stack compact-stack">
-          <div class="info-row">
-            <span class="muted">{{index $.Translations "dashboard.modal.target_label"}}</span>
-            <strong class="break-all">{{.TargetLabel}}</strong>
-          </div>
-          <div class="info-row">
-            <span class="muted">{{index $.Translations "common.status"}}</span>
-            <strong>{{.StatusSummary}}</strong>
+          <div class="monitor-card-main">
+            <div class="info-row monitor-target-row">
+              <span class="muted">{{index $.Translations "dashboard.modal.target_label"}}</span>
+              <strong class="break-all">{{.TargetLabel}}</strong>
+            </div>
+            <div class="monitor-diagnostics {{.StatusClass}}">
+              <span class="muted">{{index $.Translations "common.status"}}</span>
+              <strong title="{{.StatusSummary}}">{{.StatusSummary}}</strong>
+            </div>
           </div>
           {{if $.HasRemoteNodes}}
           <div class="info-row">
@@ -646,12 +674,10 @@
               <span class="muted">{{index $.Translations "dashboard.trend_detail.latency"}}</span>
               <strong>{{if .LastLatency}}{{.LastLatency}}{{else}}—{{end}}</strong>
             </div>
-            {{if eq .KindValue "https"}}
             <div class="monitor-metric">
-              <span class="muted">HTTP</span>
-              <strong>{{if .HTTPStatusCode}}{{.HTTPStatusCode}}{{else}}—{{end}}</strong>
+              <span class="muted">{{index $.Translations "dashboard.monitor.result"}}</span>
+              <strong>{{if eq .KindValue "https"}}{{if .HTTPStatusCode}}HTTP {{.HTTPStatusCode}}{{else}}{{.StatusLabel}}{{end}}{{else}}{{.StatusLabel}}{{end}}</strong>
             </div>
-            {{end}}
             <div class="monitor-metric">
               <span class="muted">{{index $.Translations "dashboard.trend_detail.last_check"}}</span>
               <strong>{{if .LastCheckedAtRaw}}<time class="client-time" datetime="{{.LastCheckedAtRaw}}" data-format="relative-age">{{.LastCheckedAt}}</time>{{else}}—{{end}}</strong>
@@ -667,6 +693,11 @@
               <span class="muted">{{index $.Translations "dashboard.monitor.domain_expiry"}}</span>
               <strong>{{if .TLSNotAfterRaw}}<time class="client-time" datetime="{{.TLSNotAfterRaw}}" data-format="minute">{{.TLSNotAfter}}</time>{{else}}—{{end}}</strong>
               {{if .TLSDaysRemaining}}<span class="muted compact">{{.TLSDaysRemaining}} {{index $.Translations "dashboard.monitor.remaining"}}</span>{{end}}
+            </div>
+            {{else}}
+            <div class="monitor-metric">
+              <span class="muted">{{index $.Translations "dashboard.monitor.kind"}}</span>
+              <strong>{{.Kind}}{{if .TLSMode}} · {{.TLSMode}}{{end}}</strong>
             </div>
             {{end}}
           </div>
@@ -685,8 +716,14 @@
   {{end}}
 </section>
 
-<section id="dashboard-live-state-events" class="card stack notification-events-card">
-  <h2>{{index $.Translations "dashboard.state_events.title"}}</h2>
+<details id="dashboard-live-state-events" class="card stack notification-events-card dashboard-activity-panel">
+  <summary class="activity-summary">
+    <div>
+      <h2>{{index $.Translations "dashboard.state_events.title"}}</h2>
+      {{if .StateEvents}}<span class="muted">{{len .StateEvents}} {{index $.Translations "common.entries"}}</span>{{end}}
+    </div>
+    <span class="activity-summary-caret">⌄</span>
+  </summary>
   {{if .StateEvents}}
   <div class="state-events-toolbar">
     <label>
@@ -745,10 +782,16 @@
   {{else}}
   <p class="muted">{{index $.Translations "dashboard.state_events.empty"}}</p>
   {{end}}
-</section>
+</details>
 
-<section id="dashboard-live-notification-events" class="card stack notification-events-card">
-  <h2>{{index $.Translations "dashboard.notification_events.title"}}</h2>
+<details id="dashboard-live-notification-events" class="card stack notification-events-card dashboard-activity-panel">
+  <summary class="activity-summary">
+    <div>
+      <h2>{{index $.Translations "dashboard.notification_events.title"}}</h2>
+      {{if .Events}}<span class="muted">{{len .Events}} {{index $.Translations "common.entries"}}</span>{{end}}
+    </div>
+    <span class="activity-summary-caret">⌄</span>
+  </summary>
   {{if .Events}}
   <div class="table-wrap">
     <table>
@@ -782,7 +825,7 @@
   {{else}}
   <p class="muted">{{index $.Translations "dashboard.notification_events.empty"}}</p>
   {{end}}
-</section>
+</details>
 </div>
 {{end}}
 
@@ -829,6 +872,7 @@
     trendLatencyLoading: {{printf "%q" (index $.Translations "dashboard.trend_detail.latency_loading")}},
     trendLatencyLoadFailed: {{printf "%q" (index $.Translations "dashboard.trend_detail.latency_load_failed")}},
     trendTitleFallback: {{printf "%q" (index $.Translations "dashboard.trend_detail.title")}},
+    trendHistoryTitle: {{printf "%q" (index $.Translations "dashboard.trend_detail.history")}},
     trendNoDetailMessage: {{printf "%q" (index $.Translations "dashboard.trend_detail.no_detail_message")}},
     statusUnknown: {{printf "%q" (index $.Translations "monitor.status.unknown")}},
     stateEventsNone: {{printf "%q" (index $.Translations "dashboard.state_events.empty")}},

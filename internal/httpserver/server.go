@@ -4110,17 +4110,17 @@ func aggregateServiceStatus(items []monitorView) (label string, class string, in
 	hasOnlyDown := hasDown && !hasUp && !hasDegraded && !hasUnknown && !hasPaused
 	switch {
 	case hasOnlyDown:
-		return "DOWN", "status-DOWN", "Mindestens ein Dienst ist ausgefallen"
+		return "DOWN", "status-DOWN", "Ausfall erkannt"
 	case hasDown:
-		return "DEGRADED", "status-DEGRADED", "Mindestens ein Dienst ist ausgefallen"
+		return "DEGRADED", "status-DEGRADED", "Ausfall erkannt"
 	case hasDegraded:
-		return "DEGRADED", "status-DEGRADED", "Mindestens ein Dienst ist degradiert"
+		return "DEGRADED", "status-DEGRADED", "Eingeschränkt"
 	case hasUp && !hasUnknown && !hasPaused:
-		return "UP", "status-UP", "Alle Dienste sind erreichbar"
+		return "UP", "status-UP", "Alle erreichbar"
 	case hasPaused && !hasUp && !hasUnknown:
-		return "PAUSED", "status-PAUSED", "All monitors in this service are paused"
+		return "PAUSED", "status-PAUSED", "Pausiert"
 	default:
-		return "DEGRADED", "status-DEGRADED", "Mixed state"
+		return "DEGRADED", "status-DEGRADED", "Gemischter Zustand"
 	}
 }
 
