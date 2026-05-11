@@ -1,6 +1,6 @@
 {{define "content"}}
-<div class="admin-section" id="settings-remote-nodes-page" data-app-base="{{$.AppBase}}" data-i18n-online="{{index $.Translations "admin.remote_nodes.online"}}" data-i18n-offline="{{index $.Translations "admin.remote_nodes.offline"}}" data-i18n-entries="{{index $.Translations "admin.remote_nodes.entries"}}" data-i18n-from="{{index $.Translations "admin.remote_nodes.from"}}">
-  <nav class="admin-nav card">
+<div class="admin-section settings-section" id="settings-remote-nodes-page" data-app-base="{{$.AppBase}}" data-i18n-online="{{index $.Translations "admin.remote_nodes.online"}}" data-i18n-offline="{{index $.Translations "admin.remote_nodes.offline"}}" data-i18n-entries="{{index $.Translations "admin.remote_nodes.entries"}}" data-i18n-from="{{index $.Translations "admin.remote_nodes.from"}}">
+  <nav class="admin-nav settings-nav" aria-label="{{index $.Translations "layout.settings_title"}}">
     <a href="{{$.AppBase}}" class="admin-nav-link">{{index $.Translations "settings.nav.dashboard"}}</a>
     <a href="{{$.AppBase}}settings/profile" class="admin-nav-link">{{index $.Translations "settings.nav.profile"}}</a>
     <a href="{{$.AppBase}}settings/users" class="admin-nav-link">{{index $.Translations "settings.nav.users"}}</a>
@@ -12,13 +12,13 @@
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
 
-  <div class="admin-header">
+  <div class="admin-header settings-header">
     <div>
       <h1>{{index $.Translations "settings.remote_nodes.title"}}</h1>
     </div>
   </div>
 
-  <form method="post" action="{{$.AppBase}}settings/remote-nodes/create" class="admin-form card stack">
+  <form method="post" action="{{$.AppBase}}settings/remote-nodes/create" class="admin-form card stack settings-panel">
     <div class="inline-grid">
       <label>
         <span>{{index $.Translations "admin.remote_nodes.name_label"}}</span>
@@ -34,7 +34,7 @@
     </div>
   </form>
 
-  <div class="card table-card">
+  <div class="card table-card settings-table-card">
     <table class="admin-table">
       <thead>
         <tr>

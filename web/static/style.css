@@ -2156,6 +2156,110 @@ li + li {
   max-width: 920px;
 }
 
+.settings-section {
+  grid-template-columns: 220px minmax(0, 1fr);
+  align-items: start;
+  gap: 1.25rem;
+}
+
+.settings-section > :not(.settings-nav) {
+  grid-column: 2;
+}
+
+.settings-nav {
+  position: sticky;
+  top: calc(3.1rem + 0.65rem);
+  z-index: 20;
+  grid-column: 1;
+  grid-row: 1 / span 20;
+  display: grid;
+  align-items: stretch;
+  padding: 0.35rem;
+  border: 1px solid rgba(73, 91, 134, 0.32);
+  border-radius: 12px;
+  background: rgba(11, 16, 32, 0.94);
+}
+
+.settings-nav .admin-nav-link {
+  min-height: 2.35rem;
+  border-radius: 8px;
+  font-weight: 600;
+  white-space: nowrap;
+  justify-content: flex-start;
+}
+
+.settings-nav .admin-nav-link.is-active {
+  color: #07111f;
+  border-color: rgba(125, 211, 252, 0.65);
+  background: var(--primary);
+}
+
+.settings-header {
+  width: min(100%, 980px);
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(73, 91, 134, 0.38);
+}
+
+.settings-header h1 {
+  font-size: 1.45rem;
+}
+
+.settings-panel-grid {
+  display: grid;
+  gap: 1rem;
+  width: min(100%, 980px);
+}
+
+.settings-panel {
+  width: min(100%, 980px);
+  max-width: 980px;
+  border-radius: 12px;
+  background: rgba(17, 23, 42, 0.96);
+}
+
+.settings-panel .inline-grid {
+  align-items: end;
+}
+
+.settings-panel label {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.settings-panel .toggle-row,
+.settings-panel .checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: fit-content;
+}
+
+.settings-panel label span {
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.settings-panel .toggle-row span,
+.settings-panel .checkbox-row span {
+  color: var(--text);
+}
+
+.settings-panel .toggle-row input[type="checkbox"],
+.settings-panel .checkbox-row input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
+.settings-panel input,
+.settings-panel select {
+  width: 100%;
+}
+
+.settings-section > .settings-panel + .settings-panel,
+.settings-section > .settings-panel-grid + .settings-panel {
+  margin-top: 0;
+}
+
 .settings-card {
   max-width: none;
 }
@@ -2182,14 +2286,14 @@ li + li {
   display: grid;
   gap: 0.9rem;
   padding: 1rem;
-  border-radius: 14px;
+  border-radius: 10px;
   border: 1px solid rgba(73, 91, 134, 0.28);
   background: rgba(11, 16, 32, 0.36);
 }
 
 .settings-empty-state {
   padding: 1rem;
-  border-radius: 14px;
+  border-radius: 10px;
   border: 1px dashed rgba(154, 167, 196, 0.25);
   background: rgba(11, 16, 32, 0.22);
 }
@@ -2208,6 +2312,69 @@ li + li {
 
 .action-menu-item:disabled:hover {
   background: transparent;
+}
+
+.settings-table-card {
+  width: min(100%, 980px);
+  max-width: 980px;
+  border-radius: 12px;
+  background: rgba(17, 23, 42, 0.9);
+  overflow-x: auto;
+}
+
+.settings-table-card .admin-table {
+  min-width: 760px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.settings-table-card .admin-table th,
+.settings-table-card .admin-table td {
+  padding: 0.95rem 1rem;
+}
+
+.settings-table-card .admin-table thead th {
+  background: rgba(11, 16, 32, 0.36);
+  color: #aeb9d2;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  border-bottom-color: rgba(73, 91, 134, 0.44);
+}
+
+.settings-table-card .admin-table tbody tr:nth-child(odd) {
+  background: transparent;
+}
+
+.settings-table-card .admin-table tbody tr:hover {
+  background: rgba(125, 211, 252, 0.07);
+}
+
+.settings-table-card .admin-table td {
+  vertical-align: top;
+  border-bottom-color: rgba(73, 91, 134, 0.28);
+}
+
+.settings-table-card .admin-actions-inline {
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.settings-table-card .button-small {
+  min-height: 2rem;
+  border-radius: 8px;
+}
+
+.settings-table-card select {
+  min-height: 2.35rem;
+  border-radius: 9px;
+}
+
+.settings-table-card .compact-form {
+  min-width: min(560px, calc(100vw - 4rem));
+}
+
+.settings-table-card tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 textarea {
@@ -2251,9 +2418,36 @@ textarea {
 }
 
 @media (max-width: 860px) {
+  .settings-section {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-section > :not(.settings-nav),
+  .settings-nav {
+    grid-column: 1;
+  }
+
+  .settings-nav {
+    grid-row: auto;
+  }
+
   .admin-nav {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-nav {
+    position: static;
+    overflow-x: auto;
+  }
+
+  .settings-nav .admin-nav-link {
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .settings-header {
+    align-items: flex-start;
   }
 
   .table-card {

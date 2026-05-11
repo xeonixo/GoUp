@@ -1,7 +1,7 @@
 {{define "content"}}
 {{$hasMatrix := or .ProfileNotify.MatrixEnabled .ProfileNotify.MatrixHomeserver .ProfileNotify.MatrixRoomID}}
-<div class="admin-section">
-  <nav class="admin-nav card">
+<div class="admin-section settings-section">
+  <nav class="admin-nav settings-nav" aria-label="{{index $.Translations "layout.settings_title"}}">
     <a href="{{$.AppBase}}" class="admin-nav-link">{{index $.Translations "settings.nav.dashboard"}}</a>
     <a href="{{$.AppBase}}settings/profile" class="admin-nav-link is-active">{{index $.Translations "settings.nav.profile"}}</a>
     {{if eq $.User.Role "admin"}}
@@ -15,14 +15,14 @@
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
 
-  <div class="admin-header">
+  <div class="admin-header settings-header">
     <div>
       <h1>{{index $.Translations "settings.profile.title"}}</h1>
     </div>
   </div>
 
-  <form method="POST" action="{{$.AppBase}}settings/profile/save" class="stack settings-grid">
-    <section class="card stack admin-form settings-card">
+  <form method="POST" action="{{$.AppBase}}settings/profile/save" class="stack settings-grid settings-panel-grid">
+    <section class="card stack admin-form settings-card settings-panel">
       <div class="settings-card-header">
         <div>
           <h2>{{index $.Translations "settings.profile.title"}}</h2>
@@ -47,7 +47,7 @@
       </div>
     </section>
 
-    <section class="card stack admin-form settings-card">
+    <section class="card stack admin-form settings-card settings-panel">
       <div class="settings-card-header">
         <div>
           <h2>{{index $.Translations "settings.notifications.title"}}</h2>
@@ -122,7 +122,7 @@
   </form>
 
   {{if .ProfileNotify.HasLocalCredentials}}
-  <form method="POST" action="{{$.AppBase}}settings/profile/password" class="card stack admin-form">
+  <form method="POST" action="{{$.AppBase}}settings/profile/password" class="card stack admin-form settings-panel">
     <h2>{{index $.Translations "settings.password.title"}}</h2>
     <div class="form-group">
       <label for="current_password">{{index $.Translations "settings.password.current_label"}}</label>

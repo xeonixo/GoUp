@@ -1,6 +1,6 @@
 {{define "content"}}
-<div class="admin-section">
-  <nav class="admin-nav card">
+<div class="admin-section settings-section">
+  <nav class="admin-nav settings-nav" aria-label="{{index $.Translations "layout.settings_title"}}">
     <a href="{{$.AppBase}}" class="admin-nav-link">{{index $.Translations "settings.nav.dashboard"}}</a>
     <a href="{{$.AppBase}}settings/profile" class="admin-nav-link">{{index $.Translations "settings.nav.profile"}}</a>
     <a href="{{$.AppBase}}settings/users" class="admin-nav-link">{{index $.Translations "settings.nav.users"}}</a>
@@ -12,14 +12,14 @@
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
 
-  <div class="admin-header">
+  <div class="admin-header settings-header">
     <div>
       <h1>{{index $.Translations "settings.webhooks.title"}}</h1>
       <p class="muted compact">{{index $.Translations "settings.webhooks.subtitle"}}</p>
     </div>
   </div>
 
-  <form method="POST" action="{{$.AppBase}}settings/webhooks/save" class="admin-form card stack">
+  <form method="POST" action="{{$.AppBase}}settings/webhooks/save" class="admin-form card stack settings-panel">
     <h2>{{index $.Translations "settings.webhooks.new_title"}}</h2>
     <div class="inline-grid">
       <label>
@@ -50,7 +50,7 @@
     </div>
   </form>
 
-  <div class="card table-card">
+  <div class="card table-card settings-table-card">
     <table class="admin-table">
       <thead>
         <tr>

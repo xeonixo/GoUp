@@ -1,7 +1,7 @@
 {{define "content"}}
-<div class="admin-section">
+<div class="admin-section{{if .SettingsMode}} settings-section{{end}}">
   {{if .SettingsMode}}
-  <nav class="admin-nav card">
+  <nav class="admin-nav settings-nav" aria-label="{{index $.Translations "layout.settings_title"}}">
     <a href="{{.AppBase}}" class="admin-nav-link">{{index $.Translations "settings.nav.dashboard"}}</a>
     <a href="{{.AppBase}}settings/users" class="admin-nav-link is-active">{{index $.Translations "settings.nav.users"}}</a>
     <a href="{{.AppBase}}settings/remote-nodes" class="admin-nav-link">{{index $.Translations "settings.nav.remote_nodes"}}</a>
@@ -21,7 +21,7 @@
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
 
-  <form method="POST" action="{{.FormAction}}" class="admin-form card stack">
+  <form method="POST" action="{{.FormAction}}" class="admin-form card stack{{if .SettingsMode}} settings-panel{{end}}">
     <input type="hidden" name="user_id" value="{{if .IsEdit}}{{.AdminLocalUser.UserID}}{{end}}">
 
     <div class="form-group">

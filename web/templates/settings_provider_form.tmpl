@@ -1,6 +1,6 @@
 {{define "content"}}
-<div class="admin-section">
-  <nav class="admin-nav card">
+<div class="admin-section settings-section">
+  <nav class="admin-nav settings-nav" aria-label="{{index $.Translations "layout.settings_title"}}">
     <a href="{{$.AppBase}}" class="admin-nav-link">{{index $.Translations "settings.nav.dashboard"}}</a>
     <a href="{{$.AppBase}}settings/profile" class="admin-nav-link">{{index $.Translations "settings.nav.profile"}}</a>
     {{if eq $.User.Role "admin"}}
@@ -14,7 +14,7 @@
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
 
-  <div class="admin-header">
+  <div class="admin-header settings-header">
     <div>
       <p class="eyebrow">{{index $.Translations "settings.providers.title"}}</p>
       <h1>{{if .IsEdit}}{{index $.Translations "admin.provider_form.title_edit"}}{{else}}{{index $.Translations "admin.provider_form.title_new"}}{{end}}</h1>
@@ -22,7 +22,7 @@
     <a href="{{$.AppBase}}settings/providers" class="button button-secondary">{{index $.Translations "settings.providers.back_button"}}</a>
   </div>
 
-  <form method="POST" action="{{.FormAction}}" class="admin-form card stack">
+  <form method="POST" action="{{.FormAction}}" class="admin-form card stack settings-panel">
     <div class="form-group">
       <label for="provider_key">{{index $.Translations "settings.providers.provider_key"}} *</label>
       <input type="text" id="provider_key" name="provider_key" value="{{.AdminProvider.ProviderKey}}" required {{if .IsEdit}}readonly{{end}} placeholder="{{index $.Translations "admin.provider_form.provider_key_placeholder"}}">
