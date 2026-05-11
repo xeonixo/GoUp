@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"goup/internal/monitor"
@@ -30,6 +31,16 @@ type Agent struct {
 	httpClient  *http.Client
 	accessToken string
 	pollSeconds int
+	workerSem   chan struct{}
+	scheduleMu  sync.Mutex
+	schedule    map[int64]*remoteScheduleState
+	assignments map[int64]assignedMonitorSpec
+}
+
+type remoteScheduleState struct {
+	interval time.Duration
+	nextDue  time.Time
+	inFlight bool
 }
 
 type bootstrapRequest struct {
@@ -57,6 +68,7 @@ type assignedMonitorSpec struct {
 	Name               string `json:"name"`
 	Kind               string `json:"kind"`
 	Target             string `json:"target"`
+	IntervalSeconds    int    `json:"interval_seconds"`
 	TimeoutSeconds     int    `json:"timeout_seconds"`
 	TLSMode            string `json:"tls_mode"`
 	ExpectedStatusCode *int   `json:"expected_status_code,omitempty"`
@@ -110,8 +122,11 @@ func normalizeControlPlaneURL(raw string) string {
 
 func New(cfg Config, logger *slog.Logger) *Agent {
 	return &Agent{
-		cfg:    cfg,
-		logger: logger,
+		cfg:         cfg,
+		logger:      logger,
+		workerSem:   make(chan struct{}, 4),
+		schedule:    make(map[int64]*remoteScheduleState),
+		assignments: make(map[int64]assignedMonitorSpec),
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -124,36 +139,26 @@ func (a *Agent) Run(ctx context.Context) error {
 		return err
 	}
 
+	nextPoll := time.Now()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		default:
-		}
-
-		assigned, err := a.poll(ctx)
-		if err != nil {
-			a.logger.Error("poll failed", "error", err)
-			a.sleep(ctx, time.Duration(a.pollSeconds)*time.Second)
-			continue
-		}
-
-		results := a.runChecks(ctx, assigned)
-		if len(results) > 0 {
-			if err := a.report(ctx, results); err != nil {
-				a.logger.Error("report failed", "error", err)
+		case now := <-ticker.C:
+			if !now.Before(nextPoll) {
+				assigned, err := a.poll(ctx)
+				if err != nil {
+					a.logger.Error("poll failed", "error", err)
+				} else {
+					a.updateAssignments(assigned, now.UTC())
+				}
+				nextPoll = now.Add(time.Duration(a.pollSeconds) * time.Second)
 			}
+			a.dispatchDueChecks(ctx, now.UTC())
 		}
-
-		a.sleep(ctx, time.Duration(a.pollSeconds)*time.Second)
-	}
-}
-
-// sleep waits for the given duration or until ctx is cancelled.
-func (a *Agent) sleep(ctx context.Context, d time.Duration) {
-	select {
-	case <-ctx.Done():
-	case <-time.After(d):
 	}
 }
 
@@ -210,10 +215,125 @@ func (a *Agent) nodeEndpointURL(path string) string {
 	return a.cfg.ControlPlaneURL + path
 }
 
-func (a *Agent) runChecks(ctx context.Context, assigned []assignedMonitorSpec) []reportResult {
-	if len(assigned) == 0 {
-		return nil
+func (a *Agent) updateAssignments(assigned []assignedMonitorSpec, now time.Time) {
+	a.scheduleMu.Lock()
+	defer a.scheduleMu.Unlock()
+
+	seen := make(map[int64]struct{}, len(assigned))
+	for _, item := range assigned {
+		seen[item.ID] = struct{}{}
+		a.assignments[item.ID] = item
+		interval := normalizedAssignedInterval(item)
+		if a.schedule[item.ID] == nil {
+			a.schedule[item.ID] = &remoteScheduleState{
+				interval: interval,
+				nextDue:  monitor.CascadedDueAtOrAfter(item.ID, interval, now),
+			}
+		} else if a.schedule[item.ID].interval != interval {
+			a.schedule[item.ID].interval = interval
+			if !a.schedule[item.ID].inFlight {
+				a.schedule[item.ID].nextDue = monitor.CascadedDueAtOrAfter(item.ID, interval, now)
+			}
+		}
 	}
+	for monitorID := range a.assignments {
+		if _, ok := seen[monitorID]; !ok {
+			delete(a.assignments, monitorID)
+			delete(a.schedule, monitorID)
+		}
+	}
+}
+
+func (a *Agent) dispatchDueChecks(ctx context.Context, now time.Time) {
+	due := a.dueAssignments(now)
+	for _, item := range due {
+		a.dispatchCheck(ctx, item)
+	}
+}
+
+func (a *Agent) dueAssignments(now time.Time) []assignedMonitorSpec {
+	a.scheduleMu.Lock()
+	defer a.scheduleMu.Unlock()
+
+	due := make([]assignedMonitorSpec, 0)
+	for monitorID, item := range a.assignments {
+		state := a.schedule[monitorID]
+		if state == nil {
+			continue
+		}
+		interval := normalizedAssignedInterval(item)
+		if state.inFlight {
+			if !state.nextDue.After(now) {
+				skipped := int(now.Sub(state.nextDue)/interval) + 1
+				nextDue := state.nextDue.Add(time.Duration(skipped) * interval)
+				a.logger.Warn("remote monitor check slot skipped: previous check still running",
+					"monitor_id", monitorID,
+					"scheduled_at", state.nextDue.Format(time.RFC3339),
+					"next_due_at", nextDue.Format(time.RFC3339),
+					"skipped_slots", skipped,
+					"lag_ms", now.Sub(state.nextDue).Milliseconds(),
+				)
+				state.nextDue = nextDue
+			}
+			continue
+		}
+		if state.nextDue.After(now) {
+			continue
+		}
+		if now.Sub(state.nextDue) >= interval {
+			skipped := int(now.Sub(state.nextDue) / interval)
+			state.nextDue = state.nextDue.Add(time.Duration(skipped) * interval)
+			a.logger.Warn("remote monitor check slots skipped: scheduler lag",
+				"monitor_id", monitorID,
+				"scheduled_at", state.nextDue.Format(time.RFC3339),
+				"skipped_slots", skipped,
+				"lag_ms", now.Sub(state.nextDue).Milliseconds(),
+			)
+		}
+		due = append(due, item)
+	}
+	return due
+}
+
+func (a *Agent) dispatchCheck(ctx context.Context, item assignedMonitorSpec) {
+	a.scheduleMu.Lock()
+	state := a.schedule[item.ID]
+	if state == nil || state.inFlight {
+		a.scheduleMu.Unlock()
+		return
+	}
+	select {
+	case a.workerSem <- struct{}{}:
+	default:
+		a.scheduleMu.Unlock()
+		a.logger.Warn("remote monitor check delayed: worker capacity exhausted", "monitor_id", item.ID)
+		return
+	}
+	scheduledAt := state.nextDue
+	state.inFlight = true
+	state.nextDue = scheduledAt.Add(normalizedAssignedInterval(item))
+	a.scheduleMu.Unlock()
+
+	go func() {
+		defer func() {
+			<-a.workerSem
+			a.scheduleMu.Lock()
+			if state := a.schedule[item.ID]; state != nil {
+				state.inFlight = false
+			}
+			a.scheduleMu.Unlock()
+		}()
+		result, ok := a.runCheck(ctx, item, scheduledAt)
+		if !ok {
+			return
+		}
+		if err := a.report(ctx, []reportResult{result}); err != nil {
+			a.logger.Error("report failed", "monitor_id", item.ID, "error", err)
+		}
+	}()
+}
+
+func (a *Agent) runCheck(ctx context.Context, item assignedMonitorSpec, scheduledAt time.Time) (reportResult, bool) {
 	checkers := map[monitor.Kind]monitor.Checker{
 		monitor.KindHTTPS: monitor.HTTPSChecker{},
 		monitor.KindTCP:   monitor.TCPChecker{},
@@ -224,49 +344,52 @@ func (a *Agent) runChecks(ctx context.Context, assigned []assignedMonitorSpec) [
 		monitor.KindUDP:   monitor.UDPChecker{},
 		monitor.KindWhois: monitor.WhoisChecker{},
 	}
-
-	results := make([]reportResult, 0, len(assigned))
-	for _, item := range assigned {
-		kind := monitor.Kind(strings.TrimSpace(item.Kind))
-		checker, ok := checkers[kind]
-		if !ok {
-			continue
-		}
-		timeout := item.TimeoutSeconds
-		if timeout <= 0 {
-			timeout = 10
-		}
-		mon := monitor.Monitor{
-			ID:                 item.ID,
-			Name:               strings.TrimSpace(item.Name),
-			Kind:               kind,
-			Target:             strings.TrimSpace(item.Target),
-			Timeout:            time.Duration(timeout) * time.Second,
-			TLSMode:            monitor.TLSMode(strings.TrimSpace(item.TLSMode)),
-			ExpectedStatusCode: item.ExpectedStatusCode,
-			ExpectedText:       strings.TrimSpace(item.ExpectedText),
-			Enabled:            true,
-		}
-		runCtx, cancel := context.WithTimeout(ctx, mon.Timeout+2*time.Second)
-		res := checker.Check(runCtx, mon)
-		cancel()
-		payload := reportResult{
-			MonitorID:        mon.ID,
-			CheckedAt:        res.CheckedAt.UTC().Format(time.RFC3339),
-			Status:           string(res.Status),
-			LatencyMS:        res.Latency.Milliseconds(),
-			Message:          strings.TrimSpace(res.Message),
-			HTTPStatusCode:   res.HTTPStatusCode,
-			TLSValid:         res.TLSValid,
-			TLSDaysRemaining: res.TLSDaysRemaining,
-		}
-		if res.TLSNotAfter != nil {
-			value := res.TLSNotAfter.UTC().Format(time.RFC3339)
-			payload.TLSNotAfter = &value
-		}
-		results = append(results, payload)
+	kind := monitor.Kind(strings.TrimSpace(item.Kind))
+	checker, ok := checkers[kind]
+	if !ok {
+		return reportResult{}, false
 	}
-	return results
+	timeout := item.TimeoutSeconds
+	if timeout <= 0 {
+		timeout = 10
+	}
+	mon := monitor.Monitor{
+		ID:                 item.ID,
+		Name:               strings.TrimSpace(item.Name),
+		Kind:               kind,
+		Target:             strings.TrimSpace(item.Target),
+		Timeout:            time.Duration(timeout) * time.Second,
+		TLSMode:            monitor.TLSMode(strings.TrimSpace(item.TLSMode)),
+		ExpectedStatusCode: item.ExpectedStatusCode,
+		ExpectedText:       strings.TrimSpace(item.ExpectedText),
+		Enabled:            true,
+	}
+	runCtx, cancel := context.WithTimeout(ctx, mon.Timeout+2*time.Second)
+	res := checker.Check(runCtx, mon)
+	cancel()
+	res.CheckedAt = scheduledAt.UTC()
+	payload := reportResult{
+		MonitorID:        mon.ID,
+		CheckedAt:        res.CheckedAt.UTC().Format(time.RFC3339),
+		Status:           string(res.Status),
+		LatencyMS:        res.Latency.Milliseconds(),
+		Message:          strings.TrimSpace(res.Message),
+		HTTPStatusCode:   res.HTTPStatusCode,
+		TLSValid:         res.TLSValid,
+		TLSDaysRemaining: res.TLSDaysRemaining,
+	}
+	if res.TLSNotAfter != nil {
+		value := res.TLSNotAfter.UTC().Format(time.RFC3339)
+		payload.TLSNotAfter = &value
+	}
+	return payload, true
+}
+
+func normalizedAssignedInterval(item assignedMonitorSpec) time.Duration {
+	if item.IntervalSeconds <= 0 {
+		return time.Minute
+	}
+	return time.Duration(item.IntervalSeconds) * time.Second
 }
 
 func (a *Agent) postJSON(ctx context.Context, endpoint string, bearerToken string, requestBody any, responseBody any) error {

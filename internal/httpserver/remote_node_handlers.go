@@ -44,6 +44,7 @@ type remoteNodeMonitorPayload struct {
 	Name               string `json:"name"`
 	Kind               string `json:"kind"`
 	Target             string `json:"target"`
+	IntervalSeconds    int    `json:"interval_seconds"`
 	TimeoutSeconds     int    `json:"timeout_seconds"`
 	TLSMode            string `json:"tls_mode"`
 	ExpectedStatusCode *int   `json:"expected_status_code,omitempty"`
@@ -591,6 +592,7 @@ func (s *Server) handleRemoteNodePoll(w http.ResponseWriter, r *http.Request) {
 			Name:               item.Name,
 			Kind:               string(item.Kind),
 			Target:             item.Target,
+			IntervalSeconds:    int(item.Interval / time.Second),
 			TimeoutSeconds:     int(item.Timeout / time.Second),
 			TLSMode:            string(item.TLSMode),
 			ExpectedStatusCode: item.ExpectedStatusCode,

@@ -2,7 +2,9 @@ package monitor
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
+	"hash/fnv"
 	"log/slog"
 	"sync"
 	"time"
@@ -33,8 +35,17 @@ type Runner struct {
 	checkers            map[Kind]Checker
 	interval            time.Duration
 	workers             int
+	workerSem           chan struct{}
+	scheduleMu          sync.Mutex
+	schedule            map[int64]*monitorScheduleState
 	notifyMaxRetries    int
 	notifyRetryInterval time.Duration
+}
+
+type monitorScheduleState struct {
+	interval time.Duration
+	nextDue  time.Time
+	inFlight bool
 }
 
 type Transition struct {
@@ -65,12 +76,13 @@ type FanoutNotifier interface {
 }
 
 func NewRunner(logger *slog.Logger, store Store, notifiers ...Notifier) *Runner {
-	return &Runner{
+	r := &Runner{
 		logger:              logger,
 		store:               store,
 		notifiers:           notifiers,
 		interval:            5 * time.Second,
 		workers:             4,
+		schedule:            make(map[int64]*monitorScheduleState),
 		notifyMaxRetries:    3,
 		notifyRetryInterval: 5 * time.Minute,
 		checkers: map[Kind]Checker{
@@ -84,6 +96,18 @@ func NewRunner(logger *slog.Logger, store Store, notifiers ...Notifier) *Runner 
 			KindWhois: WhoisChecker{},
 		},
 	}
+	r.workerSem = make(chan struct{}, r.workers)
+	return r
+}
+
+func (r *Runner) SetWorkers(workers int) {
+	if workers <= 0 {
+		workers = 1
+	}
+	r.scheduleMu.Lock()
+	defer r.scheduleMu.Unlock()
+	r.workers = workers
+	r.workerSem = make(chan struct{}, workers)
 }
 
 func (r *Runner) Run(ctx context.Context) {
@@ -111,46 +135,138 @@ func (r *Runner) runDueChecks(ctx context.Context) {
 		return
 	}
 
-	now := time.Now()
-	dueSnapshots := make([]Snapshot, 0, len(snapshots))
-	for _, snapshot := range snapshots {
-		if !snapshot.IsDue(now) {
-			continue
-		}
-		dueSnapshots = append(dueSnapshots, snapshot)
-	}
+	now := time.Now().UTC()
+	dueSnapshots := r.dueSnapshots(snapshots, now)
 	if len(dueSnapshots) == 0 {
 		return
 	}
 
-	workers := r.workers
-	if workers <= 0 {
-		workers = 1
+	for _, due := range dueSnapshots {
+		r.dispatchSnapshot(ctx, due)
 	}
-	if workers > len(dueSnapshots) {
-		workers = len(dueSnapshots)
-	}
-
-	sem := make(chan struct{}, workers)
-	var wg sync.WaitGroup
-	for _, snapshot := range dueSnapshots {
-		snapshot := snapshot
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			select {
-			case sem <- struct{}{}:
-			case <-ctx.Done():
-				return
-			}
-			defer func() { <-sem }()
-			r.runSnapshot(ctx, snapshot)
-		}()
-	}
-	wg.Wait()
 }
 
-func (r *Runner) runSnapshot(ctx context.Context, snapshot Snapshot) {
+type dueSnapshot struct {
+	snapshot Snapshot
+	dueAt    time.Time
+	lag      time.Duration
+}
+
+func (r *Runner) dueSnapshots(snapshots []Snapshot, now time.Time) []dueSnapshot {
+	r.scheduleMu.Lock()
+	defer r.scheduleMu.Unlock()
+
+	seen := make(map[int64]struct{}, len(snapshots))
+	due := make([]dueSnapshot, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		monitorID := snapshot.Monitor.ID
+		seen[monitorID] = struct{}{}
+
+		if !snapshot.Monitor.Enabled || snapshot.Monitor.ExecutorKind == "remote" {
+			delete(r.schedule, monitorID)
+			continue
+		}
+
+		interval := normalizedMonitorInterval(snapshot.Monitor.Interval)
+		state := r.schedule[monitorID]
+		if state == nil {
+			state = &monitorScheduleState{
+				interval: interval,
+				nextDue:  CascadedDueAtOrAfter(monitorID, interval, now),
+			}
+			r.schedule[monitorID] = state
+		} else if state.interval != interval {
+			state.interval = interval
+			if !state.inFlight {
+				state.nextDue = CascadedDueAtOrAfter(monitorID, interval, now)
+			}
+		}
+
+		if state.inFlight {
+			if !state.nextDue.After(now) {
+				nextDue, skipped := skipRunningSlots(state.nextDue, interval, now)
+				r.logger.Warn("monitor check slot skipped: previous check still running",
+					"monitor_id", monitorID,
+					"scheduled_at", state.nextDue.Format(time.RFC3339),
+					"next_due_at", nextDue.Format(time.RFC3339),
+					"skipped_slots", skipped,
+					"lag_ms", now.Sub(state.nextDue).Milliseconds(),
+				)
+				state.nextDue = nextDue
+			}
+			continue
+		}
+
+		if state.nextDue.After(now) {
+			continue
+		}
+
+		dueAt := state.nextDue
+		if now.Sub(dueAt) >= interval {
+			var skipped int
+			dueAt, skipped = skipMissedSlots(dueAt, interval, now)
+			state.nextDue = dueAt
+			r.logger.Warn("monitor check slots skipped: scheduler lag",
+				"monitor_id", monitorID,
+				"scheduled_at", dueAt.Format(time.RFC3339),
+				"skipped_slots", skipped,
+				"lag_ms", now.Sub(dueAt).Milliseconds(),
+			)
+		}
+
+		due = append(due, dueSnapshot{
+			snapshot: snapshot,
+			dueAt:    dueAt,
+			lag:      now.Sub(dueAt),
+		})
+	}
+
+	for monitorID := range r.schedule {
+		if _, ok := seen[monitorID]; !ok {
+			delete(r.schedule, monitorID)
+		}
+	}
+
+	return due
+}
+
+func (r *Runner) dispatchSnapshot(ctx context.Context, due dueSnapshot) {
+	r.scheduleMu.Lock()
+	state := r.schedule[due.snapshot.Monitor.ID]
+	if state == nil || state.inFlight {
+		r.scheduleMu.Unlock()
+		return
+	}
+	select {
+	case r.workerSem <- struct{}{}:
+	default:
+		r.scheduleMu.Unlock()
+		r.logger.Warn("monitor check delayed: worker capacity exhausted",
+			"monitor_id", due.snapshot.Monitor.ID,
+			"scheduled_at", due.dueAt.Format(time.RFC3339),
+			"lag_ms", due.lag.Milliseconds(),
+			"workers", r.workers,
+		)
+		return
+	}
+	state.inFlight = true
+	state.nextDue = due.dueAt.Add(normalizedMonitorInterval(due.snapshot.Monitor.Interval))
+	r.scheduleMu.Unlock()
+
+	go func() {
+		defer func() {
+			<-r.workerSem
+			r.scheduleMu.Lock()
+			if state := r.schedule[due.snapshot.Monitor.ID]; state != nil {
+				state.inFlight = false
+			}
+			r.scheduleMu.Unlock()
+		}()
+		r.runSnapshot(ctx, due.snapshot, due.dueAt)
+	}()
+}
+
+func (r *Runner) runSnapshot(ctx context.Context, snapshot Snapshot, scheduledAt time.Time) {
 	checker, ok := r.checkers[snapshot.Monitor.Kind]
 	if !ok {
 		r.logger.Warn("no checker registered for monitor kind", "monitor_id", snapshot.Monitor.ID, "kind", snapshot.Monitor.Kind)
@@ -160,6 +276,7 @@ func (r *Runner) runSnapshot(ctx context.Context, snapshot Snapshot) {
 	runCtx, cancel := context.WithTimeout(ctx, snapshot.Monitor.Timeout+2*time.Second)
 	result := checker.Check(runCtx, snapshot.Monitor)
 	cancel()
+	result.CheckedAt = scheduledAt.UTC()
 
 	if result.Status != StatusUp && snapshot.Monitor.RetryCount > 0 {
 		for attempt := 0; attempt < snapshot.Monitor.RetryCount; attempt++ {
@@ -174,6 +291,7 @@ func (r *Runner) runSnapshot(ctx context.Context, snapshot Snapshot) {
 			retryResult := checker.Check(retryCtx, snapshot.Monitor)
 			retryCancel()
 			result = retryResult
+			result.CheckedAt = scheduledAt.UTC()
 			if result.Status == StatusUp {
 				break
 			}
@@ -248,7 +366,59 @@ doneRetrying:
 		"kind", snapshot.Monitor.Kind,
 		"status", result.Status,
 		"latency_ms", result.Latency.Milliseconds(),
+		"scheduled_at", scheduledAt.UTC().Format(time.RFC3339),
 	)
+}
+
+func normalizedMonitorInterval(interval time.Duration) time.Duration {
+	if interval <= 0 {
+		return time.Minute
+	}
+	return interval
+}
+
+func CascadedDueAtOrAfter(monitorID int64, interval time.Duration, now time.Time) time.Time {
+	interval = normalizedMonitorInterval(interval)
+	phase := MonitorPhaseOffset(monitorID, interval)
+	base := now.Truncate(interval).Add(phase)
+	if base.Before(now) {
+		base = base.Add(interval)
+	}
+	return base.UTC()
+}
+
+func MonitorPhaseOffset(monitorID int64, interval time.Duration) time.Duration {
+	interval = normalizedMonitorInterval(interval)
+	seconds := int64(interval / time.Second)
+	if seconds <= 1 {
+		return 0
+	}
+	h := fnv.New64a()
+	var buf [8]byte
+	binary.LittleEndian.PutUint64(buf[:], uint64(monitorID))
+	_, _ = h.Write(buf[:])
+	offsetSeconds := int64(h.Sum64() % uint64(seconds))
+	return time.Duration(offsetSeconds) * time.Second
+}
+
+func skipMissedSlots(dueAt time.Time, interval time.Duration, now time.Time) (time.Time, int) {
+	interval = normalizedMonitorInterval(interval)
+	if dueAt.After(now) {
+		return dueAt, 0
+	}
+	missed := int(now.Sub(dueAt) / interval)
+	nextDue := dueAt.Add(time.Duration(missed) * interval)
+	return nextDue.UTC(), missed
+}
+
+func skipRunningSlots(dueAt time.Time, interval time.Duration, now time.Time) (time.Time, int) {
+	interval = normalizedMonitorInterval(interval)
+	if dueAt.After(now) {
+		return dueAt, 0
+	}
+	skipped := int(now.Sub(dueAt)/interval) + 1
+	nextDue := dueAt.Add(time.Duration(skipped) * interval)
+	return nextDue.UTC(), skipped
 }
 
 func (r *Runner) dispatchFanoutTransition(ctx context.Context, monitorID int64, notifier FanoutNotifier, transition Transition) {

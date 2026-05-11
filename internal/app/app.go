@@ -516,13 +516,15 @@ func buildTenantRunner(ctx context.Context, logger *slog.Logger, controlStore *s
 	if endpointErr != nil {
 		return nil, endpointErr
 	}
-	return monitorrunner.NewRunner(
+	runner := monitorrunner.NewRunner(
 		logger,
 		ts,
 		matrixnotify.NewTenantNotifier(controlStore, matrixEndpointID, tenant.ID),
 		emailnotify.NewNotifier(controlStore, emailEndpointID, tenant.ID, cfg.BaseURL, tenant.Slug),
 		webhooknotify.NewNotifier(ts, controlStore, tenant.ID),
-	), nil
+	)
+	runner.SetWorkers(cfg.MonitorWorkers)
+	return runner, nil
 }
 
 func tenantHasAppDatabase(path string) bool {

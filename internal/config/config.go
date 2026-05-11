@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -25,6 +26,7 @@ type Config struct {
 	SessionKey           string
 	SSOSecretKey         string
 	ControlPlaneAdminKey string
+	MonitorWorkers       int
 	Auth                 AuthConfig
 }
 
@@ -50,6 +52,7 @@ func Load() (Config, error) {
 		SessionKey:           os.Getenv("GOUP_SESSION_KEY"),
 		SSOSecretKey:         os.Getenv("GOUP_SSO_SECRET_KEY"),
 		ControlPlaneAdminKey: strings.TrimSpace(os.Getenv("GOUP_CONTROL_PLANE_ADMIN_KEY")),
+		MonitorWorkers:       envIntOrDefault("GOUP_MONITOR_WORKERS", 4),
 		Auth: AuthConfig{
 			Mode: AuthMode(envOrDefault("GOUP_AUTH_MODE", string(AuthModeDisabled))),
 			OIDC: OIDCConfig{
@@ -91,6 +94,9 @@ func validate(cfg Config) error {
 	if cfg.SessionKey != "" && len(cfg.SessionKey) < 16 {
 		return errors.New("GOUP_SESSION_KEY must be at least 16 characters when set")
 	}
+	if cfg.MonitorWorkers < 0 {
+		return errors.New("GOUP_MONITOR_WORKERS must not be negative")
+	}
 
 	switch cfg.Auth.Mode {
 	case AuthModeDisabled:
@@ -123,4 +129,14 @@ func envOrDefault(key, fallback string) string {
 	return fallback
 }
 
-
+func envIntOrDefault(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}

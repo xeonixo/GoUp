@@ -192,6 +192,7 @@ Configuration is provided through environment variables, typically via `.env` an
 | `GOUP_BASE_URL` | `http://localhost:8080` | External base URL used for CSRF validation, OIDC callbacks, and generated links |
 | `GOUP_DATA_DIR` | `/data` | Directory containing all SQLite database files |
 | `GOUP_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `GOUP_MONITOR_WORKERS` | `4` | Maximum number of local monitor checks running concurrently |
 
 ### Security-related settings
 
@@ -498,4 +499,3 @@ docs/                   Architecture notes and project documentation
 ## License
 
 MIT. Self-hosting is encouraged and pull requests are welcome.
-
