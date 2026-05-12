@@ -2199,6 +2199,23 @@ func (s *ControlPlaneStore) ListTenantNotificationRecipients(ctx context.Context
 		return nil, fmt.Errorf("tenant id is required")
 	}
 
+	return s.listTenantNotificationRecipients(ctx, tenantID, false)
+}
+
+func (s *ControlPlaneStore) ListTenantAdminNotificationRecipients(ctx context.Context, tenantID int64) ([]NotificationRecipient, error) {
+	if tenantID <= 0 {
+		return nil, fmt.Errorf("tenant id is required")
+	}
+
+	return s.listTenantNotificationRecipients(ctx, tenantID, true)
+}
+
+func (s *ControlPlaneStore) listTenantNotificationRecipients(ctx context.Context, tenantID int64, adminOnly bool) ([]NotificationRecipient, error) {
+	roleFilter := ""
+	if adminOnly {
+		roleFilter = " AND lower(trim(tm.role)) = 'admin'"
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 SELECT DISTINCT trim(u.email), COALESCE(NULLIF(trim(u.preferred_language), ''), 'en')
 FROM tenant_memberships tm
@@ -2208,6 +2225,7 @@ WHERE tm.tenant_id = ?
 	AND t.active = 1
 	AND tm.notifications_email_enabled = 1
 	AND trim(u.email) <> ''
+`+roleFilter+`
 ORDER BY lower(trim(u.email)) ASC
 `, tenantID)
 	if err != nil {
@@ -2557,6 +2575,23 @@ func (s *ControlPlaneStore) ListTenantMatrixNotificationTargets(ctx context.Cont
 		return nil, fmt.Errorf("tenant id is required")
 	}
 
+	return s.listTenantMatrixNotificationTargets(ctx, tenantID, false)
+}
+
+func (s *ControlPlaneStore) ListTenantAdminMatrixNotificationTargets(ctx context.Context, tenantID int64) ([]MatrixNotificationTarget, error) {
+	if tenantID <= 0 {
+		return nil, fmt.Errorf("tenant id is required")
+	}
+
+	return s.listTenantMatrixNotificationTargets(ctx, tenantID, true)
+}
+
+func (s *ControlPlaneStore) listTenantMatrixNotificationTargets(ctx context.Context, tenantID int64, adminOnly bool) ([]MatrixNotificationTarget, error) {
+	roleFilter := ""
+	if adminOnly {
+		roleFilter = " AND lower(trim(tm.role)) = 'admin'"
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 SELECT unc.user_id, unc.config_json, unc.secret_ciphertext, COALESCE(NULLIF(trim(u.preferred_language), ''), 'en')
 FROM user_notification_channels unc
@@ -2567,6 +2602,7 @@ WHERE unc.tenant_id = ?
 	AND unc.kind = 'matrix'
 	AND unc.enabled = 1
 	AND t.active = 1
+`+roleFilter+`
 ORDER BY unc.user_id ASC
 `, tenantID)
 	if err != nil {

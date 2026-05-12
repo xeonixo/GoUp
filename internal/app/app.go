@@ -320,7 +320,10 @@ func (a *App) checkRemoteNodesHeartbeat(ctx context.Context) {
 		currentUp := node.IsOnline(now)
 		previousUp, seen := a.remoteNodeUp[node.NodeID]
 		a.remoteNodeUp[node.NodeID] = currentUp
-		if !seen || previousUp == currentUp {
+		if !seen && currentUp {
+			continue
+		}
+		if seen && previousUp == currentUp {
 			continue
 		}
 
@@ -346,16 +349,24 @@ func (a *App) checkRemoteNodesHeartbeat(ctx context.Context) {
 			CheckedAt:    now,
 			ResultDetail: fmt.Sprintf("last_seen=%v timeout=%ds", node.LastSeenAt, node.HeartbeatTimeoutSeconds),
 		}
-		if previousUp {
+		if !currentUp {
 			transition.Previous = monitorrunner.StatusUp
 			transition.Current = monitorrunner.StatusDown
+			a.markRemoteNodeMonitorsUnknown(ctx, appStore, node, now)
 		} else {
 			transition.Previous = monitorrunner.StatusDown
 			transition.Current = monitorrunner.StatusUp
 		}
+		eventType := "status_online"
+		if transition.Current == monitorrunner.StatusDown {
+			eventType = "status_offline"
+		}
+		if err := a.controlStore.InsertRemoteNodeEvent(ctx, node.TenantID, node.NodeID, eventType, "control-plane", "GoUp", transition.ResultDetail, now); err != nil {
+			a.logger.Warn("record remote node heartbeat status event failed", "node_id", node.NodeID, "event_type", eventType, "error", err)
+		}
 		notifiers := []monitorrunner.Notifier{
-			matrixnotify.NewTenantNotifier(a.controlStore, matrixEndpointID, node.TenantID),
-			emailnotify.NewNotifier(a.controlStore, emailEndpointID, node.TenantID, a.config.BaseURL, tenant.Slug),
+			matrixnotify.NewTenantAdminNotifier(a.controlStore, matrixEndpointID, node.TenantID),
+			emailnotify.NewTenantAdminNotifier(a.controlStore, emailEndpointID, node.TenantID, a.config.BaseURL, tenant.Slug),
 			webhooknotify.NewNotifier(appStore, a.controlStore, node.TenantID),
 		}
 		for _, notifier := range notifiers {
@@ -368,6 +379,110 @@ func (a *App) checkRemoteNodesHeartbeat(ctx context.Context) {
 			if err != nil && err != monitorrunner.ErrNoRecipients {
 				a.logger.Warn("remote node heartbeat notification failed", "node_id", node.NodeID, "endpoint_id", notifier.EndpointID(), "error", err)
 			}
+		}
+	}
+}
+
+func (a *App) markRemoteNodeMonitorsUnknown(ctx context.Context, appStore *store.Store, node store.RemoteNode, checkedAt time.Time) {
+	if appStore == nil {
+		return
+	}
+	if checkedAt.IsZero() {
+		checkedAt = time.Now().UTC()
+	}
+	assigned, err := appStore.ListMonitorsByExecutor(ctx, "remote", node.NodeID)
+	if err != nil {
+		a.logger.Warn("list monitors for offline remote node failed", "tenant_id", node.TenantID, "node_id", node.NodeID, "error", err)
+		return
+	}
+	if len(assigned) == 0 {
+		return
+	}
+	snapshots, err := appStore.ListMonitorSnapshots(ctx)
+	if err != nil {
+		a.logger.Warn("load monitor snapshots for offline remote node failed", "tenant_id", node.TenantID, "node_id", node.NodeID, "error", err)
+		return
+	}
+	previousByID := make(map[int64]*monitorrunner.Result, len(snapshots))
+	for i := range snapshots {
+		if snapshots[i].LastResult == nil {
+			continue
+		}
+		result := *snapshots[i].LastResult
+		previousByID[snapshots[i].Monitor.ID] = &result
+	}
+
+	nodeName := strings.TrimSpace(node.Name)
+	if nodeName == "" {
+		nodeName = strings.TrimSpace(node.NodeID)
+	}
+	message := fmt.Sprintf("remote node %s is offline; monitor state is unknown", nodeName)
+	for _, item := range assigned {
+		previous := previousByID[item.ID]
+		if previous != nil && previous.Status == monitorrunner.StatusUnknown {
+			continue
+		}
+		result := monitorrunner.Result{
+			MonitorID: item.ID,
+			CheckedAt: checkedAt.UTC(),
+			Status:    monitorrunner.StatusUnknown,
+			Message:   message,
+		}
+		if err := appStore.SaveMonitorResult(ctx, result); err != nil {
+			a.logger.Warn("save unknown monitor result for offline remote node failed", "tenant_id", node.TenantID, "node_id", node.NodeID, "monitor_id", item.ID, "error", err)
+			continue
+		}
+		if err := appStore.RecordMonitorState(ctx, item.ID, result.Status, result.Message, result.CheckedAt); err != nil {
+			a.logger.Warn("record unknown monitor state for offline remote node failed", "tenant_id", node.TenantID, "node_id", node.NodeID, "monitor_id", item.ID, "error", err)
+			continue
+		}
+		if transition, ok := buildOfflineRemoteMonitorTransition(item, previous, result); ok {
+			a.notifyRemoteMonitorTransition(ctx, appStore, node.TenantID, transition)
+		}
+	}
+}
+
+func buildOfflineRemoteMonitorTransition(item monitorrunner.Monitor, previous *monitorrunner.Result, current monitorrunner.Result) (monitorrunner.Transition, bool) {
+	if previous == nil || previous.Status == current.Status {
+		return monitorrunner.Transition{}, false
+	}
+	return monitorrunner.Transition{
+		Monitor:      item,
+		Previous:     previous.Status,
+		Current:      current.Status,
+		CheckedAt:    current.CheckedAt,
+		ResultDetail: current.Message,
+	}, true
+}
+
+func (a *App) notifyRemoteMonitorTransition(ctx context.Context, appStore *store.Store, tenantID int64, transition monitorrunner.Transition) {
+	if a == nil || a.controlStore == nil || appStore == nil {
+		return
+	}
+	matrixEndpointID, emailEndpointID, endpointErr := ensureNotifierEndpoints(ctx, appStore)
+	if endpointErr != nil {
+		a.logger.Warn("ensure notification endpoints for offline remote monitor failed", "tenant_id", tenantID, "error", endpointErr)
+		return
+	}
+	tenant, tenantErr := a.controlStore.GetTenantByID(ctx, tenantID)
+	if tenantErr != nil {
+		a.logger.Warn("load tenant for offline remote monitor notification failed", "tenant_id", tenantID, "error", tenantErr)
+		return
+	}
+	notifiers := []monitorrunner.Notifier{
+		matrixnotify.NewTenantNotifier(a.controlStore, matrixEndpointID, tenantID),
+		emailnotify.NewNotifier(a.controlStore, emailEndpointID, tenantID, a.config.BaseURL, tenant.Slug),
+		webhooknotify.NewNotifier(appStore, a.controlStore, tenantID),
+	}
+	for _, notifier := range notifiers {
+		if notifier == nil || !notifier.Enabled() {
+			continue
+		}
+		notifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		err := notifier.Notify(notifyCtx, transition)
+		cancel()
+		if err != nil && err != monitorrunner.ErrNoRecipients {
+			a.logger.Warn("offline remote monitor notification failed", "monitor_id", transition.Monitor.ID, "endpoint_id", notifier.EndpointID(), "error", err)
 		}
 	}
 }

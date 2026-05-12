@@ -31,6 +31,7 @@ const (
 	StatusUp       Status = "up"
 	StatusDown     Status = "down"
 	StatusDegraded Status = "degraded"
+	StatusUnknown  Status = "unknown"
 )
 
 type Monitor struct {

@@ -113,6 +113,73 @@ WHERE type = 'index' AND name = 'idx_remote_node_events_tenant_created'
 	}
 }
 
+func TestTenantAdminNotificationTargetsExcludeViewers(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	controlPath := filepath.Join(dir, "controlplane.db")
+
+	cp, err := OpenControlPlane(ctx, controlPath)
+	if err != nil {
+		t.Fatalf("open control plane: %v", err)
+	}
+	defer cp.Close()
+	if err := cp.ConfigureSecretKey("test-secret-key-for-notifications"); err != nil {
+		t.Fatalf("configure secret key: %v", err)
+	}
+
+	tenant, err := cp.CreateTenant(ctx, "notify-admins", "Notify Admins", filepath.Join(dir, "notify-admins.db"))
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	adminUser, err := cp.CreateLocalUserForTenant(ctx, tenant.ID, "admin", "password-123456", "admin@example.com", "Admin", "admin")
+	if err != nil {
+		t.Fatalf("create admin user: %v", err)
+	}
+	viewerUser, err := cp.CreateLocalUserForTenant(ctx, tenant.ID, "viewer", "password-123456", "viewer@example.com", "Viewer", "viewer")
+	if err != nil {
+		t.Fatalf("create viewer user: %v", err)
+	}
+
+	if err := cp.SaveUserNotificationSettings(ctx, tenant.ID, adminUser.UserID, true, true, "https://matrix.example", "!admin:example", "admin-token"); err != nil {
+		t.Fatalf("save admin notifications: %v", err)
+	}
+	if err := cp.SaveUserNotificationSettings(ctx, tenant.ID, viewerUser.UserID, true, true, "https://matrix.example", "!viewer:example", "viewer-token"); err != nil {
+		t.Fatalf("save viewer notifications: %v", err)
+	}
+
+	allRecipients, err := cp.ListTenantNotificationRecipients(ctx, tenant.ID)
+	if err != nil {
+		t.Fatalf("list all recipients: %v", err)
+	}
+	if len(allRecipients) != 2 {
+		t.Fatalf("all recipients length = %d, want 2", len(allRecipients))
+	}
+
+	adminRecipients, err := cp.ListTenantAdminNotificationRecipients(ctx, tenant.ID)
+	if err != nil {
+		t.Fatalf("list admin recipients: %v", err)
+	}
+	if len(adminRecipients) != 1 || adminRecipients[0].Email != "admin@example.com" {
+		t.Fatalf("admin recipients = %#v, want only admin@example.com", adminRecipients)
+	}
+
+	allMatrixTargets, err := cp.ListTenantMatrixNotificationTargets(ctx, tenant.ID)
+	if err != nil {
+		t.Fatalf("list all matrix targets: %v", err)
+	}
+	if len(allMatrixTargets) != 2 {
+		t.Fatalf("all matrix targets length = %d, want 2", len(allMatrixTargets))
+	}
+
+	adminMatrixTargets, err := cp.ListTenantAdminMatrixNotificationTargets(ctx, tenant.ID)
+	if err != nil {
+		t.Fatalf("list admin matrix targets: %v", err)
+	}
+	if len(adminMatrixTargets) != 1 || adminMatrixTargets[0].UserID != adminUser.UserID || adminMatrixTargets[0].RoomID != "!admin:example" {
+		t.Fatalf("admin matrix targets = %#v, want only admin target", adminMatrixTargets)
+	}
+}
+
 func TestMaintenanceInterval(t *testing.T) {
 	if MaintenanceInterval() <= 0 {
 		t.Fatalf("maintenance interval must be positive")

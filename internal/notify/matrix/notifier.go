@@ -71,6 +71,7 @@ type Notifier struct {
 	controlStore *store.ControlPlaneStore
 	tenantID     int64
 	endpointID   int64
+	adminOnly    bool
 }
 
 func NewNotifier(client *Client, endpointID int64) *Notifier {
@@ -79,6 +80,10 @@ func NewNotifier(client *Client, endpointID int64) *Notifier {
 
 func NewTenantNotifier(controlStore *store.ControlPlaneStore, endpointID int64, tenantID int64) *Notifier {
 	return &Notifier{controlStore: controlStore, endpointID: endpointID, tenantID: tenantID}
+}
+
+func NewTenantAdminNotifier(controlStore *store.ControlPlaneStore, endpointID int64, tenantID int64) *Notifier {
+	return &Notifier{controlStore: controlStore, endpointID: endpointID, tenantID: tenantID, adminOnly: true}
 }
 
 func (n *Notifier) Enabled() bool {
@@ -108,7 +113,15 @@ func (n *Notifier) Notify(ctx context.Context, transition monitor.Transition) er
 	}
 
 	if n.controlStore != nil && n.tenantID > 0 {
-		targets, err := n.controlStore.ListTenantMatrixNotificationTargets(ctx, n.tenantID)
+		var (
+			targets []store.MatrixNotificationTarget
+			err     error
+		)
+		if n.adminOnly {
+			targets, err = n.controlStore.ListTenantAdminMatrixNotificationTargets(ctx, n.tenantID)
+		} else {
+			targets, err = n.controlStore.ListTenantMatrixNotificationTargets(ctx, n.tenantID)
+		}
 		if err != nil {
 			return err
 		}
@@ -171,6 +184,8 @@ func statusEmoji(status monitor.Status) string {
 		return "✅"
 	case monitor.StatusDegraded:
 		return "⚠️"
+	case monitor.StatusUnknown:
+		return "❔"
 	default:
 		return "❌"
 	}

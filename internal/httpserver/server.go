@@ -4287,9 +4287,12 @@ func aggregateServiceStatus(items []monitorView) (label string, class string, in
 		}
 	}
 	hasOnlyDown := hasDown && !hasUp && !hasDegraded && !hasUnknown && !hasPaused
+	hasOnlyUnknown := hasUnknown && !hasUp && !hasDown && !hasDegraded && !hasPaused
 	switch {
 	case hasOnlyDown:
 		return "DOWN", "status-DOWN", "Ausfall erkannt"
+	case hasOnlyUnknown:
+		return "UNKNOWN", "status-UNKNOWN", "Status unbekannt"
 	case hasDown:
 		return "DEGRADED", "status-DEGRADED", "Ausfall erkannt"
 	case hasDegraded:

@@ -33,6 +33,7 @@ type Notifier struct {
 	tenantID     int64
 	baseURL      string
 	tenantSlug   string
+	adminOnly    bool
 }
 
 func NewNotifier(controlStore *store.ControlPlaneStore, endpointID int64, tenantID int64, baseURL string, tenantSlug string) *Notifier {
@@ -43,6 +44,12 @@ func NewNotifier(controlStore *store.ControlPlaneStore, endpointID int64, tenant
 		baseURL:      strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		tenantSlug:   strings.TrimSpace(tenantSlug),
 	}
+}
+
+func NewTenantAdminNotifier(controlStore *store.ControlPlaneStore, endpointID int64, tenantID int64, baseURL string, tenantSlug string) *Notifier {
+	n := NewNotifier(controlStore, endpointID, tenantID, baseURL, tenantSlug)
+	n.adminOnly = true
+	return n
 }
 
 func (n *Notifier) Enabled() bool {
@@ -229,7 +236,15 @@ const emailHTMLTemplate = `<!DOCTYPE html>
 </body></html>`
 
 func (n *Notifier) resolveRecipients(ctx context.Context) ([]emailRecipient, error) {
-	tenantRecipients, err := n.controlStore.ListTenantNotificationRecipients(ctx, n.tenantID)
+	var (
+		tenantRecipients []store.NotificationRecipient
+		err              error
+	)
+	if n.adminOnly {
+		tenantRecipients, err = n.controlStore.ListTenantAdminNotificationRecipients(ctx, n.tenantID)
+	} else {
+		tenantRecipients, err = n.controlStore.ListTenantNotificationRecipients(ctx, n.tenantID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("load tenant notification recipients: %w", err)
 	}
