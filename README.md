@@ -4,7 +4,7 @@
 
 Self-hosted, multi-tenant uptime monitoring built as a single Go service with SQLite storage and very few operational dependencies.
 
-[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](https://go.dev)
 [![Docker](https://img.shields.io/badge/Docker-multi--arch-2496ED?logo=docker)](https://ghcr.io/xeonixo/goup)
 
 GoUp monitors services, records their status over time, and sends notifications when a monitor changes state. It is designed for operators who want a lightweight monitoring stack they can run and understand without also maintaining a database cluster, message bus, or large frontend application.
