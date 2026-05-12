@@ -49,8 +49,8 @@ func Load() (Config, error) {
 		DataDir:              envOrDefault("GOUP_DATA_DIR", "./data"),
 		ControlPlaneDBPath:   os.Getenv("GOUP_CONTROL_DB_PATH"),
 		LogLevel:             envOrDefault("GOUP_LOG_LEVEL", "info"),
-		SessionKey:           os.Getenv("GOUP_SESSION_KEY"),
-		SSOSecretKey:         os.Getenv("GOUP_SSO_SECRET_KEY"),
+		SessionKey:           strings.TrimSpace(os.Getenv("GOUP_SESSION_KEY")),
+		SSOSecretKey:         strings.TrimSpace(os.Getenv("GOUP_SSO_SECRET_KEY")),
 		ControlPlaneAdminKey: strings.TrimSpace(os.Getenv("GOUP_CONTROL_PLANE_ADMIN_KEY")),
 		MonitorWorkers:       envIntOrDefault("GOUP_MONITOR_WORKERS", 4),
 		Auth: AuthConfig{
@@ -70,8 +70,6 @@ func Load() (Config, error) {
 	if cfg.Auth.OIDC.RedirectURL == "" {
 		cfg.Auth.OIDC.RedirectURL = cfg.BaseURL + "/auth/callback"
 	}
-	// SessionKey is optional here; app.go falls back to the DB-persisted key.
-
 	if err := validate(cfg); err != nil {
 		return Config{}, err
 	}
@@ -90,9 +88,14 @@ func validate(cfg Config) error {
 	if cfg.BaseURL == "" {
 		return errors.New("GOUP_BASE_URL must not be empty")
 	}
-	// SessionKey length is only enforced when explicitly provided via env.
-	if cfg.SessionKey != "" && len(cfg.SessionKey) < 16 {
-		return errors.New("GOUP_SESSION_KEY must be at least 16 characters when set")
+	if err := validateRequiredKey("GOUP_SESSION_KEY", cfg.SessionKey); err != nil {
+		return err
+	}
+	if err := validateRequiredKey("GOUP_SSO_SECRET_KEY", cfg.SSOSecretKey); err != nil {
+		return err
+	}
+	if err := validateRequiredKey("GOUP_CONTROL_PLANE_ADMIN_KEY", cfg.ControlPlaneAdminKey); err != nil {
+		return err
 	}
 	if cfg.MonitorWorkers < 0 {
 		return errors.New("GOUP_MONITOR_WORKERS must not be negative")
@@ -120,6 +123,17 @@ func validate(cfg Config) error {
 	default:
 		return fmt.Errorf("unsupported GOUP_AUTH_MODE %q", cfg.Auth.Mode)
 	}
+}
+
+func validateRequiredKey(name, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("%s must not be empty", name)
+	}
+	if len(value) < 16 {
+		return fmt.Errorf("%s must be at least 16 characters", name)
+	}
+	return nil
 }
 
 func envOrDefault(key, fallback string) string {

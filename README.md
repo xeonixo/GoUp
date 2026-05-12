@@ -105,6 +105,10 @@ GOUP_ADDR=:8080
 GOUP_BASE_URL=http://localhost:8080
 GOUP_DATA_DIR=/data
 GOUP_LOG_LEVEL=info
+GOUP_SESSION_KEY=replace-with-64-hex-characters
+GOUP_SSO_SECRET_KEY=replace-with-another-64-hex-key
+GOUP_CONTROL_PLANE_ADMIN_KEY=replace-with-a-third-64-hex-key
+
 ```
 
 ### 2. Review the Docker volume mapping
@@ -198,14 +202,33 @@ Configuration is provided through environment variables, typically via `.env` an
 
 | Variable | Description |
 |---|---|
-| `GOUP_SESSION_KEY` | HMAC key for session cookies. If left empty, GoUp generates one automatically and persists it in the control-plane database. Use an explicit value in production. |
-| `GOUP_SSO_SECRET_KEY` | Encryption key for OIDC client secrets and TOTP secrets. If empty, GoUp falls back to `GOUP_SESSION_KEY`. |
+| `GOUP_SESSION_KEY` | Required HMAC key for tenant session cookies and password-reset tokens. |
+| `GOUP_SSO_SECRET_KEY` | Required encryption key for stored secrets, including OIDC client secrets, TOTP secrets, notification secrets, and remote-node secrets. |
+| `GOUP_CONTROL_PLANE_ADMIN_KEY` | Required HMAC key for control-plane admin cookies under `/admin/*`. |
 
-Production recommendation:
+Generate each key independently with 32 random bytes encoded as hex:
 
-- Set both keys explicitly
-- Store them securely
-- Treat key loss as credential loss for encrypted secrets stored in the database
+```bash
+openssl rand -hex 32
+```
+
+Example `.env` values:
+
+```env
+GOUP_SESSION_KEY=1f2d8c3b9a4e6f00112233445566778899aabbccddeeff001122334455667788
+GOUP_SSO_SECRET_KEY=9c7e1a5b3d2f4c6e8899aabbccddeeff00112233445566778899aabbccddeeff
+GOUP_CONTROL_PLANE_ADMIN_KEY=6b8d0f2a4c1e3d5f77889900aabbccddeeff00112233445566778899aabbcc
+```
+
+Keep these values stable across restarts and backups. Do not reuse the same
+value for multiple keys. If keys are added or changed after GoUp has already
+stored data, the effects are:
+
+- Changing `GOUP_SESSION_KEY` invalidates existing tenant session cookies and password-reset tokens.
+- Changing `GOUP_SSO_SECRET_KEY` can make encrypted stored secrets unreadable unless the new value matches the previous effective encryption key.
+- Changing `GOUP_CONTROL_PLANE_ADMIN_KEY` invalidates current control-plane admin cookies; admins can log in again.
+
+Treat key loss as credential loss for encrypted secrets stored in the database.
 
 ---
 

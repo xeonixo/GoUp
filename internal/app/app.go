@@ -55,28 +55,14 @@ func New(ctx context.Context) (*App, error) {
 		return nil, err
 	}
 	sessionKey := strings.TrimSpace(cfg.SessionKey)
-	if sessionKey == "" {
-		dbSessionKey, keyErr := controlStore.GetOrCreateSessionKey(ctx)
-		if keyErr != nil {
-			controlStore.Close()
-			return nil, fmt.Errorf("load generated session key: %w", keyErr)
-		}
-		sessionKey = dbSessionKey
-	}
 	cfg.SessionKey = sessionKey
 
 	secretKey := strings.TrimSpace(cfg.SSOSecretKey)
-	if secretKey == "" {
-		secretKey = sessionKey
-	}
 	if err := controlStore.ConfigureSecretKey(secretKey); err != nil {
 		controlStore.Close()
 		return nil, fmt.Errorf("configure control-plane secret key: %w", err)
 	}
 	adminCookieKey := strings.TrimSpace(cfg.ControlPlaneAdminKey)
-	if adminCookieKey == "" {
-		adminCookieKey = secretKey
-	}
 	// Load all active tenants and start a runner for each one that has a database.
 	allTenants, tenantsErr := controlStore.GetAllTenants(ctx)
 	if tenantsErr != nil {
