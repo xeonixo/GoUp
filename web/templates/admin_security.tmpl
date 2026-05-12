@@ -23,15 +23,15 @@
     {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
     {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
 
-    <form method="POST" action="/admin/security" class="stack login-form">
+    <form method="POST" action="/admin/security" class="stack login-form" autocomplete="on">
       <label for="current_password">{{index $.Translations "admin.security.current_password_required_label"}}</label>
-      <input id="current_password" name="current_password" type="password" required autocomplete="current-password">
+      <input id="current_password" name="current_password" type="password" required autocomplete="current-password" enterkeyhint="next">
 
       <label for="new_password">{{index $.Translations "admin.security.new_password_optional_label"}}</label>
-      <input id="new_password" name="new_password" type="password" minlength="12" autocomplete="new-password">
+      <input id="new_password" name="new_password" type="password" minlength="12" autocomplete="new-password" enterkeyhint="next">
 
       <label for="new_password_confirm">{{index $.Translations "admin.security.password_confirm_label"}}</label>
-      <input id="new_password_confirm" name="new_password_confirm" type="password" minlength="12" autocomplete="new-password">
+      <input id="new_password_confirm" name="new_password_confirm" type="password" minlength="12" autocomplete="new-password" enterkeyhint="next">
 
       <label class="checkbox-row">
         <input type="checkbox" name="enable_totp">
@@ -45,15 +45,15 @@
       <input id="totp_uri" type="text" value="{{.TOTPProvisioningURI}}" readonly>
 
       <label for="totp_code">{{index $.Translations "admin.security.totp_activation_code_label"}}</label>
-      <input id="totp_code" name="totp_code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code">
+      <input id="totp_code" name="totp_code" type="text" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="one-time-code" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="go">
 
       <button type="submit" class="button">{{index $.Translations "admin.security.save_button"}}</button>
     </form>
 
     {{if .TOTPEnabled}}
-    <form method="POST" action="/admin/security/totp/disable" class="stack login-form">
+    <form method="POST" action="/admin/security/totp/disable" class="stack login-form" autocomplete="on">
       <label for="disable_current_password">{{index $.Translations "admin.security.disable_totp_current_password_label"}}</label>
-      <input id="disable_current_password" name="current_password" type="password" required autocomplete="current-password">
+      <input id="disable_current_password" name="current_password" type="password" required autocomplete="current-password" enterkeyhint="go">
       <button type="submit" class="button button-secondary">{{index $.Translations "admin.security.totp_disable_button"}}</button>
     </form>
     {{end}}

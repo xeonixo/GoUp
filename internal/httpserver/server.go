@@ -157,6 +157,7 @@ type pageData struct {
 	ResetToken                        string
 	AdminSetup                        bool
 	AdminUsername                     string
+	AdminAccessTOTPStage              bool
 	TOTPRequired                      bool
 	TOTPEnabled                       bool
 	TOTPSecret                        string
@@ -189,18 +190,20 @@ type languageOptionView struct {
 }
 
 const (
-	localLoginMaxFailures  = 5
-	localLoginWindow       = 10 * time.Minute
-	localLoginLockout      = 15 * time.Minute
-	adminAccessMaxFailures = 10
-	adminAccessWindow      = 5 * time.Minute
-	adminAccessLockout     = 30 * time.Minute
-	bootstrapMaxFailures   = 8
-	bootstrapWindow        = 5 * time.Minute
-	bootstrapLockout       = 15 * time.Minute
-	passwordResetTTL       = 15 * time.Minute
-	controlPlaneAdminTTL   = 1 * time.Hour
-	controlPlaneCookie     = "goup_cp_admin"
+	localLoginMaxFailures    = 5
+	localLoginWindow         = 10 * time.Minute
+	localLoginLockout        = 15 * time.Minute
+	adminAccessMaxFailures   = 10
+	adminAccessWindow        = 5 * time.Minute
+	adminAccessLockout       = 30 * time.Minute
+	bootstrapMaxFailures     = 8
+	bootstrapWindow          = 5 * time.Minute
+	bootstrapLockout         = 15 * time.Minute
+	passwordResetTTL         = 15 * time.Minute
+	controlPlaneAdminTTL     = 1 * time.Hour
+	controlPlaneTOTPStageTTL = 5 * time.Minute
+	controlPlaneCookie       = "goup_cp_admin"
+	controlPlaneTOTPCookie   = "goup_cp_admin_totp"
 )
 
 type monitorGroupView struct {
@@ -3058,6 +3061,73 @@ func (s *Server) setControlPlaneAdminCookie(w http.ResponseWriter) {
 	})
 }
 
+func (s *Server) hasControlPlaneTOTPCookie(r *http.Request, username string) bool {
+	cookie, err := r.Cookie(controlPlaneTOTPCookie)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return false
+	}
+	parts := strings.Split(cookie.Value, ".")
+	if len(parts) != 2 {
+		return false
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return false
+	}
+	providedSig, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return false
+	}
+	h := hmac.New(sha256.New, []byte(s.adminCookieKey))
+	_, _ = h.Write(payload)
+	if subtle.ConstantTimeCompare(providedSig, h.Sum(nil)) != 1 {
+		return false
+	}
+	payloadParts := strings.SplitN(string(payload), "|", 2)
+	if len(payloadParts) != 2 {
+		return false
+	}
+	expiresUnix, err := strconv.ParseInt(payloadParts[0], 10, 64)
+	if err != nil {
+		return false
+	}
+	if !time.Now().UTC().Before(time.Unix(expiresUnix, 0)) {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(payloadParts[1]), strings.TrimSpace(username))
+}
+
+func (s *Server) setControlPlaneTOTPCookie(w http.ResponseWriter, username string) {
+	expiresAt := time.Now().UTC().Add(controlPlaneTOTPStageTTL)
+	payload := []byte(strconv.FormatInt(expiresAt.Unix(), 10) + "|" + strings.TrimSpace(username))
+	h := hmac.New(sha256.New, []byte(s.adminCookieKey))
+	_, _ = h.Write(payload)
+	token := base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(h.Sum(nil))
+	http.SetCookie(w, &http.Cookie{
+		Name:     controlPlaneTOTPCookie,
+		Value:    token,
+		Path:     "/admin/access",
+		HttpOnly: true,
+		Secure:   s.cfg.SecureCookies(),
+		SameSite: http.SameSiteLaxMode,
+		Expires:  expiresAt,
+		MaxAge:   int(controlPlaneTOTPStageTTL.Seconds()),
+	})
+}
+
+func (s *Server) clearControlPlaneTOTPCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     controlPlaneTOTPCookie,
+		Value:    "",
+		Path:     "/admin/access",
+		HttpOnly: true,
+		Secure:   s.cfg.SecureCookies(),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+	})
+}
+
 func (s *Server) clearControlPlaneAdminCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     controlPlaneCookie,
@@ -5825,7 +5895,10 @@ func (s *Server) handleTenantLocalLogin(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	loginName := strings.TrimSpace(r.FormValue("login_name"))
+	loginName := strings.TrimSpace(r.FormValue("username"))
+	if loginName == "" {
+		loginName = strings.TrimSpace(r.FormValue("login_name"))
+	}
 	password := r.FormValue("password")
 	key := s.localLoginKey(r, tenant.ID, loginName)
 	if allowed, wait := s.localLoginAllowed(key, time.Now()); !allowed {

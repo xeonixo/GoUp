@@ -122,19 +122,19 @@
   </form>
 
   {{if .ProfileNotify.HasLocalCredentials}}
-  <form method="POST" action="{{$.AppBase}}settings/profile/password" class="card stack admin-form settings-panel">
+  <form method="POST" action="{{$.AppBase}}settings/profile/password" class="card stack admin-form settings-panel" autocomplete="on">
     <h2>{{index $.Translations "settings.password.title"}}</h2>
     <div class="form-group">
       <label for="current_password">{{index $.Translations "settings.password.current_label"}}</label>
-      <input id="current_password" name="current_password" type="password" required>
+      <input id="current_password" name="current_password" type="password" required autocomplete="current-password" enterkeyhint="next">
     </div>
     <div class="form-group">
       <label for="new_password">{{index $.Translations "settings.password.new_label"}}</label>
-      <input id="new_password" name="new_password" type="password" required>
+      <input id="new_password" name="new_password" type="password" required autocomplete="new-password" enterkeyhint="next">
     </div>
     <div class="form-group">
       <label for="confirm_password">{{index $.Translations "settings.password.confirm_label"}}</label>
-      <input id="confirm_password" name="confirm_password" type="password" required>
+      <input id="confirm_password" name="confirm_password" type="password" required autocomplete="new-password" enterkeyhint="go">
     </div>
     <div class="form-actions">
       <button type="submit" class="button button-secondary">{{index $.Translations "settings.password.update_button"}}</button>

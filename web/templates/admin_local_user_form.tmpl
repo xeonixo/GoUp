@@ -25,12 +25,12 @@
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
 
-  <form method="POST" action="{{.FormAction}}" class="admin-form admin-panel card stack{{if .SettingsMode}} settings-panel{{end}}">
+  <form method="POST" action="{{.FormAction}}" class="admin-form admin-panel card stack{{if .SettingsMode}} settings-panel{{end}}" autocomplete="on">
     <input type="hidden" name="user_id" value="{{if .IsEdit}}{{.AdminLocalUser.UserID}}{{end}}">
 
     <div class="form-group">
       <label for="login_name">{{index $.Translations "admin.local_users.login_label"}} *</label>
-      <input type="text" id="login_name" name="login_name" required value="{{.AdminLocalUser.LoginName}}" placeholder="{{index $.Translations "admin.local_user_form.login_placeholder"}}">
+      <input type="text" id="login_name" name="login_name" required value="{{.AdminLocalUser.LoginName}}" placeholder="{{index $.Translations "admin.local_user_form.login_placeholder"}}" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next">
     </div>
 
     <div class="form-group">
@@ -40,7 +40,7 @@
 
     <div class="form-group">
       <label for="email">{{index $.Translations "admin.local_user_form.email_label"}}</label>
-      <input type="email" id="email" name="email" value="{{.AdminLocalUser.Email}}" placeholder="{{index $.Translations "admin.local_user_form.email_placeholder"}}">
+      <input type="email" id="email" name="email" value="{{.AdminLocalUser.Email}}" placeholder="{{index $.Translations "admin.local_user_form.email_placeholder"}}" autocomplete="email" autocapitalize="none" autocorrect="off" spellcheck="false">
     </div>
 
     <div class="form-group">
@@ -53,7 +53,7 @@
 
     <div class="form-group">
       <label for="password">{{index $.Translations "admin.local_user_form.password_label"}} {{if .IsEdit}}({{index $.Translations "admin.local_user_form.password_note"}}){{else}}*{{end}}</label>
-      <input type="password" id="password" name="password" {{if not .IsEdit}}required{{end}} placeholder="{{index $.Translations "admin.local_user_form.password_placeholder"}}">
+      <input type="password" id="password" name="password" {{if not .IsEdit}}required{{end}} placeholder="{{index $.Translations "admin.local_user_form.password_placeholder"}}" autocomplete="new-password" enterkeyhint="go">
     </div>
 
     <div class="form-actions">

@@ -72,6 +72,7 @@ func (s *Server) handleAdminAccess(w http.ResponseWriter, r *http.Request) {
 
 	if strings.TrimSpace(r.URL.Query().Get("logout")) == "1" {
 		s.clearControlPlaneAdminCookie(w)
+		s.clearControlPlaneTOTPCookie(w)
 		http.Redirect(w, r, "/admin/access?notice="+url.QueryEscape("Control-Plane-Admin abgemeldet"), http.StatusSeeOther)
 		return
 	}
@@ -95,6 +96,28 @@ func (s *Server) handleAdminAccess(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		code := strings.TrimSpace(r.FormValue("otp"))
+		if code == "" {
+			code = strings.TrimSpace(r.FormValue("totp_code"))
+		}
+		if admin.TOTPEnabled && code != "" {
+			if !s.hasControlPlaneTOTPCookie(r, admin.Username) {
+				s.registerAdminAccessFailure(adminKey, now)
+				http.Redirect(w, r, "/admin/access?error="+url.QueryEscape("TOTP-Anmeldung ist abgelaufen. Bitte erneut anmelden."), http.StatusSeeOther)
+				return
+			}
+			if !auth.TOTPValidate(admin.TOTPSecret, code) {
+				s.registerAdminAccessFailure(adminKey, now)
+				http.Redirect(w, r, "/admin/access?totp=1&error="+url.QueryEscape("Ungültiger TOTP-Code"), http.StatusSeeOther)
+				return
+			}
+			s.clearAdminAccessAttempts(adminKey)
+			s.clearControlPlaneTOTPCookie(w)
+			s.setControlPlaneAdminCookie(w)
+			http.Redirect(w, r, "/admin/", http.StatusSeeOther)
+			return
+		}
+
 		providedUsername := strings.TrimSpace(r.FormValue("username"))
 		providedPassword := r.FormValue("password")
 		if !strings.EqualFold(providedUsername, strings.TrimSpace(admin.Username)) || bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(providedPassword)) != nil {
@@ -104,18 +127,13 @@ func (s *Server) handleAdminAccess(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if admin.TOTPEnabled {
-			code := strings.TrimSpace(r.FormValue("otp"))
-			if code == "" {
-				code = strings.TrimSpace(r.FormValue("totp_code"))
-			}
-			if !auth.TOTPValidate(admin.TOTPSecret, code) {
-				s.registerAdminAccessFailure(adminKey, now)
-				http.Redirect(w, r, "/admin/access?error="+url.QueryEscape("Ungültiger TOTP-Code"), http.StatusSeeOther)
-				return
-			}
+			s.setControlPlaneTOTPCookie(w, admin.Username)
+			http.Redirect(w, r, "/admin/access?totp=1", http.StatusSeeOther)
+			return
 		}
 
 		s.clearAdminAccessAttempts(adminKey)
+		s.clearControlPlaneTOTPCookie(w)
 		s.setControlPlaneAdminCookie(w)
 		http.Redirect(w, r, "/admin/", http.StatusSeeOther)
 		return
@@ -143,12 +161,12 @@ func (s *Server) handleAdminAccess(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "admin_access", pageData{
-		Title:             "Control-Plane Zugriff · GoUp",
-		ControlPlaneAdmin: s.isControlPlaneAdminRequest(r),
-		AdminUsername:     strings.TrimSpace(admin.Username),
-		TOTPRequired:      admin.TOTPEnabled,
-		Error:             strings.TrimSpace(r.URL.Query().Get("error")),
-		Notice:            strings.TrimSpace(r.URL.Query().Get("notice")),
+		Title:                "Control-Plane Zugriff · GoUp",
+		ControlPlaneAdmin:    s.isControlPlaneAdminRequest(r),
+		AdminUsername:        strings.TrimSpace(admin.Username),
+		AdminAccessTOTPStage: admin.TOTPEnabled && strings.TrimSpace(r.URL.Query().Get("totp")) == "1" && s.hasControlPlaneTOTPCookie(r, admin.Username),
+		Error:                strings.TrimSpace(r.URL.Query().Get("error")),
+		Notice:               strings.TrimSpace(r.URL.Query().Get("notice")),
 	})
 }
 
