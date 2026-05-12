@@ -1562,10 +1562,13 @@ func (s *Server) handleSettingsRemoteNodes(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "unable to load remote nodes", http.StatusInternalServerError)
 		return
 	}
-	events, err := s.controlStore.ListRecentRemoteNodeEventsByTenant(r.Context(), user.TenantID, 200)
-	if err != nil {
-		s.logger.Warn("settings remote node events list failed", "tenant_id", user.TenantID, "error", err)
-		events = nil
+	var events []store.RemoteNodeEvent
+	if len(nodes) > 0 {
+		events, err = s.controlStore.ListRecentRemoteNodeEventsByTenant(r.Context(), user.TenantID, 200)
+		if err != nil {
+			s.logger.Warn("settings remote node events list failed", "tenant_id", user.TenantID, "error", err)
+			events = nil
+		}
 	}
 
 	s.render(w, "settings_remote_nodes", pageData{

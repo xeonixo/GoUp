@@ -313,10 +313,13 @@ func (s *Server) loadSettingsRemoteNodesLiveSnapshot(r *http.Request) (settingsR
 		return settingsRemoteNodesLiveSnapshotResponse{}, "", err
 	}
 
-	events, err := s.controlStore.ListRecentRemoteNodeEventsByTenant(r.Context(), tenantID, 200)
-	if err != nil {
-		s.logger.Warn("settings remote node events list failed", "tenant_id", tenantID, "error", err)
-		events = nil
+	var events []store.RemoteNodeEvent
+	if len(nodes) > 0 {
+		events, err = s.controlStore.ListRecentRemoteNodeEventsByTenant(r.Context(), tenantID, 200)
+		if err != nil {
+			s.logger.Warn("settings remote node events list failed", "tenant_id", tenantID, "error", err)
+			events = nil
+		}
 	}
 
 	views := buildRemoteNodeViews(nodes, time.Now().UTC(), s.cfg.BaseURL, groupRemoteNodeEventsByNode(events, 8))
@@ -389,10 +392,13 @@ func (s *Server) handleAdminRemoteNodesList(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "unable to list remote nodes", http.StatusInternalServerError)
 		return
 	}
-	events, err := s.controlStore.ListRecentRemoteNodeEventsByTenant(r.Context(), tenantID, 200)
-	if err != nil {
-		s.logger.Warn("admin remote node events list failed", "tenant_id", tenantID, "error", err)
-		events = nil
+	var events []store.RemoteNodeEvent
+	if len(nodes) > 0 {
+		events, err = s.controlStore.ListRecentRemoteNodeEventsByTenant(r.Context(), tenantID, 200)
+		if err != nil {
+			s.logger.Warn("admin remote node events list failed", "tenant_id", tenantID, "error", err)
+			events = nil
+		}
 	}
 
 	s.render(w, "admin_remote_nodes", pageData{

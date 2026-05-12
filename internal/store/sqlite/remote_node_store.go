@@ -106,6 +106,9 @@ CREATE TABLE IF NOT EXISTS remote_node_events (
 	if _, err := s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_remote_node_events_tenant_node_created ON remote_node_events(tenant_id, node_id, created_at DESC)`); err != nil {
 		return fmt.Errorf("create remote_node_events tenant-node-created index: %w", err)
 	}
+	if _, err := s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_remote_node_events_tenant_created ON remote_node_events(tenant_id, created_at DESC, id DESC)`); err != nil {
+		return fmt.Errorf("create remote_node_events tenant-created index: %w", err)
+	}
 	if _, err := s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_remote_node_events_created ON remote_node_events(created_at DESC)`); err != nil {
 		return fmt.Errorf("create remote_node_events created index: %w", err)
 	}

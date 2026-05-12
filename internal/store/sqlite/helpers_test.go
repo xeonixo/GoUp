@@ -86,6 +86,33 @@ func TestRemoteNodeHelpers(t *testing.T) {
 	}
 }
 
+func TestRemoteNodeEventsTenantCreatedIndex(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	controlPath := filepath.Join(dir, "controlplane.db")
+
+	cp, err := OpenControlPlane(ctx, controlPath)
+	if err != nil {
+		t.Fatalf("open control plane: %v", err)
+	}
+	defer cp.Close()
+
+	var indexSQL string
+	err = cp.db.QueryRowContext(ctx, `
+SELECT sql
+FROM sqlite_master
+WHERE type = 'index' AND name = 'idx_remote_node_events_tenant_created'
+`).Scan(&indexSQL)
+	if err != nil {
+		t.Fatalf("load remote node events tenant-created index: %v", err)
+	}
+	for _, fragment := range []string{"tenant_id", "created_at DESC", "id DESC"} {
+		if !strings.Contains(indexSQL, fragment) {
+			t.Fatalf("index SQL %q missing %q", indexSQL, fragment)
+		}
+	}
+}
+
 func TestMaintenanceInterval(t *testing.T) {
 	if MaintenanceInterval() <= 0 {
 		t.Fatalf("maintenance interval must be positive")
