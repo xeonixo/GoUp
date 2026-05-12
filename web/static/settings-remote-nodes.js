@@ -1,24 +1,30 @@
 (() => {
   window.addEventListener('DOMContentLoaded', () => {
-    const page = document.getElementById('settings-remote-nodes-page');
+    const page = document.getElementById('remote-nodes-page');
     if (!(page instanceof HTMLElement)) {
       return;
     }
 
-    const appBase = page.dataset.appBase || '/';
+    const liveBase = page.dataset.liveBase || '/settings/remote-nodes/live';
+    const expiredRedirect = page.dataset.expiredRedirect || '/login';
     const i18nOnline = page.dataset.i18nOnline || 'ONLINE';
     const i18nOffline = page.dataset.i18nOffline || 'OFFLINE';
     const i18nEntries = page.dataset.i18nEntries || 'entries';
     const i18nFrom = page.dataset.i18nFrom || 'From';
-    const tableBody = document.getElementById('settings-remote-nodes-body');
-    if (!(tableBody instanceof HTMLElement)) {
+    const nodesRoot = document.getElementById('remote-nodes-body');
+    if (!(nodesRoot instanceof HTMLElement)) {
       return;
     }
 
     const buildWSURL = () => {
-      const wsURL = new URL(`${appBase}settings/remote-nodes/live`, window.location.href);
+      const wsURL = new URL(liveBase, window.location.href);
       wsURL.protocol = wsURL.protocol === 'https:' ? 'wss:' : 'ws:';
       return wsURL.toString();
+    };
+
+    const buildSnapshotURL = () => {
+      const base = liveBase.endsWith('/') ? liveBase.slice(0, -1) : liveBase;
+      return new URL(`${base}/snapshot`, window.location.href).toString();
     };
 
     let socket = null;
@@ -133,14 +139,14 @@
         return;
       }
 
-      const rowsByNode = new Map();
-      tableBody.querySelectorAll('tr[data-node-id]').forEach((row) => {
-        if (!(row instanceof HTMLTableRowElement)) {
+      const elementsByNode = new Map();
+      nodesRoot.querySelectorAll('[data-node-id]').forEach((element) => {
+        if (!(element instanceof HTMLElement)) {
           return;
         }
-        const nodeID = String(row.dataset.nodeId || '').trim();
+        const nodeID = String(element.dataset.nodeId || '').trim();
         if (nodeID) {
-          rowsByNode.set(nodeID, row);
+          elementsByNode.set(nodeID, element);
         }
       });
 
@@ -149,21 +155,21 @@
         if (!nodeID) {
           return;
         }
-        const row = rowsByNode.get(nodeID);
-        if (!(row instanceof HTMLTableRowElement)) {
+        const element = elementsByNode.get(nodeID);
+        if (!(element instanceof HTMLElement)) {
           return;
         }
 
-        const statusCell = row.querySelector('td[data-role="status"]');
-        const lastSeenCell = row.querySelector('td[data-role="last-seen"]');
-        const logsCell = row.querySelector('td[data-role="logs"]');
-        if (statusCell instanceof HTMLTableCellElement) {
+        const statusCell = element.querySelector('[data-role="status"]');
+        const lastSeenCell = element.querySelector('[data-role="last-seen"]');
+        const logsCell = element.querySelector('[data-role="logs"]');
+        if (statusCell instanceof HTMLElement) {
           updateStatusCell(statusCell, Boolean(node?.online));
         }
-        if (lastSeenCell instanceof HTMLTableCellElement) {
+        if (lastSeenCell instanceof HTMLElement) {
           updateLastSeenCell(lastSeenCell, node?.last_seen_at_raw);
         }
-        if (logsCell instanceof HTMLTableCellElement) {
+        if (logsCell instanceof HTMLElement) {
           updateLogsCell(logsCell, node?.events);
         }
       });
@@ -175,7 +181,7 @@
       }
       snapshotInFlight = true;
       try {
-        const response = await window.fetch(`${appBase}settings/remote-nodes/live/snapshot`, {
+        const response = await window.fetch(buildSnapshotURL(), {
           method: 'GET',
           headers: {
             Accept: 'application/json'
@@ -230,7 +236,7 @@
           const payload = JSON.parse(event.data);
           if (payload?.type === 'session_expired') {
             active = false;
-            window.location.href = `${appBase}login`;
+            window.location.href = expiredRedirect;
             return;
           }
           if (payload?.type === 'refresh') {
@@ -253,6 +259,9 @@
           window.fetch(window.location.href, { redirect: 'follow', credentials: 'include' })
             .then((resp) => {
               if (resp.url && resp.url.includes('/login')) {
+                active = false;
+                window.location.href = resp.url;
+              } else if (resp.url && resp.url.includes('/admin/access')) {
                 active = false;
                 window.location.href = resp.url;
               } else {

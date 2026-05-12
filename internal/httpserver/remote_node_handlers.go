@@ -191,7 +191,36 @@ func (s *Server) handleSettingsRemoteNodesLiveSnapshot(w http.ResponseWriter, r 
 		return
 	}
 
-	snapshot, _, err := s.loadSettingsRemoteNodesLiveSnapshot(r)
+	tenantID := tenantIDFromRequest(r)
+	if tenantID <= 0 {
+		if user := s.currentUser(r); user != nil {
+			tenantID = user.TenantID
+		}
+	}
+	snapshot, _, err := s.loadRemoteNodesLiveSnapshot(r.Context(), tenantID, "settings")
+	if err != nil {
+		http.Error(w, "unable to load remote nodes snapshot", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(snapshot); err != nil {
+		http.Error(w, "unable to encode remote nodes snapshot", http.StatusInternalServerError)
+		return
+	}
+}
+
+func (s *Server) handleAdminRemoteNodesLiveSnapshot(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	tenantID, err := parseAdminRemoteNodesTenantID(r)
+	if err != nil {
+		http.Error(w, "invalid tenant id", http.StatusBadRequest)
+		return
+	}
+	snapshot, _, err := s.loadRemoteNodesLiveSnapshot(r.Context(), tenantID, "admin")
 	if err != nil {
 		http.Error(w, "unable to load remote nodes snapshot", http.StatusInternalServerError)
 		return
@@ -215,7 +244,41 @@ func (s *Server) handleSettingsRemoteNodesLive(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	_, previousSignature, err := s.loadSettingsRemoteNodesLiveSnapshot(r)
+	tenantID := tenantIDFromRequest(r)
+	if tenantID <= 0 {
+		if user := s.currentUser(r); user != nil {
+			tenantID = user.TenantID
+		}
+	}
+	s.handleRemoteNodesLive(w, r, tenantID, "settings", func() bool {
+		_, err := s.sessionForRequest(r)
+		return err == nil
+	})
+}
+
+func (s *Server) handleAdminRemoteNodesLive(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if !s.websocketOriginAllowed(r) {
+		http.Error(w, "invalid origin", http.StatusForbidden)
+		return
+	}
+
+	tenantID, err := parseAdminRemoteNodesTenantID(r)
+	if err != nil {
+		http.Error(w, "invalid tenant id", http.StatusBadRequest)
+		return
+	}
+	s.handleRemoteNodesLive(w, r, tenantID, "admin", func() bool {
+		return s.hasControlPlaneAdminCookie(r)
+	})
+}
+
+func (s *Server) handleRemoteNodesLive(w http.ResponseWriter, r *http.Request, tenantID int64, logScope string, sessionValid func() bool) {
+	_, previousSignature, err := s.loadRemoteNodesLiveSnapshot(r.Context(), tenantID, logScope)
 	if err != nil {
 		http.Error(w, "unable to initialize live updates", http.StatusInternalServerError)
 		return
@@ -274,14 +337,14 @@ func (s *Server) handleSettingsRemoteNodesLive(w http.ResponseWriter, r *http.Re
 				return
 			}
 		case <-pollTicker.C:
-			if _, sessErr := s.sessionForRequest(r); sessErr != nil {
+			if sessionValid != nil && !sessionValid() {
 				_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 				_ = conn.WriteJSON(map[string]string{"type": "session_expired"})
 				return
 			}
-			_, nextSignature, snapshotErr := s.loadSettingsRemoteNodesLiveSnapshot(r)
+			_, nextSignature, snapshotErr := s.loadRemoteNodesLiveSnapshot(r.Context(), tenantID, logScope)
 			if snapshotErr != nil {
-				s.logger.Warn("load settings remote nodes live data failed", "error", snapshotErr)
+				s.logger.Warn("load remote nodes live data failed", "scope", logScope, "tenant_id", tenantID, "error", snapshotErr)
 				continue
 			}
 			if nextSignature == previousSignature {
@@ -312,16 +375,23 @@ func (s *Server) loadSettingsRemoteNodesLiveSnapshot(r *http.Request) (settingsR
 		return settingsRemoteNodesLiveSnapshotResponse{}, "", fmt.Errorf("tenant not resolved")
 	}
 
-	nodes, err := s.controlStore.ListRemoteNodesByTenant(r.Context(), tenantID)
+	return s.loadRemoteNodesLiveSnapshot(r.Context(), tenantID, "settings")
+}
+
+func (s *Server) loadRemoteNodesLiveSnapshot(ctx context.Context, tenantID int64, logScope string) (settingsRemoteNodesLiveSnapshotResponse, string, error) {
+	if tenantID <= 0 {
+		return settingsRemoteNodesLiveSnapshotResponse{}, "", fmt.Errorf("tenant not resolved")
+	}
+	nodes, err := s.controlStore.ListRemoteNodesByTenant(ctx, tenantID)
 	if err != nil {
 		return settingsRemoteNodesLiveSnapshotResponse{}, "", err
 	}
 
 	var events []store.RemoteNodeEvent
 	if len(nodes) > 0 {
-		events, err = s.controlStore.ListRecentRemoteNodeEventsByTenant(r.Context(), tenantID, 200)
+		events, err = s.controlStore.ListRecentRemoteNodeEventsByTenant(ctx, tenantID, 200)
 		if err != nil {
-			s.logger.Warn("settings remote node events list failed", "tenant_id", tenantID, "error", err)
+			s.logger.Warn("remote node events list failed", "scope", logScope, "tenant_id", tenantID, "error", err)
 			events = nil
 		}
 	}
@@ -352,6 +422,18 @@ func (s *Server) loadSettingsRemoteNodesLiveSnapshot(r *http.Request) (settingsR
 	}
 
 	return snapshot, settingsRemoteNodesLiveSignature(snapshot), nil
+}
+
+func parseAdminRemoteNodesTenantID(r *http.Request) (int64, error) {
+	tenantIDRaw := strings.TrimSpace(r.PathValue("id"))
+	if tenantIDRaw == "" {
+		return 0, fmt.Errorf("missing tenant id")
+	}
+	tenantID, err := strconv.ParseInt(tenantIDRaw, 10, 64)
+	if err != nil || tenantID <= 0 {
+		return 0, fmt.Errorf("invalid tenant id")
+	}
+	return tenantID, nil
 }
 
 func settingsRemoteNodesLiveSignature(snapshot settingsRemoteNodesLiveSnapshotResponse) string {

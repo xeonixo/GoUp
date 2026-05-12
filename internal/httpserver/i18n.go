@@ -115,6 +115,8 @@ var flashMessageTranslationKeys = map[string]string{
 	"Ungültige Remote-Node":                                           "flash.invalid_remote_node",
 	"Remote-Node konnte nicht gelöscht werden":                        "flash.remote_node_delete_failed",
 	"Remote-Node gelöscht. Zugewiesene Monitore laufen wieder lokal.": "flash.remote_node_deleted_monitors_local",
+	"Remote-Node erstellt.":                                           "flash.remote_node_created_short",
+	"Bootstrap-Key rotiert.":                                          "flash.bootstrap_key_rotated_short",
 	"Bootstrap-Key konnte nicht rotiert werden":                       "flash.bootstrap_key_rotate_failed",
 	"Keine Daten angegeben":                                           "flash.import_no_data",
 	"Ungültiges JSON-Format":                                          "flash.import_invalid_json",
@@ -127,8 +129,8 @@ var (
 	localLoginWaitPattern      = regexp.MustCompile(`^Zu viele Fehlversuche\. Bitte in (\d+) Minute\(n\) erneut versuchen$`)
 	monitorCreatedPattern      = regexp.MustCompile(`^([A-Z]+)-Monitor angelegt$`)
 	remoteNodeCreatedPattern   = regexp.MustCompile(`^Remote-Node erstellt\.\s+(REMOTE_NODE_ID=.*)$`)
-	bootstrapKeyRotatedPattern  = regexp.MustCompile(`^Bootstrap-Key rotiert\.\s+(REMOTE_NODE_ID=.*)$`)
-	monitorsImportedPattern     = regexp.MustCompile(`^(\d+) Monitor\(e\) importiert$`)
+	bootstrapKeyRotatedPattern = regexp.MustCompile(`^Bootstrap-Key rotiert\.\s+(REMOTE_NODE_ID=.*)$`)
+	monitorsImportedPattern    = regexp.MustCompile(`^(\d+) Monitor\(e\) importiert$`)
 )
 
 type translationCatalog struct {

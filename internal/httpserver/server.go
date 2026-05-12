@@ -120,6 +120,8 @@ type pageData struct {
 	MonitorGroups                     []monitorGroupView
 	AvailableGroups                   []string
 	RemoteNodes                       []remoteNodeView
+	RemoteNodeProvisioningVars        []remoteNodeProvisioningVarView
+	RemoteNodeProvisioningTitle       string
 	HasRemoteNodes                    bool
 	MonitorExecutors                  []monitorExecutorOptionView
 	Events                            []notificationEventView
@@ -171,6 +173,11 @@ type pageData struct {
 	NotificationEventHistoryPageLabel string
 	ImportRows                        []importPreviewRow
 	Version                           string
+}
+
+type remoteNodeProvisioningVarView struct {
+	Key   string
+	Value string
 }
 
 type paginationView struct {
@@ -578,6 +585,8 @@ func (s *Server) routes() (http.Handler, error) {
 	mux.Handle("/admin/tenants/{id}/local-users/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUserSave)))
 	mux.Handle("/admin/tenants/{id}/local-users/{userID}/delete", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminLocalUserDelete)))
 	mux.Handle("/admin/tenants/{id}/remote-nodes", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminRemoteNodesList)))
+	mux.Handle("/admin/tenants/{id}/remote-nodes/live", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminRemoteNodesLive)))
+	mux.Handle("/admin/tenants/{id}/remote-nodes/live/snapshot", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminRemoteNodesLiveSnapshot)))
 	mux.Handle("/admin/tenants/{id}/remote-nodes/create", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminCreateRemoteNode)))
 	mux.Handle("/admin/tenants/{id}/remote-nodes/{nodeID}/rotate-bootstrap", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminRotateRemoteNodeBootstrapKey)))
 	mux.Handle("/admin/tenants/{id}/remote-nodes/{nodeID}/delete", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminDeleteRemoteNode)))
@@ -3690,6 +3699,11 @@ func (s *Server) render(w http.ResponseWriter, name string, data pageData) {
 	if data.Translations == nil {
 		data.Translations = s.translationsForLanguage(data.UILanguage)
 	}
+	if title, vars, notice := parseRemoteNodeProvisioningNotice(data.Notice); len(vars) > 0 {
+		data.RemoteNodeProvisioningTitle = title
+		data.RemoteNodeProvisioningVars = vars
+		data.Notice = notice
+	}
 	data.Error = localizeFlashMessage(data.Translations, data.Error)
 	data.Notice = localizeFlashMessage(data.Translations, data.Notice)
 	data.Version = version.Version
@@ -3704,6 +3718,42 @@ func (s *Server) render(w http.ResponseWriter, name string, data pageData) {
 		s.logger.Error("render template failed", "template", name, "error", err)
 		http.Error(w, fmt.Sprintf("render %s failed", name), http.StatusInternalServerError)
 	}
+}
+
+func parseRemoteNodeProvisioningNotice(message string) (string, []remoteNodeProvisioningVarView, string) {
+	message = strings.TrimSpace(message)
+	var details string
+	var notice string
+	var title string
+	switch {
+	case strings.HasPrefix(message, "Remote-Node erstellt."):
+		details = strings.TrimSpace(strings.TrimPrefix(message, "Remote-Node erstellt."))
+		notice = "Remote-Node erstellt."
+		title = "Remote Node Provisioning"
+	case strings.HasPrefix(message, "Bootstrap-Key rotiert."):
+		details = strings.TrimSpace(strings.TrimPrefix(message, "Bootstrap-Key rotiert."))
+		notice = "Bootstrap-Key rotiert."
+		title = "Bootstrap Provisioning"
+	default:
+		return "", nil, message
+	}
+	if details == "" {
+		return "", nil, message
+	}
+	vars := make([]remoteNodeProvisioningVarView, 0, 3)
+	for _, field := range strings.Fields(details) {
+		key, value, ok := strings.Cut(field, "=")
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if !ok || key == "" || value == "" {
+			continue
+		}
+		vars = append(vars, remoteNodeProvisioningVarView{Key: key, Value: value})
+	}
+	if len(vars) == 0 {
+		return "", nil, message
+	}
+	return title, vars, notice
 }
 
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
