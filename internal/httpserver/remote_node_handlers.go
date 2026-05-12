@@ -28,6 +28,10 @@ const (
 	remoteNodeBootstrapBodyLimit   = 4 * 1024
 	remoteNodePollBodyLimit        = 4 * 1024
 	remoteNodeReportBodyLimit      = 512 * 1024
+	remoteNodeReportMaxResults     = 100
+	remoteNodeReportMaxMessageLen  = 1000
+	remoteNodeReportMaxPastSkew    = 24 * time.Hour
+	remoteNodeReportMaxFutureSkew  = 10 * time.Minute
 )
 
 type remoteNodeBootstrapRequest struct {
@@ -642,6 +646,10 @@ func (s *Server) handleRemoteNodeReport(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	if len(payload.Results) > remoteNodeReportMaxResults {
+		http.Error(w, "too many results", http.StatusRequestEntityTooLarge)
+		return
+	}
 	_ = s.controlStore.TouchRemoteNodeLastSeen(r.Context(), node.ID, time.Now().UTC())
 
 	appStore, err := s.tenantStores.StoreForTenant(r.Context(), node.TenantID)
@@ -679,7 +687,7 @@ func (s *Server) handleRemoteNodeReport(w http.ResponseWriter, r *http.Request) 
 		if !ok {
 			continue
 		}
-		result, err := decodeRemoteNodeResult(item)
+		result, err := decodeRemoteNodeResult(item, time.Now().UTC())
 		if err != nil {
 			continue
 		}
@@ -750,8 +758,11 @@ func decodeJSONStrict(w http.ResponseWriter, r *http.Request, dst any, maxBytes 
 	return errInvalidJSONPayload
 }
 
-func decodeRemoteNodeResult(item remoteNodeResultPayload) (monitor.Result, error) {
-	checkedAt := time.Now().UTC()
+func decodeRemoteNodeResult(item remoteNodeResultPayload, now time.Time) (monitor.Result, error) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	checkedAt := now
 	if strings.TrimSpace(item.CheckedAt) != "" {
 		parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(item.CheckedAt))
 		if err != nil {
@@ -759,18 +770,28 @@ func decodeRemoteNodeResult(item remoteNodeResultPayload) (monitor.Result, error
 		}
 		checkedAt = parsed.UTC()
 	}
+	if checkedAt.Before(now.Add(-remoteNodeReportMaxPastSkew)) || checkedAt.After(now.Add(remoteNodeReportMaxFutureSkew)) {
+		return monitor.Result{}, fmt.Errorf("checked_at outside accepted window")
+	}
 	status := monitor.Status(strings.ToLower(strings.TrimSpace(item.Status)))
 	switch status {
 	case monitor.StatusUp, monitor.StatusDown, monitor.StatusDegraded:
 	default:
 		return monitor.Result{}, fmt.Errorf("unsupported status")
 	}
+	if item.LatencyMS < 0 || item.LatencyMS > int64(remoteNodeReportMaxPastSkew/time.Millisecond) {
+		return monitor.Result{}, fmt.Errorf("invalid latency")
+	}
+	message := strings.TrimSpace(item.Message)
+	if len(message) > remoteNodeReportMaxMessageLen {
+		message = message[:remoteNodeReportMaxMessageLen]
+	}
 	result := monitor.Result{
 		MonitorID:        item.MonitorID,
 		CheckedAt:        checkedAt,
 		Status:           status,
 		Latency:          time.Duration(item.LatencyMS) * time.Millisecond,
-		Message:          strings.TrimSpace(item.Message),
+		Message:          message,
 		HTTPStatusCode:   item.HTTPStatusCode,
 		TLSValid:         item.TLSValid,
 		TLSDaysRemaining: item.TLSDaysRemaining,

@@ -29,6 +29,7 @@ type UserSession struct {
 	TenantName        string    `json:"tenant_name,omitempty"`
 	Role              string    `json:"role,omitempty"`
 	AuthProvider      string    `json:"auth_provider,omitempty"`
+	SessionVersion    int64     `json:"session_version,omitempty"`
 	ExpiresAt         time.Time `json:"exp"`
 }
 

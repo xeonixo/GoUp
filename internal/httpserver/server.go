@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -1058,6 +1059,7 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		TenantName:        resolvedUser.TenantName,
 		Role:              resolvedUser.Role,
 		AuthProvider:      "oidc-primary",
+		SessionVersion:    resolvedUser.SessionVersion,
 		ExpiresAt:         time.Now().Add(12 * time.Hour),
 	}
 	if err := s.sessions.Set(w, session); err != nil {
@@ -2569,6 +2571,7 @@ func (s *Server) handleCheckMonitorNow(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unable to store monitor state", http.StatusInternalServerError)
 		return
 	}
+	s.writeAudit(r, "monitor.check_now", "tenant", tenantIDFromRequest(r), fmt.Sprintf("monitor_id=%d", selected.Monitor.ID))
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(struct {
@@ -2862,6 +2865,7 @@ func (s *Server) handleUpdateMonitorTarget(w http.ResponseWriter, r *http.Reques
 		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
+	s.writeAudit(r, "monitor.target.update", "tenant", tenantIDFromRequest(r), fmt.Sprintf("monitor_id=%d", id))
 
 	http.Redirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape("Monitor-Ziel aktualisiert"), http.StatusSeeOther)
 }
@@ -2889,30 +2893,6 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Determine whether this tenant requires authentication.
-		// A tenant is protected as soon as it has at least one enabled auth
-		// provider (local user list or OIDC), regardless of the global
-		// GOUP_AUTH_MODE setting.  Tenants with no providers are public
-		// (backwards-compatible default for fresh instances).
-		needsAuth := false
-		if tenantID := tenantIDFromRequest(r); tenantID > 0 {
-			hasProviders, err := s.controlStore.TenantHasProviders(r.Context(), tenantID)
-			if err != nil {
-				s.logger.Error("check tenant providers", "tenant_id", tenantID, "error", err)
-				// Fail safe: treat as protected.
-				hasProviders = true
-			}
-			needsAuth = hasProviders
-		} else {
-			// No tenant in context – fall back to global auth mode.
-			needsAuth = s.cfg.Auth.Mode == config.AuthModeOIDC || s.cfg.Auth.Mode == config.AuthModeLocal
-		}
-
-		if !needsAuth {
-			next.ServeHTTP(w, r)
-			return
-		}
-
 		session, err := s.sessionForRequest(r)
 		if err != nil {
 			slug := tenantSlugFromRequest(r)
@@ -3036,16 +3016,34 @@ func (s *Server) hasControlPlaneAdminCookie(r *http.Request) bool {
 	if subtle.ConstantTimeCompare(providedSig, h.Sum(nil)) != 1 {
 		return false
 	}
-	expiresUnix, err := strconv.ParseInt(string(payload), 10, 64)
+	payloadParts := strings.Split(string(payload), "|")
+	if len(payloadParts) != 2 {
+		return false
+	}
+	expiresUnix, err := strconv.ParseInt(payloadParts[0], 10, 64)
 	if err != nil {
 		return false
 	}
-	return time.Now().UTC().Before(time.Unix(expiresUnix, 0))
+	if !time.Now().UTC().Before(time.Unix(expiresUnix, 0)) {
+		return false
+	}
+	version, err := strconv.ParseInt(payloadParts[1], 10, 64)
+	if err != nil || version <= 0 {
+		return false
+	}
+	admin, err := s.controlStore.GetControlPlaneAdmin(r.Context())
+	if err != nil {
+		return false
+	}
+	return admin.SessionVersion == version
 }
 
-func (s *Server) setControlPlaneAdminCookie(w http.ResponseWriter) {
+func (s *Server) setControlPlaneAdminCookie(w http.ResponseWriter, sessionVersion int64) {
+	if sessionVersion <= 0 {
+		sessionVersion = 1
+	}
 	expiresAt := time.Now().UTC().Add(controlPlaneAdminTTL)
-	payload := []byte(strconv.FormatInt(expiresAt.Unix(), 10))
+	payload := []byte(strconv.FormatInt(expiresAt.Unix(), 10) + "|" + strconv.FormatInt(sessionVersion, 10))
 	h := hmac.New(sha256.New, []byte(s.adminCookieKey))
 	_, _ = h.Write(payload)
 	token := base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(h.Sum(nil))
@@ -3299,10 +3297,42 @@ func (s *Server) currentUser(r *http.Request) *auth.UserSession {
 }
 
 func (s *Server) sessionForRequest(r *http.Request) (*auth.UserSession, error) {
+	var (
+		session *auth.UserSession
+		err     error
+	)
 	if slug := strings.TrimSpace(tenantSlugFromRequest(r)); slug != "" {
-		return s.sessions.GetForTenant(r, slug)
+		session, err = s.sessions.GetForTenant(r, slug)
+	} else {
+		session, err = s.sessions.Get(r)
 	}
-	return s.sessions.Get(r)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.validateTenantSession(r.Context(), session); err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+func (s *Server) validateTenantSession(ctx context.Context, session *auth.UserSession) error {
+	if session == nil {
+		return http.ErrNoCookie
+	}
+	if s.controlStore == nil || session.TenantID <= 0 || session.UserID <= 0 {
+		return nil
+	}
+	if session.SessionVersion <= 0 {
+		return errors.New("session version missing")
+	}
+	version, err := s.controlStore.GetTenantMembershipSessionVersion(ctx, session.TenantID, session.UserID)
+	if err != nil {
+		return err
+	}
+	if version != session.SessionVersion {
+		return errors.New("session version mismatch")
+	}
+	return nil
 }
 
 func (s *Server) appStore(r *http.Request) (*store.Store, error) {
@@ -5553,6 +5583,7 @@ func (s *Server) handleTenantPasswordResetRequest(w http.ResponseWriter, r *http
 		http.Redirect(w, r, noticeURL, http.StatusSeeOther)
 		return
 	}
+	s.writeAudit(r, "tenant_user.password_reset.request", "tenant", tenant.ID, "password reset requested")
 
 	localUser, err := s.controlStore.FindLocalUserByEmail(r.Context(), tenant.ID, email)
 	if err != nil {
@@ -5651,6 +5682,7 @@ func (s *Server) handleTenantPasswordResetConfirm(w http.ResponseWriter, r *http
 			return
 		}
 		s.markPasswordResetTokenUsed(token, tokenExpiresAt)
+		s.writeAudit(r, "tenant_user.password_reset.complete", "tenant", tenant.ID, fmt.Sprintf("user_id=%d", userID))
 
 		http.Redirect(w, r, "/"+tenantSlug+"/login?notice="+url.QueryEscape("Passwort wurde aktualisiert. Bitte anmelden."), http.StatusSeeOther)
 		return
@@ -5834,6 +5866,7 @@ func (s *Server) handleTenantAuthCallback(w http.ResponseWriter, r *http.Request
 		TenantName:        resolvedUser.TenantName,
 		Role:              resolvedUser.Role,
 		AuthProvider:      provider.ProviderKey,
+		SessionVersion:    resolvedUser.SessionVersion,
 		ExpiresAt:         time.Now().Add(12 * time.Hour),
 	}
 	if err := s.sessions.Set(w, session); err != nil {
@@ -5902,6 +5935,7 @@ func (s *Server) handleTenantLocalLogin(w http.ResponseWriter, r *http.Request) 
 	password := r.FormValue("password")
 	key := s.localLoginKey(r, tenant.ID, loginName)
 	if allowed, wait := s.localLoginAllowed(key, time.Now()); !allowed {
+		s.writeAudit(r, "tenant_user.login.lockout", "tenant", tenant.ID, "local login locked")
 		waitMinutes := int(wait.Round(time.Minute).Minutes())
 		if waitMinutes < 1 {
 			waitMinutes = 1
@@ -5913,6 +5947,7 @@ func (s *Server) handleTenantLocalLogin(w http.ResponseWriter, r *http.Request) 
 	resolvedUser, err := s.controlStore.AuthenticateLocalUser(r.Context(), tenant.ID, loginName, password)
 	if err != nil {
 		s.registerLocalLoginFailure(key, time.Now())
+		s.writeAudit(r, "tenant_user.login.failure", "tenant", tenant.ID, "invalid local credentials")
 		http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Anmeldung fehlgeschlagen"), http.StatusSeeOther)
 		return
 	}
@@ -5936,6 +5971,7 @@ func (s *Server) handleTenantLocalLogin(w http.ResponseWriter, r *http.Request) 
 		TenantName:        resolvedUser.TenantName,
 		Role:              resolvedUser.Role,
 		AuthProvider:      "local",
+		SessionVersion:    resolvedUser.SessionVersion,
 		ExpiresAt:         time.Now().Add(12 * time.Hour),
 	}
 	if err := s.sessions.Set(w, session); err != nil {

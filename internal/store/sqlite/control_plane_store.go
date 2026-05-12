@@ -51,6 +51,7 @@ type ResolvedUser struct {
 	TenantName        string
 	TenantDBPath      string
 	Role              string
+	SessionVersion    int64
 }
 
 type AuthProvider struct {
@@ -84,6 +85,7 @@ type TenantUser struct {
 	DisplayName         string
 	PreferredLanguage   string
 	Role                string
+	SessionVersion      int64
 	LastLoginAt         *time.Time
 	HasLocalCredentials bool
 	HasOIDCIdentity     bool
@@ -341,7 +343,12 @@ ON CONFLICT(tenant_id, user_id) DO UPDATE SET
 		}
 	}
 
-	resolved, err := loadResolvedUserTx(ctx, tx, userID)
+	var resolved ResolvedUser
+	if defaultTenantID > 0 {
+		resolved, err = loadResolvedUserForTenantTx(ctx, tx, userID, defaultTenantID)
+	} else {
+		resolved, err = loadResolvedUserTx(ctx, tx, userID)
+	}
 	if err != nil {
 		return ResolvedUser{}, err
 	}
@@ -383,20 +390,9 @@ LIMIT 1
 		return ResolvedUser{}, sql.ErrNoRows
 	}
 
-	resolved, err := s.resolveUserByID(ctx, userID)
+	resolved, err := s.resolveUserByIDForTenant(ctx, userID, tenantID)
 	if err != nil {
 		return ResolvedUser{}, err
-	}
-
-	if resolved.TenantID != tenantID {
-		resolved.TenantID = tenantID
-		tenant, err := s.GetTenantByID(ctx, tenantID)
-		if err != nil {
-			return ResolvedUser{}, fmt.Errorf("resolve tenant for local user: %w", err)
-		}
-		resolved.TenantSlug = tenant.Slug
-		resolved.TenantName = tenant.Name
-		resolved.TenantDBPath = tenant.DBPath
 	}
 
 	_, _ = s.db.ExecContext(ctx, `
@@ -416,6 +412,25 @@ func (s *ControlPlaneStore) resolveUserByID(ctx context.Context, userID int64) (
 	defer tx.Rollback()
 
 	resolved, err := loadResolvedUserTx(ctx, tx, userID)
+	if err != nil {
+		return ResolvedUser{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return ResolvedUser{}, fmt.Errorf("commit user lookup transaction: %w", err)
+	}
+
+	return resolved, nil
+}
+
+func (s *ControlPlaneStore) resolveUserByIDForTenant(ctx context.Context, userID, tenantID int64) (ResolvedUser, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return ResolvedUser{}, fmt.Errorf("begin user lookup transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	resolved, err := loadResolvedUserForTenantTx(ctx, tx, userID, tenantID)
 	if err != nil {
 		return ResolvedUser{}, err
 	}
@@ -483,6 +498,7 @@ SELECT
 	u.display_name,
 	COALESCE(NULLIF(u.preferred_language, ''), 'en') AS preferred_language,
 	tm.role,
+	tm.session_version,
 	u.last_login_at,
 	CASE WHEN lc.user_id IS NULL THEN 0 ELSE 1 END AS has_local_credentials,
 	CASE WHEN EXISTS (SELECT 1 FROM user_identities ui WHERE ui.user_id = u.id) THEN 1 ELSE 0 END AS has_oidc_identity
@@ -611,7 +627,7 @@ WHERE id = ?
 
 	if _, err := tx.ExecContext(ctx, `
 UPDATE tenant_memberships
-SET role = ?, updated_at = ?
+SET role = ?, session_version = session_version + 1, updated_at = ?
 WHERE tenant_id = ? AND user_id = ?
 `, role, now, tenantID, userID); err != nil {
 		return LocalUser{}, fmt.Errorf("update local user role: %w", err)
@@ -654,7 +670,7 @@ func (s *ControlPlaneStore) UpdateTenantUserRole(ctx context.Context, tenantID, 
 
 	result, err := s.db.ExecContext(ctx, `
 UPDATE tenant_memberships
-SET role = ?, updated_at = ?
+SET role = ?, session_version = session_version + 1, updated_at = ?
 WHERE tenant_id = ? AND user_id = ?
 `, role, time.Now().UTC(), tenantID, userID)
 	if err != nil {
@@ -800,7 +816,47 @@ WHERE user_id = ?
 	if affected == 0 {
 		return sql.ErrNoRows
 	}
+	if err := s.bumpTenantMembershipSessionVersion(ctx, tenantID, userID); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (s *ControlPlaneStore) bumpTenantMembershipSessionVersion(ctx context.Context, tenantID, userID int64) error {
+	result, err := s.db.ExecContext(ctx, `
+UPDATE tenant_memberships
+SET session_version = session_version + 1, updated_at = ?
+WHERE tenant_id = ? AND user_id = ?
+`, time.Now().UTC(), tenantID, userID)
+	if err != nil {
+		return fmt.Errorf("bump tenant membership session version: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("bump tenant membership session version rows affected: %w", err)
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *ControlPlaneStore) GetTenantMembershipSessionVersion(ctx context.Context, tenantID, userID int64) (int64, error) {
+	var version int64
+	err := s.db.QueryRowContext(ctx, `
+SELECT tm.session_version
+FROM tenant_memberships tm
+JOIN tenants t ON t.id = tm.tenant_id
+WHERE tm.tenant_id = ? AND tm.user_id = ? AND t.active = 1
+LIMIT 1
+`, tenantID, userID).Scan(&version)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, sql.ErrNoRows
+		}
+		return 0, fmt.Errorf("get tenant membership session version: %w", err)
+	}
+	return version, nil
 }
 
 func scanLocalUser(scanner interface{ Scan(dest ...any) error }) (LocalUser, error) {
@@ -821,7 +877,7 @@ func scanTenantUser(scanner interface{ Scan(dest ...any) error }) (TenantUser, e
 	var hasLocalCredentials int
 	var hasOIDCIdentity int
 	var lastLogin sql.NullTime
-	if err := scanner.Scan(&item.UserID, &item.TenantID, &item.LoginName, &item.Email, &item.DisplayName, &item.PreferredLanguage, &item.Role, &lastLogin, &hasLocalCredentials, &hasOIDCIdentity); err != nil {
+	if err := scanner.Scan(&item.UserID, &item.TenantID, &item.LoginName, &item.Email, &item.DisplayName, &item.PreferredLanguage, &item.Role, &item.SessionVersion, &lastLogin, &hasLocalCredentials, &hasOIDCIdentity); err != nil {
 		return TenantUser{}, fmt.Errorf("scan tenant user: %w", err)
 	}
 	item.PreferredLanguage = normalizePreferredLanguage(item.PreferredLanguage)
@@ -1009,13 +1065,13 @@ WHERE id = ?
 	resolved.PreferredLanguage = normalizePreferredLanguage(resolved.PreferredLanguage)
 
 	err = tx.QueryRowContext(ctx, `
-SELECT t.id, t.slug, t.name, t.db_path, tm.role
+SELECT t.id, t.slug, t.name, t.db_path, tm.role, tm.session_version
 FROM tenant_memberships tm
 JOIN tenants t ON t.id = tm.tenant_id
 WHERE tm.user_id = ? AND t.active = 1
 ORDER BY tm.created_at ASC, tm.id ASC
 LIMIT 1
-`, userID).Scan(&resolved.TenantID, &resolved.TenantSlug, &resolved.TenantName, &resolved.TenantDBPath, &resolved.Role)
+`, userID).Scan(&resolved.TenantID, &resolved.TenantSlug, &resolved.TenantName, &resolved.TenantDBPath, &resolved.Role, &resolved.SessionVersion)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return ResolvedUser{}, fmt.Errorf("user has no active tenant membership")
@@ -1023,6 +1079,34 @@ LIMIT 1
 		return ResolvedUser{}, fmt.Errorf("load resolved tenant membership: %w", err)
 	}
 
+	return resolved, nil
+}
+
+func loadResolvedUserForTenantTx(ctx context.Context, tx *sql.Tx, userID, tenantID int64) (ResolvedUser, error) {
+	var resolved ResolvedUser
+	err := tx.QueryRowContext(ctx, `
+SELECT id, email, display_name, preferred_language
+FROM users
+WHERE id = ?
+`, userID).Scan(&resolved.UserID, &resolved.Email, &resolved.DisplayName, &resolved.PreferredLanguage)
+	if err != nil {
+		return ResolvedUser{}, fmt.Errorf("load resolved user: %w", err)
+	}
+	resolved.PreferredLanguage = normalizePreferredLanguage(resolved.PreferredLanguage)
+
+	err = tx.QueryRowContext(ctx, `
+SELECT t.id, t.slug, t.name, t.db_path, tm.role, tm.session_version
+FROM tenant_memberships tm
+JOIN tenants t ON t.id = tm.tenant_id
+WHERE tm.user_id = ? AND tm.tenant_id = ? AND t.active = 1
+LIMIT 1
+`, userID, tenantID).Scan(&resolved.TenantID, &resolved.TenantSlug, &resolved.TenantName, &resolved.TenantDBPath, &resolved.Role, &resolved.SessionVersion)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return ResolvedUser{}, fmt.Errorf("user has no active tenant membership")
+		}
+		return ResolvedUser{}, fmt.Errorf("load resolved tenant membership: %w", err)
+	}
 	return resolved, nil
 }
 
@@ -1066,6 +1150,7 @@ CREATE TABLE IF NOT EXISTS tenant_memberships (
 	tenant_id INTEGER NOT NULL,
 	user_id INTEGER NOT NULL,
 	role TEXT NOT NULL DEFAULT 'viewer',
+	session_version INTEGER NOT NULL DEFAULT 1,
 	created_at DATETIME NOT NULL,
 	updated_at DATETIME NOT NULL,
 	UNIQUE(tenant_id, user_id),
@@ -1137,6 +1222,7 @@ CREATE TABLE IF NOT EXISTS control_plane_admins (
 	password_hash TEXT NOT NULL,
 	totp_secret_ciphertext TEXT NOT NULL DEFAULT '',
 	totp_enabled INTEGER NOT NULL DEFAULT 0,
+	session_version INTEGER NOT NULL DEFAULT 1,
 	created_at DATETIME NOT NULL,
 	updated_at DATETIME NOT NULL
 );
@@ -1172,6 +1258,12 @@ func (s *ControlPlaneStore) initSchema(ctx context.Context) error {
 		return err
 	}
 	if err := s.ensureTenantMembershipNotificationColumn(ctx); err != nil {
+		return err
+	}
+	if err := s.ensureTenantMembershipSessionVersionColumn(ctx); err != nil {
+		return err
+	}
+	if err := s.ensureControlPlaneAdminSessionVersionColumn(ctx); err != nil {
 		return err
 	}
 	if err := s.ensureUserNotificationChannelsTable(ctx); err != nil {
@@ -1254,9 +1346,37 @@ func (s *ControlPlaneStore) ensureTenantMembershipNotificationColumn(ctx context
 	return nil
 }
 
+func (s *ControlPlaneStore) ensureTenantMembershipSessionVersionColumn(ctx context.Context) error {
+	hasColumn, err := s.tableHasColumn(ctx, "tenant_memberships", "session_version")
+	if err != nil {
+		return fmt.Errorf("inspect tenant_memberships session_version column: %w", err)
+	}
+	if hasColumn {
+		return nil
+	}
+	if _, err := s.db.ExecContext(ctx, `ALTER TABLE tenant_memberships ADD COLUMN session_version INTEGER NOT NULL DEFAULT 1`); err != nil {
+		return fmt.Errorf("add tenant_memberships session_version column: %w", err)
+	}
+	return nil
+}
+
+func (s *ControlPlaneStore) ensureControlPlaneAdminSessionVersionColumn(ctx context.Context) error {
+	hasColumn, err := s.tableHasColumn(ctx, "control_plane_admins", "session_version")
+	if err != nil {
+		return fmt.Errorf("inspect control_plane_admins session_version column: %w", err)
+	}
+	if hasColumn {
+		return nil
+	}
+	if _, err := s.db.ExecContext(ctx, `ALTER TABLE control_plane_admins ADD COLUMN session_version INTEGER NOT NULL DEFAULT 1`); err != nil {
+		return fmt.Errorf("add control_plane_admins session_version column: %w", err)
+	}
+	return nil
+}
+
 func (s *ControlPlaneStore) tableHasColumn(ctx context.Context, tableName, columnName string) (bool, error) {
 	switch tableName {
-	case "tenants", "users", "tenant_memberships", "remote_nodes", "local_credentials":
+	case "tenants", "users", "tenant_memberships", "remote_nodes", "local_credentials", "control_plane_admins":
 	default:
 		return false, fmt.Errorf("unsupported table inspection: %s", tableName)
 	}
@@ -2128,6 +2248,7 @@ SELECT
 	u.display_name,
 	COALESCE(NULLIF(u.preferred_language, ''), 'en') AS preferred_language,
 	tm.role,
+	tm.session_version,
 	u.last_login_at,
 	CASE WHEN lc.user_id IS NULL THEN 0 ELSE 1 END AS has_local_credentials,
 	CASE WHEN EXISTS (SELECT 1 FROM user_identities ui WHERE ui.user_id = u.id) THEN 1 ELSE 0 END AS has_oidc_identity
@@ -2604,14 +2725,18 @@ WHERE user_id = ?
 	if affected == 0 {
 		return sql.ErrNoRows
 	}
+	if err := s.bumpTenantMembershipSessionVersion(ctx, tenantID, userID); err != nil {
+		return err
+	}
 	return nil
 }
 
 // ControlPlaneAdmin holds the single control-plane administrator account.
 type ControlPlaneAdmin struct {
-	Username     string
-	PasswordHash string
-	TOTPEnabled  bool
+	Username       string
+	PasswordHash   string
+	TOTPEnabled    bool
+	SessionVersion int64
 	// TOTPSecret is the decrypted TOTP secret; only populated when needed.
 	TOTPSecret string
 }
@@ -2630,8 +2755,8 @@ func (s *ControlPlaneStore) IsSetupRequired(ctx context.Context) (bool, error) {
 func (s *ControlPlaneStore) CreateControlPlaneAdmin(ctx context.Context, username, passwordHash string) error {
 	now := time.Now().UTC()
 	_, err := s.db.ExecContext(ctx, `
-	INSERT INTO control_plane_admins (id, username, password_hash, totp_secret_ciphertext, totp_enabled, created_at, updated_at)
-	VALUES (1, ?, ?, '', 0, ?, ?)
+	INSERT INTO control_plane_admins (id, username, password_hash, totp_secret_ciphertext, totp_enabled, session_version, created_at, updated_at)
+	VALUES (1, ?, ?, '', 0, 1, ?, ?)
 	`, username, passwordHash, now, now)
 	if err != nil {
 		return fmt.Errorf("create control plane admin: %w", err)
@@ -2645,9 +2770,9 @@ func (s *ControlPlaneStore) GetControlPlaneAdmin(ctx context.Context) (ControlPl
 	var totpCiphertext string
 	var totpEnabled int
 	err := s.db.QueryRowContext(ctx, `
-	SELECT username, password_hash, totp_secret_ciphertext, totp_enabled
+	SELECT username, password_hash, totp_secret_ciphertext, totp_enabled, session_version
 	FROM control_plane_admins WHERE id = 1
-	`).Scan(&a.Username, &a.PasswordHash, &totpCiphertext, &totpEnabled)
+	`).Scan(&a.Username, &a.PasswordHash, &totpCiphertext, &totpEnabled, &a.SessionVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ControlPlaneAdmin{}, fmt.Errorf("no control plane admin configured")
 	}
@@ -2673,7 +2798,7 @@ func (s *ControlPlaneStore) GetControlPlaneAdmin(ctx context.Context) (ControlPl
 func (s *ControlPlaneStore) UpdateControlPlaneAdminPassword(ctx context.Context, passwordHash string) error {
 	now := time.Now().UTC()
 	_, err := s.db.ExecContext(ctx, `
-	UPDATE control_plane_admins SET password_hash = ?, updated_at = ? WHERE id = 1
+	UPDATE control_plane_admins SET password_hash = ?, session_version = session_version + 1, updated_at = ? WHERE id = 1
 	`, passwordHash, now)
 	if err != nil {
 		return fmt.Errorf("update control plane admin password: %w", err)
@@ -2699,7 +2824,7 @@ func (s *ControlPlaneStore) SetControlPlaneAdminTOTP(ctx context.Context, secret
 	}
 	_, err := s.db.ExecContext(ctx, `
 	UPDATE control_plane_admins
-	SET totp_secret_ciphertext = ?, totp_enabled = ?, updated_at = ?
+	SET totp_secret_ciphertext = ?, totp_enabled = ?, session_version = session_version + 1, updated_at = ?
 	WHERE id = 1
 	`, ciphertext, enabledInt, now)
 	if err != nil {

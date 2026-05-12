@@ -153,6 +153,56 @@ func TestTenantRetentionDefaultsAndPersistence(t *testing.T) {
 	}
 }
 
+func TestTenantSessionVersionInvalidatesOnRoleAndPasswordChange(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	controlPath := filepath.Join(dir, "controlplane.db")
+
+	cp, err := OpenControlPlane(ctx, controlPath)
+	if err != nil {
+		t.Fatalf("open control plane: %v", err)
+	}
+	defer cp.Close()
+
+	tenant, err := cp.CreateTenant(ctx, "session-version", "Session Version", filepath.Join(dir, "session-version.db"))
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	user, err := cp.CreateLocalUserForTenant(ctx, tenant.ID, "alice", "initial-password", "alice@example.com", "Alice", "viewer")
+	if err != nil {
+		t.Fatalf("create local user: %v", err)
+	}
+	initial, err := cp.GetTenantMembershipSessionVersion(ctx, tenant.ID, user.UserID)
+	if err != nil {
+		t.Fatalf("get initial session version: %v", err)
+	}
+	if initial != 1 {
+		t.Fatalf("initial session version = %d, want 1", initial)
+	}
+
+	if err := cp.UpdateTenantUserRole(ctx, tenant.ID, user.UserID, "admin"); err != nil {
+		t.Fatalf("update role: %v", err)
+	}
+	afterRole, err := cp.GetTenantMembershipSessionVersion(ctx, tenant.ID, user.UserID)
+	if err != nil {
+		t.Fatalf("get session version after role: %v", err)
+	}
+	if afterRole <= initial {
+		t.Fatalf("session version did not increase after role update: before=%d after=%d", initial, afterRole)
+	}
+
+	if err := cp.ResetLocalUserPassword(ctx, tenant.ID, user.UserID, "next-password"); err != nil {
+		t.Fatalf("reset password: %v", err)
+	}
+	afterPassword, err := cp.GetTenantMembershipSessionVersion(ctx, tenant.ID, user.UserID)
+	if err != nil {
+		t.Fatalf("get session version after password: %v", err)
+	}
+	if afterPassword <= afterRole {
+		t.Fatalf("session version did not increase after password reset: before=%d after=%d", afterRole, afterPassword)
+	}
+}
+
 func TestTenantRetentionMigrationDefaultsExistingRows(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()

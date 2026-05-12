@@ -92,6 +92,7 @@ func (s *Server) handleAdminAccess(w http.ResponseWriter, r *http.Request) {
 		adminKey := s.adminAccessKey(r)
 		now := time.Now()
 		if allowed, waitFor := s.adminAccessAllowed(adminKey, now); !allowed {
+			s.writeAudit(r, "control_plane.login.lockout", "system", 1, "admin access locked")
 			http.Redirect(w, r, "/admin/access?error="+url.QueryEscape(fmt.Sprintf("Zu viele Versuche. Bitte %d Minuten warten.", int(waitFor.Minutes())+1)), http.StatusSeeOther)
 			return
 		}
@@ -103,17 +104,19 @@ func (s *Server) handleAdminAccess(w http.ResponseWriter, r *http.Request) {
 		if admin.TOTPEnabled && code != "" {
 			if !s.hasControlPlaneTOTPCookie(r, admin.Username) {
 				s.registerAdminAccessFailure(adminKey, now)
+				s.writeAudit(r, "control_plane.login.failure", "system", 1, "totp stage expired")
 				http.Redirect(w, r, "/admin/access?error="+url.QueryEscape("TOTP-Anmeldung ist abgelaufen. Bitte erneut anmelden."), http.StatusSeeOther)
 				return
 			}
 			if !auth.TOTPValidate(admin.TOTPSecret, code) {
 				s.registerAdminAccessFailure(adminKey, now)
+				s.writeAudit(r, "control_plane.login.failure", "system", 1, "invalid totp")
 				http.Redirect(w, r, "/admin/access?totp=1&error="+url.QueryEscape("Ungültiger TOTP-Code"), http.StatusSeeOther)
 				return
 			}
 			s.clearAdminAccessAttempts(adminKey)
 			s.clearControlPlaneTOTPCookie(w)
-			s.setControlPlaneAdminCookie(w)
+			s.setControlPlaneAdminCookie(w, admin.SessionVersion)
 			http.Redirect(w, r, "/admin/", http.StatusSeeOther)
 			return
 		}
@@ -122,6 +125,7 @@ func (s *Server) handleAdminAccess(w http.ResponseWriter, r *http.Request) {
 		providedPassword := r.FormValue("password")
 		if !strings.EqualFold(providedUsername, strings.TrimSpace(admin.Username)) || bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(providedPassword)) != nil {
 			s.registerAdminAccessFailure(adminKey, now)
+			s.writeAudit(r, "control_plane.login.failure", "system", 1, "invalid credentials")
 			http.Redirect(w, r, "/admin/access?error="+url.QueryEscape("Ungültiger Benutzername oder Passwort"), http.StatusSeeOther)
 			return
 		}
@@ -134,7 +138,7 @@ func (s *Server) handleAdminAccess(w http.ResponseWriter, r *http.Request) {
 
 		s.clearAdminAccessAttempts(adminKey)
 		s.clearControlPlaneTOTPCookie(w)
-		s.setControlPlaneAdminCookie(w)
+		s.setControlPlaneAdminCookie(w, admin.SessionVersion)
 		http.Redirect(w, r, "/admin/", http.StatusSeeOther)
 		return
 	}
@@ -265,6 +269,7 @@ func (s *Server) handleAdminSecuritySettings(w http.ResponseWriter, r *http.Requ
 			return
 		}
 
+		securityChanged := false
 		newPassword := r.FormValue("new_password")
 		newPasswordConfirm := r.FormValue("new_password_confirm")
 		if newPassword != "" || newPasswordConfirm != "" {
@@ -286,6 +291,7 @@ func (s *Server) handleAdminSecuritySettings(w http.ResponseWriter, r *http.Requ
 				return
 			}
 			s.writeAudit(r, "control_plane.password.update", "system", 1, "control plane password updated")
+			securityChanged = true
 		}
 
 		enableTOTP := r.FormValue("enable_totp") == "on"
@@ -301,8 +307,15 @@ func (s *Server) handleAdminSecuritySettings(w http.ResponseWriter, r *http.Requ
 				return
 			}
 			s.writeAudit(r, "control_plane.totp.enable", "system", 1, "totp enabled")
+			securityChanged = true
 		}
 
+		if securityChanged {
+			s.clearControlPlaneAdminCookie(w)
+			s.clearControlPlaneTOTPCookie(w)
+			http.Redirect(w, r, "/admin/access?notice="+url.QueryEscape("Sicherheitseinstellungen gespeichert. Bitte erneut anmelden."), http.StatusSeeOther)
+			return
+		}
 		http.Redirect(w, r, "/admin/security?notice="+url.QueryEscape("Sicherheitseinstellungen gespeichert"), http.StatusSeeOther)
 		return
 	}
@@ -359,7 +372,9 @@ func (s *Server) handleAdminTOTPDisable(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.writeAudit(r, "control_plane.totp.disable", "system", 1, "totp disabled")
-	http.Redirect(w, r, "/admin/security?notice="+url.QueryEscape("TOTP deaktiviert"), http.StatusSeeOther)
+	s.clearControlPlaneAdminCookie(w)
+	s.clearControlPlaneTOTPCookie(w)
+	http.Redirect(w, r, "/admin/access?notice="+url.QueryEscape("TOTP deaktiviert. Bitte erneut anmelden."), http.StatusSeeOther)
 }
 
 func issueNewAdminTOTP() (secret string, provisioningURI string, err error) {
@@ -1741,8 +1756,10 @@ func (s *Server) handleSettingsProfilePassword(w http.ResponseWriter, r *http.Re
 		http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?error="+url.QueryEscape("Passwort konnte nicht geändert werden"), http.StatusSeeOther)
 		return
 	}
+	s.writeAudit(r, "tenant_user.password.update", "tenant", user.TenantID, fmt.Sprintf("user_id=%d", user.UserID))
+	s.sessions.ClearForTenant(w, user.TenantSlug)
 
-	http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?notice="+url.QueryEscape("Passwort geändert"), http.StatusSeeOther)
+	http.Redirect(w, r, s.tenantAppBase(r)+"login?notice="+url.QueryEscape("Passwort geändert. Bitte erneut anmelden."), http.StatusSeeOther)
 }
 
 func (s *Server) handleSettingsUserRoleSave(w http.ResponseWriter, r *http.Request) {
@@ -1775,10 +1792,9 @@ func (s *Server) handleSettingsUserRoleSave(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if userID == user.UserID {
-		if session, err := s.sessionForRequest(r); err == nil {
-			session.Role = strings.ToLower(strings.TrimSpace(role))
-			_ = s.sessions.Set(w, *session)
-		}
+		user.Role = strings.ToLower(strings.TrimSpace(role))
+		user.SessionVersion++
+		_ = s.sessions.Set(w, *user)
 	}
 
 	s.writeAudit(r, "tenant_user.role_update", "tenant", user.TenantID, fmt.Sprintf("user_id=%d role=%s", userID, role))
