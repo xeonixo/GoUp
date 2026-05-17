@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"hash/fnv"
 	"log/slog"
 	"sync"
@@ -34,6 +35,7 @@ type Runner struct {
 	notifiers           []Notifier
 	checkers            map[Kind]Checker
 	interval            time.Duration
+	checkTimeoutGrace   time.Duration
 	workers             int
 	workerSem           chan struct{}
 	scheduleMu          sync.Mutex
@@ -81,6 +83,7 @@ func NewRunner(logger *slog.Logger, store Store, notifiers ...Notifier) *Runner 
 		store:               store,
 		notifiers:           notifiers,
 		interval:            5 * time.Second,
+		checkTimeoutGrace:   2 * time.Second,
 		workers:             4,
 		schedule:            make(map[int64]*monitorScheduleState),
 		notifyMaxRetries:    3,
@@ -273,8 +276,8 @@ func (r *Runner) runSnapshot(ctx context.Context, snapshot Snapshot, scheduledAt
 		return
 	}
 
-	runCtx, cancel := context.WithTimeout(ctx, snapshot.Monitor.Timeout+2*time.Second)
-	result := checker.Check(runCtx, snapshot.Monitor)
+	runCtx, cancel := context.WithTimeout(ctx, r.checkTimeout(snapshot.Monitor))
+	result := r.runChecker(runCtx, checker, snapshot.Monitor)
 	cancel()
 	result.CheckedAt = scheduledAt.UTC()
 
@@ -287,8 +290,8 @@ func (r *Runner) runSnapshot(ctx context.Context, snapshot Snapshot, scheduledAt
 					goto doneRetrying
 				}
 			}
-			retryCtx, retryCancel := context.WithTimeout(ctx, snapshot.Monitor.Timeout+2*time.Second)
-			retryResult := checker.Check(retryCtx, snapshot.Monitor)
+			retryCtx, retryCancel := context.WithTimeout(ctx, r.checkTimeout(snapshot.Monitor))
+			retryResult := r.runChecker(retryCtx, checker, snapshot.Monitor)
 			retryCancel()
 			result = retryResult
 			result.CheckedAt = scheduledAt.UTC()
@@ -368,6 +371,48 @@ doneRetrying:
 		"latency_ms", result.Latency.Milliseconds(),
 		"scheduled_at", scheduledAt.UTC().Format(time.RFC3339),
 	)
+}
+
+func (r *Runner) checkTimeout(item Monitor) time.Duration {
+	timeout := item.Timeout
+	if timeout <= 0 {
+		timeout = time.Minute
+	}
+	return timeout + r.checkTimeoutGrace
+}
+
+func (r *Runner) runChecker(ctx context.Context, checker Checker, item Monitor) Result {
+	startedAt := time.Now()
+	resultCh := make(chan Result, 1)
+
+	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				resultCh <- Result{
+					MonitorID: item.ID,
+					CheckedAt: time.Now().UTC(),
+					Status:    StatusDown,
+					Latency:   time.Since(startedAt),
+					Message:   "monitor check failed unexpectedly",
+				}
+				r.logger.Error("monitor checker panicked", "monitor_id", item.ID, "kind", item.Kind, "panic", recovered)
+			}
+		}()
+		resultCh <- checker.Check(ctx, item)
+	}()
+
+	select {
+	case result := <-resultCh:
+		return result
+	case <-ctx.Done():
+		return Result{
+			MonitorID: item.ID,
+			CheckedAt: time.Now().UTC(),
+			Status:    StatusDown,
+			Latency:   time.Since(startedAt),
+			Message:   fmt.Sprintf("monitor check timed out after %s", formatLatency(r.checkTimeout(item))),
+		}
+	}
 }
 
 func normalizedMonitorInterval(interval time.Duration) time.Duration {

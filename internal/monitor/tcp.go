@@ -115,12 +115,15 @@ func (c TCPChecker) checkTarget(ctx context.Context, item Monitor, checkedAt tim
 		return result
 	}
 
-	dialer := &net.Dialer{Timeout: item.Timeout}
-	conn, err := tls.DialWithDialer(dialer, network, target, &tls.Config{
-		MinVersion:         tls.VersionTLS12,
-		ServerName:         serverName,
-		InsecureSkipVerify: !verifyCertificate, // false for tls mode; true for starttls/tls_insecure
-	})
+	dialer := &tls.Dialer{
+		NetDialer: &net.Dialer{Timeout: item.Timeout},
+		Config: &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			ServerName:         serverName,
+			InsecureSkipVerify: !verifyCertificate, // false for tls mode; true for starttls/tls_insecure
+		},
+	}
+	conn, err := dialer.DialContext(ctx, network, target)
 	result.Latency = time.Since(attemptStartedAt)
 	if err != nil {
 		result.Message = fmt.Sprintf("tcp tls handshake failed: %v", err)
@@ -128,7 +131,13 @@ func (c TCPChecker) checkTarget(ctx context.Context, item Monitor, checkedAt tim
 	}
 	defer conn.Close()
 
-	state := conn.ConnectionState()
+	tlsConn, ok := conn.(*tls.Conn)
+	if !ok {
+		result.Message = "tcp tls connection did not return tls.Conn"
+		return result
+	}
+
+	state := tlsConn.ConnectionState()
 	applyTLSMetadata(&result, state)
 	status, message := finalizeTLSResult(&result, fmt.Sprintf("TCP TLS handshake ok in %s", formatLatency(result.Latency)))
 	if !verifyCertificate && len(state.PeerCertificates) > 0 {

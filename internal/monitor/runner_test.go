@@ -4,11 +4,13 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 )
 
 type runnerTestStore struct {
+	mu      sync.Mutex
 	results []Result
 	states  []Result
 }
@@ -18,11 +20,15 @@ func (s *runnerTestStore) ListMonitorSnapshots(context.Context) ([]Snapshot, err
 }
 
 func (s *runnerTestStore) SaveMonitorResult(_ context.Context, result Result) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.results = append(s.results, result)
 	return nil
 }
 
 func (s *runnerTestStore) RecordMonitorState(_ context.Context, monitorID int64, status Status, message string, checkedAt time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.states = append(s.states, Result{MonitorID: monitorID, Status: status, Message: message, CheckedAt: checkedAt})
 	return nil
 }
@@ -43,6 +49,18 @@ func (s *runnerTestStore) UpdateNotificationRetry(context.Context, int64, bool, 
 	return nil
 }
 
+func (s *runnerTestStore) resultCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.results)
+}
+
+func (s *runnerTestStore) lastResult() Result {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.results[len(s.results)-1]
+}
+
 type sequenceChecker struct {
 	results []Result
 }
@@ -54,6 +72,15 @@ func (c *sequenceChecker) Check(context.Context, Monitor) Result {
 	result := c.results[0]
 	c.results = c.results[1:]
 	return result
+}
+
+type blockingChecker struct {
+	unblock <-chan struct{}
+}
+
+func (c blockingChecker) Check(context.Context, Monitor) Result {
+	<-c.unblock
+	return Result{Status: StatusUp}
 }
 
 func TestMonitorPhaseOffsetCascadesMonitorsAcrossInterval(t *testing.T) {
@@ -149,4 +176,47 @@ func TestRunnerUsesScheduledAtForRetryResult(t *testing.T) {
 	if store.results[0].Status != StatusUp {
 		t.Fatalf("saved status = %s, want retry status up", store.results[0].Status)
 	}
+}
+
+func TestRunnerClearsInFlightWhenCheckerIgnoresTimeout(t *testing.T) {
+	store := &runnerTestStore{}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	r := NewRunner(logger, store)
+	r.checkTimeoutGrace = 10 * time.Millisecond
+	unblock := make(chan struct{})
+	defer close(unblock)
+	r.checkers[KindHTTPS] = blockingChecker{unblock: unblock}
+
+	now := time.Date(2026, 5, 11, 10, 0, 0, 0, time.UTC)
+	snapshot := Snapshot{
+		Monitor: Monitor{
+			ID:       17,
+			Kind:     KindHTTPS,
+			Enabled:  true,
+			Interval: time.Minute,
+			Timeout:  10 * time.Millisecond,
+		},
+	}
+	r.schedule[snapshot.Monitor.ID] = &monitorScheduleState{nextDue: now}
+	r.dispatchSnapshot(context.Background(), dueSnapshot{snapshot: snapshot, dueAt: now})
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		r.scheduleMu.Lock()
+		inFlight := r.schedule[snapshot.Monitor.ID].inFlight
+		r.scheduleMu.Unlock()
+		if !inFlight && store.resultCount() == 1 {
+			result := store.lastResult()
+			if result.Status != StatusDown {
+				t.Fatalf("status = %s, want down", result.Status)
+			}
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	r.scheduleMu.Lock()
+	inFlight := r.schedule[snapshot.Monitor.ID].inFlight
+	r.scheduleMu.Unlock()
+	t.Fatalf("monitor remained in flight after checker timeout; inFlight=%v results=%d", inFlight, store.resultCount())
 }
