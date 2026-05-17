@@ -73,12 +73,20 @@ func (s *Server) searchDashboardIcons(ctx context.Context, tenantSlug string, ap
 			Value:     item.entry.Value,
 			Slug:      item.entry.Slug,
 			Label:     item.entry.Label,
-			URL:       localIconURL(appBase, item.entry.Value),
+			URL:       searchResultIconURL(appBase, item.entry),
 			Source:    item.entry.Source,
 			Preferred: item.entry.Preferred,
 		})
 	}
 	return results, nil
+}
+
+func searchResultIconURL(appBase string, entry dashboardIconEntry) string {
+	iconURL := localIconURL(appBase, entry.Value)
+	if iconURL != "" && entry.Source == groupIconSourceDashboard {
+		iconURL += "&remote=1"
+	}
+	return iconURL
 }
 
 func (s *Server) loadDashboardIconIndex(ctx context.Context) ([]dashboardIconEntry, error) {
@@ -241,7 +249,7 @@ func (s *Server) loadUploadedIconEntries(tenantSlug string, usedRefs map[string]
 	return results
 }
 
-func (s *Server) loadDashboardIconAsset(ctx context.Context, tenantSlug string, slug string) ([]byte, string, error) {
+func (s *Server) loadDashboardIconAsset(ctx context.Context, tenantSlug string, slug string, allowRemote bool) ([]byte, string, error) {
 	slug = normalizeDashboardIconSlug(slug)
 	if slug == "" {
 		return nil, "", os.ErrNotExist
@@ -264,6 +272,9 @@ func (s *Server) loadDashboardIconAsset(ctx context.Context, tenantSlug string, 
 	defer s.iconAssetMu.Unlock()
 	if asset, ok := s.iconAssets[slug]; ok && len(asset.Payload) > 0 {
 		return append([]byte(nil), asset.Payload...), asset.ContentType, nil
+	}
+	if !allowRemote {
+		return nil, "", os.ErrNotExist
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, dashboardIconsBaseURL+"/svg/"+url.PathEscape(slug)+".svg", nil)

@@ -1,10 +1,13 @@
 package httpserver
 
 import (
+	"context"
 	"fmt"
+	matrixnotify "goup/internal/notify/matrix"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 func (s *Server) handleSettingsProfile(w http.ResponseWriter, r *http.Request) {
@@ -130,6 +133,96 @@ func (s *Server) handleSettingsProfileNotifierDelete(w http.ResponseWriter, r *h
 	}
 
 	http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?notice="+url.QueryEscape("Benachrichtigungskanal entfernt"), http.StatusSeeOther)
+}
+
+func (s *Server) handleSettingsProfileNotifierTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+
+	user := s.currentUser(r)
+	if user == nil || user.TenantID <= 0 {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	kind := strings.ToLower(strings.TrimSpace(r.PathValue("kind")))
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	var err error
+	switch kind {
+	case "email":
+		err = s.sendProfileEmailTest(ctx, r, user.TenantID, user.UserID)
+	case "matrix":
+		err = s.sendProfileMatrixTest(ctx, r, user.TenantID, user.UserID)
+	default:
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?error="+url.QueryEscape("Unbekannter Benachrichtigungskanal"), http.StatusSeeOther)
+		return
+	}
+	if err != nil {
+		s.logger.Warn("settings profile notification test failed", "tenant_id", user.TenantID, "user_id", user.UserID, "kind", kind, "error", err)
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?error="+url.QueryEscape("Testversand fehlgeschlagen: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+
+	s.writeAudit(r, "tenant.notification.test", "tenant", user.TenantID, fmt.Sprintf("user_id=%d kind=%s", user.UserID, kind))
+	http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?notice="+url.QueryEscape("Testversand erfolgreich"), http.StatusSeeOther)
+}
+
+func (s *Server) sendProfileEmailTest(ctx context.Context, r *http.Request, tenantID, userID int64) error {
+	recipient := strings.TrimSpace(r.FormValue("email"))
+	if recipient == "" {
+		profileUser, err := s.controlStore.GetTenantUser(ctx, tenantID, userID)
+		if err != nil {
+			return fmt.Errorf("Profil konnte nicht geladen werden")
+		}
+		recipient = strings.TrimSpace(profileUser.Email)
+	}
+	if recipient == "" {
+		return fmt.Errorf("E-Mail-Adresse fehlt")
+	}
+	cfg, err := s.controlStore.GetGlobalSMTPDeliveryConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("SMTP-Konfiguration konnte nicht geladen werden: %w", err)
+	}
+	if strings.TrimSpace(cfg.Settings.Host) == "" || strings.TrimSpace(cfg.Settings.FromEmail) == "" {
+		return fmt.Errorf("SMTP Host/Absender ist nicht konfiguriert")
+	}
+	if strings.TrimSpace(cfg.Password) == "" {
+		return fmt.Errorf("SMTP Passwort ist nicht konfiguriert")
+	}
+	body := "Dies ist eine Testbenachrichtigung von GoUp.\n\nWenn du diese Nachricht erhalten hast, funktioniert der E-Mail-Kanal."
+	return sendSMTPMail(cfg, recipient, "GoUp Testbenachrichtigung", body)
+}
+
+func (s *Server) sendProfileMatrixTest(ctx context.Context, r *http.Request, tenantID, userID int64) error {
+	homeserverURL := strings.TrimSpace(strings.TrimRight(r.FormValue("matrix_homeserver_url"), "/"))
+	roomID := strings.TrimSpace(r.FormValue("matrix_room_id"))
+	accessToken := strings.TrimSpace(r.FormValue("matrix_access_token"))
+	if accessToken == "" {
+		settings, err := s.controlStore.GetUserNotificationSettings(ctx, tenantID, userID)
+		if err != nil {
+			return fmt.Errorf("Matrix-Konfiguration konnte nicht geladen werden")
+		}
+		if homeserverURL == "" {
+			homeserverURL = strings.TrimSpace(settings.MatrixHomeserver)
+		}
+		if roomID == "" {
+			roomID = strings.TrimSpace(settings.MatrixRoomID)
+		}
+		accessToken = strings.TrimSpace(settings.MatrixAccessToken)
+	}
+	if homeserverURL == "" || roomID == "" || accessToken == "" {
+		return fmt.Errorf("Matrix Homeserver, Room ID und Access Token sind erforderlich")
+	}
+	client := matrixnotify.New(homeserverURL, accessToken, roomID)
+	return client.SendMessage(ctx, "GoUp Testbenachrichtigung\n\nWenn du diese Nachricht erhalten hast, funktioniert der Matrix-Kanal.")
 }
 
 func (s *Server) handleSettingsProfilePassword(w http.ResponseWriter, r *http.Request) {

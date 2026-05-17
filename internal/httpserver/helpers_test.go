@@ -1,7 +1,11 @@
 package httpserver
 
 import (
+	"errors"
+	"os"
 	"testing"
+
+	"goup/internal/config"
 )
 
 func TestNormalizeOriginSimple(t *testing.T) {
@@ -61,6 +65,24 @@ func TestSanitizeSlugBasics(t *testing.T) {
 	got := sanitizeDashboardIconFileSlug("MyIcon")
 	if !contains(got, "m") || !contains(got, "icon") {
 		t.Errorf("sanitizeDashboardIconFileSlug should lowercase, got %q", got)
+	}
+}
+
+func TestEffectiveGroupIconReferenceDoesNotInferFromGroupName(t *testing.T) {
+	if got := effectiveGroupIconReference(""); got != "" {
+		t.Fatalf("effectiveGroupIconReference(\"\") = %q, want empty", got)
+	}
+}
+
+func TestLoadDashboardIconAssetWithoutRemoteConsentOnlyUsesLocalCache(t *testing.T) {
+	server := &Server{
+		cfg:        config.Config{DataDir: t.TempDir()},
+		iconAssets: make(map[string]dashboardIconAsset),
+	}
+
+	_, _, err := server.loadDashboardIconAsset(t.Context(), "tenant", "nextcloud", false)
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("loadDashboardIconAsset without remote consent error = %v, want os.ErrNotExist", err)
 	}
 }
 

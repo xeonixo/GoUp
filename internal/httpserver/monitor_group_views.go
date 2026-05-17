@@ -163,7 +163,7 @@ func buildMonitorServiceGroups(appBase string, monitors []monitorView, groupSort
 		if knownIndex, ok := groupSortOrder[label]; ok {
 			orderIndex = knownIndex
 		}
-		iconRef := effectiveGroupIconReference(label, groupIcons[label])
+		iconRef := effectiveGroupIconReference(groupIcons[label])
 		services = append(services, monitorServiceGroupView{
 			Title:       label,
 			Subtitle:    subtitle,

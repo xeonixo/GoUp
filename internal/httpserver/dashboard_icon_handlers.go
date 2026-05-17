@@ -52,7 +52,7 @@ func (s *Server) handleRenderIcon(w http.ResponseWriter, r *http.Request) {
 	case groupIconSourceUpload:
 		payload, contentType, err = s.loadUploadedIcon(r, value)
 	default:
-		payload, contentType, err = s.loadDashboardIconAsset(r.Context(), s.tenantSlugForRequest(r), value)
+		payload, contentType, err = s.loadDashboardIconAsset(r.Context(), s.tenantSlugForRequest(r), value, r.URL.Query().Get("remote") == "1")
 	}
 	if err != nil {
 		http.NotFound(w, r)

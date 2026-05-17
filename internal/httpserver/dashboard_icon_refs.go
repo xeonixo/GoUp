@@ -39,12 +39,8 @@ func splitGroupIconReference(ref string) (kind string, value string) {
 	return groupIconSourceDashboard, normalizeDashboardIconSlug(ref)
 }
 
-func effectiveGroupIconReference(groupName string, storedRef string) string {
-	storedRef = normalizeGroupIconReference(storedRef)
-	if storedRef != "" {
-		return storedRef
-	}
-	return normalizeDashboardIconSlug(groupName)
+func effectiveGroupIconReference(storedRef string) string {
+	return normalizeGroupIconReference(storedRef)
 }
 
 func localIconURL(appBase string, ref string) string {

@@ -82,6 +82,7 @@ func (s *Server) routes() (http.Handler, error) {
 	mux.Handle("/admin/tenants/{id}/remote-nodes/{nodeID}/delete", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminDeleteRemoteNode)))
 	mux.Handle("/admin/tenants/{id}/users/{userID}/remove", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantUserRemove)))
 	mux.Handle("/admin/settings/smtp/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSMTPSettingsSave)))
+	mux.Handle("/admin/settings/smtp/test", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSMTPSettingsTest)))
 
 	return s.logging(s.securityHeaders(s.requireSameOrigin(mux))), nil
 }
@@ -258,6 +259,7 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/notification-events", s.requireAuth(http.HandlerFunc(s.handleNotificationEventsHistory)))
 	mux.Handle("/settings/profile", s.requireAuth(http.HandlerFunc(s.handleSettingsProfile)))
 	mux.Handle("/settings/profile/save", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileSave)))
+	mux.Handle("/settings/profile/notifiers/{kind}/test", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileNotifierTest)))
 	mux.Handle("/settings/profile/notifiers/delete", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileNotifierDelete)))
 	mux.Handle("/settings/profile/password", s.requireAuth(http.HandlerFunc(s.handleSettingsProfilePassword)))
 	mux.Handle("/settings/users", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUsers)))

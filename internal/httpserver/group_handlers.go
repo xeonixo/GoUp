@@ -46,7 +46,7 @@ func (s *Server) handleSaveGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	if uploadedIconRef != "" {
 		iconRef = uploadedIconRef
-	} else if err := s.persistSelectedDashboardIcon(r.Context(), s.tenantSlugForRequest(r), iconRef); err != nil {
+	} else if err := s.persistSelectedDashboardIcon(r.Context(), s.tenantSlugForRequest(r), iconRef, strings.TrimSpace(r.FormValue("icon_remote_consent")) == "1"); err != nil {
 		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", err.Error()), http.StatusSeeOther)
 		return
 	}

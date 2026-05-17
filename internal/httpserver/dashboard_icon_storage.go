@@ -101,10 +101,13 @@ func (s *Server) loadUploadedIcon(r *http.Request, fileName string) ([]byte, str
 	return payload, contentType, nil
 }
 
-func (s *Server) persistSelectedDashboardIcon(ctx context.Context, tenantSlug string, ref string) error {
+func (s *Server) persistSelectedDashboardIcon(ctx context.Context, tenantSlug string, ref string, allowRemote bool) error {
 	kind, slug := splitGroupIconReference(ref)
 	slug = sanitizeDashboardIconFileSlug(slug)
 	if kind != groupIconSourceDashboard || slug == "" {
+		return nil
+	}
+	if !allowRemote {
 		return nil
 	}
 	known, err := s.dashboardIconExists(ctx, slug)
@@ -114,7 +117,7 @@ func (s *Server) persistSelectedDashboardIcon(ctx context.Context, tenantSlug st
 	if !known {
 		return nil
 	}
-	payload, _, err := s.loadDashboardIconAsset(ctx, tenantSlug, slug)
+	payload, _, err := s.loadDashboardIconAsset(ctx, tenantSlug, slug, true)
 	if err != nil {
 		return fmt.Errorf("Dashboard-Icon konnte nicht lokal gespeichert werden")
 	}

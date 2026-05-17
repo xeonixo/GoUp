@@ -48,6 +48,7 @@
     const groupModalTitle = document.getElementById('group-modal-title');
     const groupNameField = document.getElementById('group-name-field');
     const groupIconSlugField = document.getElementById('group-icon-slug');
+    const groupIconRemoteConsentField = document.getElementById('group-icon-remote-consent');
     const groupForm = document.getElementById('group-form');
     const groupIconSearch = document.getElementById('group-icon-search');
     const groupIconSearchStatus = document.getElementById('group-icon-search-status');
@@ -144,6 +145,7 @@
     let iconSearchTimer = null;
     let iconSearchRequest = null;
     let groupIconUploadPreviewURL = null;
+    let selectedDashboardIconRemoteAllowed = false;
     let liveSnapshotInFlight = false;
 
     const bindOnce = (element, key, listener) => {
@@ -177,12 +179,13 @@
 
     const normalizeIconSlug = (value) => value.trim().toLowerCase().replace(/\s+/g, '-');
     const isUploadedIconRef = (value) => String(value || '').startsWith('upload:');
-    const buildIconUrl = (ref) => {
+    const buildIconUrl = (ref, allowRemote = false) => {
       const normalizedRef = String(ref || '').trim();
       if (!normalizedRef) {
         return '';
       }
-      return `${appBase}icons/render?ref=${encodeURIComponent(normalizedRef)}`;
+      const remotePart = allowRemote && !isUploadedIconRef(normalizedRef) ? '&remote=1' : '';
+      return `${appBase}icons/render?ref=${encodeURIComponent(normalizedRef)}${remotePart}`;
     };
 
     const clearGroupIconUploadPreviewURL = () => {
@@ -676,7 +679,7 @@
             : tr('groupIconSelectedSlug', 'Selected: {slug}', { slug }))
           : tr('groupIconNoneSelected', 'No icon selected.');
       }
-      const iconUrl = buildIconUrl(slug);
+      const iconUrl = buildIconUrl(slug, selectedDashboardIconRemoteAllowed);
       if (!iconUrl) {
         if (groupIconPreviewFrame) {
           groupIconPreviewFrame.hidden = true;
@@ -723,6 +726,10 @@
         useCustomButton.appendChild(customBody);
         useCustomButton.addEventListener('click', () => {
           clearGroupIconUploadSelection();
+          selectedDashboardIconRemoteAllowed = false;
+          if (groupIconRemoteConsentField) {
+            groupIconRemoteConsentField.value = '';
+          }
           if (groupIconSlugField) {
             groupIconSlugField.value = normalizedQuery;
           }
@@ -762,6 +769,10 @@
         });
         button.addEventListener('click', () => {
           clearGroupIconUploadSelection();
+          selectedDashboardIconRemoteAllowed = result.source !== 'upload';
+          if (groupIconRemoteConsentField) {
+            groupIconRemoteConsentField.value = selectedDashboardIconRemoteAllowed ? '1' : '';
+          }
           if (groupIconSlugField) {
             groupIconSlugField.value = result.value;
           }
@@ -841,6 +852,10 @@
       groupNameField.value = groupName;
       if (groupNewNameField) groupNewNameField.value = groupName;
       clearGroupIconUploadSelection();
+      selectedDashboardIconRemoteAllowed = false;
+      if (groupIconRemoteConsentField) {
+        groupIconRemoteConsentField.value = '';
+      }
       groupIconSearch.value = !isUploadedIconRef(iconValue) && iconValue ? normalizeIconSlug(iconValue) : groupName;
       groupIconSlugField.value = iconValue;
       updateGroupIconPreview();
@@ -1795,6 +1810,10 @@
     bindDialogBackdropClose(trendDetailModal);
     groupResetButton?.addEventListener('click', () => {
       clearGroupIconUploadSelection();
+      selectedDashboardIconRemoteAllowed = false;
+      if (groupIconRemoteConsentField) {
+        groupIconRemoteConsentField.value = '';
+      }
       if (groupIconSearch) {
         groupIconSearch.value = groupNameField?.value || '';
       }
@@ -2026,6 +2045,10 @@
     });
     groupIconUpload?.addEventListener('change', () => {
       if (groupIconUpload?.files?.length) {
+        selectedDashboardIconRemoteAllowed = false;
+        if (groupIconRemoteConsentField) {
+          groupIconRemoteConsentField.value = '';
+        }
         if (groupIconSlugField) {
           groupIconSlugField.value = '';
         }
