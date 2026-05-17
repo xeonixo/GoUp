@@ -14,6 +14,13 @@ type IMAPChecker struct{}
 
 func (c IMAPChecker) Check(ctx context.Context, item Monitor) Result {
 	securityMode, verifyCertificate, family := ParseMailTLSMode(item.TLSMode)
+	if family == TCPAddressFamilyDual && mailTargetUsesHostname(item.Target) {
+		return c.checkDualStack(ctx, item, securityMode, verifyCertificate)
+	}
+	return c.checkSingle(ctx, item, securityMode, family, verifyCertificate)
+}
+
+func (c IMAPChecker) checkSingle(ctx context.Context, item Monitor, securityMode TLSMode, family TCPAddressFamily, verifyCertificate bool) Result {
 	switch securityMode {
 	case TLSModeTLS:
 		return c.checkTLS(ctx, item, family, verifyCertificate)
@@ -29,6 +36,15 @@ func (c IMAPChecker) Check(ctx context.Context, item Monitor) Result {
 			Message:   "imap monitors require tls or starttls mode",
 		}
 	}
+}
+
+func (c IMAPChecker) checkDualStack(ctx context.Context, item Monitor, securityMode TLSMode, verifyCertificate bool) Result {
+	startedAt := time.Now()
+	checkedAt := startedAt.UTC()
+
+	v4Attempt := c.checkSingle(ctx, item, securityMode, TCPAddressFamilyIPv4, verifyCertificate)
+	v6Attempt := c.checkSingle(ctx, item, securityMode, TCPAddressFamilyIPv6, verifyCertificate)
+	return aggregateMailDualStackResult(item.ID, checkedAt, startedAt, "IMAP", v4Attempt, v6Attempt)
 }
 
 func (c IMAPChecker) checkPlain(ctx context.Context, item Monitor, family TCPAddressFamily) Result {
