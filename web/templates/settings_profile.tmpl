@@ -73,6 +73,9 @@
           <input type="checkbox" name="email_enabled" {{if .ProfileNotify.EmailEnabled}}checked{{end}}>
           <span>{{index $.Translations "settings.notifications.email.enabled"}}</span>
         </label>
+        <div class="form-actions">
+          <button type="submit" class="button button-secondary button-small" formaction="{{$.AppBase}}settings/profile/notifiers/email/test" formmethod="POST">{{index $.Translations "settings.notifications.test_button"}}</button>
+        </div>
       </section>
 
       <div class="settings-channel-list">
@@ -108,6 +111,9 @@
             <input type="checkbox" name="matrix_enabled" {{if .ProfileNotify.MatrixEnabled}}checked{{end}}>
             <span>{{index $.Translations "settings.notifications.matrix.enabled"}}</span>
           </label>
+          <div class="form-actions">
+            <button type="submit" class="button button-secondary button-small" formaction="{{$.AppBase}}settings/profile/notifiers/matrix/test" formmethod="POST">{{index $.Translations "settings.notifications.test_button"}}</button>
+          </div>
         </section>
 
         <section class="settings-empty-state" id="notifier-empty-state" {{if $hasMatrix}}hidden{{end}}>

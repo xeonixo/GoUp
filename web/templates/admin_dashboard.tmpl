@@ -69,9 +69,14 @@
           <option value="none" {{if eq .GlobalSMTP.TLSMode "none"}}selected{{end}}>{{index $.Translations "admin.settings.smtp_transport_none"}}</option>
         </select>
       </div>
+      <div class="form-group">
+        <label for="smtp-test-recipient">{{index $.Translations "admin.settings.smtp_test_recipient"}}</label>
+        <input type="email" id="smtp-test-recipient" name="test_recipient" placeholder="{{index $.Translations "admin.settings.smtp_test_recipient_placeholder"}}">
+      </div>
     </div>
     <div class="form-actions">
       <button type="submit" class="button">{{index $.Translations "admin.settings.save_smtp"}}</button>
+      <button type="submit" class="button button-secondary" formaction="/admin/settings/smtp/test" formmethod="POST">{{index $.Translations "admin.dashboard.smtp.test_button"}}</button>
     </div>
   </form>
 
