@@ -27,8 +27,9 @@ import (
 var tenantSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)
 
 type ControlPlaneStore struct {
-	db        *sql.DB
-	secretKey []byte
+	db                 *sql.DB
+	secretKey          []byte
+	secretFallbackKeys [][]byte
 }
 
 type Tenant struct {
@@ -205,15 +206,59 @@ func (s *ControlPlaneStore) Healthcheck(ctx context.Context) error {
 	return s.db.PingContext(ctx)
 }
 
-// ConfigureSecretKey sets the encryption key used to store SSO client secrets.
+// ConfigureSecretKey sets the encryption key used to store control-plane secrets.
 func (s *ControlPlaneStore) ConfigureSecretKey(key string) error {
+	return s.ConfigureSecretKeys(key)
+}
+
+// ConfigureSecretKeys sets the primary encryption key and optional legacy
+// fallback keys used only when reading previously stored secrets.
+func (s *ControlPlaneStore) ConfigureSecretKeys(primary string, fallbacks ...string) error {
+	derived, err := deriveControlPlaneSecretKey(primary)
+	if err != nil {
+		return err
+	}
+	s.secretKey = derived
+	s.secretFallbackKeys = s.secretFallbackKeys[:0]
+	for _, fallback := range fallbacks {
+		fallbackKey, err := deriveControlPlaneSecretKey(fallback)
+		if err != nil {
+			return err
+		}
+		if secretKeysEqual(derived, fallbackKey) {
+			continue
+		}
+		duplicate := false
+		for _, existing := range s.secretFallbackKeys {
+			if secretKeysEqual(existing, fallbackKey) {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			s.secretFallbackKeys = append(s.secretFallbackKeys, fallbackKey)
+		}
+	}
+	return nil
+}
+
+func deriveControlPlaneSecretKey(key string) ([]byte, error) {
 	key = strings.TrimSpace(key)
 	if key == "" {
-		return fmt.Errorf("secret key must not be empty")
+		return nil, fmt.Errorf("secret key must not be empty")
 	}
-	derived := pbkdf2.Key([]byte(key), []byte("goup/control-plane/secret-key/v2"), 120000, 32, sha256.New)
-	s.secretKey = derived
-	return nil
+	return pbkdf2.Key([]byte(key), []byte("goup/control-plane/secret-key/v2"), 120000, 32, sha256.New), nil
+}
+
+func secretKeysEqual(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	var diff byte
+	for i := range a {
+		diff |= a[i] ^ b[i]
+	}
+	return diff == 0
 }
 
 // EnsureDefaultOIDCProvider ensures the default OIDC provider exists for the default tenant
@@ -1863,7 +1908,17 @@ func (s *ControlPlaneStore) decryptSecret(ciphertext string) (string, error) {
 	if len(s.secretKey) == 0 {
 		return "", fmt.Errorf("secret key is not configured")
 	}
-	return decryptProviderSecret(s.secretKey, ciphertext)
+	plaintext, err := decryptProviderSecret(s.secretKey, ciphertext)
+	if err == nil {
+		return plaintext, nil
+	}
+	for _, fallbackKey := range s.secretFallbackKeys {
+		plaintext, fallbackErr := decryptProviderSecret(fallbackKey, ciphertext)
+		if fallbackErr == nil {
+			return plaintext, nil
+		}
+	}
+	return "", err
 }
 
 func (s *ControlPlaneStore) GetGlobalSMTPSettings(ctx context.Context) (GlobalSMTPSettings, error) {

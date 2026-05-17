@@ -58,7 +58,8 @@ func New(ctx context.Context) (*App, error) {
 	cfg.SessionKey = sessionKey
 
 	secretKey := strings.TrimSpace(cfg.SSOSecretKey)
-	if err := controlStore.ConfigureSecretKey(secretKey); err != nil {
+	sessionSecretFallback := strings.TrimSpace(cfg.SessionKey)
+	if err := controlStore.ConfigureSecretKeys(secretKey, sessionSecretFallback); err != nil {
 		controlStore.Close()
 		return nil, fmt.Errorf("configure control-plane secret key: %w", err)
 	}

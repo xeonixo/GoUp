@@ -180,6 +180,47 @@ func TestTenantAdminNotificationTargetsExcludeViewers(t *testing.T) {
 	}
 }
 
+func TestMatrixNotificationTargetsCanUseLegacySecretFallback(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	cp, err := OpenControlPlane(ctx, filepath.Join(dir, "controlplane.db"))
+	if err != nil {
+		t.Fatalf("open control plane: %v", err)
+	}
+	defer cp.Close()
+
+	legacyKey := "legacy-session-key-1234567890"
+	newKey := "new-sso-secret-key-1234567890"
+	if err := cp.ConfigureSecretKey(legacyKey); err != nil {
+		t.Fatalf("configure legacy secret key: %v", err)
+	}
+	tenant, err := cp.CreateTenant(ctx, "legacy-matrix", "Legacy Matrix", filepath.Join(dir, "legacy-matrix.db"))
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	user, err := cp.CreateLocalUserForTenant(ctx, tenant.ID, "admin", "password-123456", "admin@example.com", "Admin", "admin")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := cp.SaveUserNotificationSettings(ctx, tenant.ID, user.UserID, true, true, "https://matrix.example", "!admin:example", "legacy-token"); err != nil {
+		t.Fatalf("save matrix notification settings: %v", err)
+	}
+
+	if err := cp.ConfigureSecretKeys(newKey, legacyKey); err != nil {
+		t.Fatalf("configure new secret key with fallback: %v", err)
+	}
+	targets, err := cp.ListTenantMatrixNotificationTargets(ctx, tenant.ID)
+	if err != nil {
+		t.Fatalf("list matrix targets: %v", err)
+	}
+	if len(targets) != 1 {
+		t.Fatalf("matrix targets length = %d, want 1", len(targets))
+	}
+	if targets[0].AccessToken != "legacy-token" {
+		t.Fatalf("matrix access token = %q, want legacy-token", targets[0].AccessToken)
+	}
+}
+
 func TestMaintenanceInterval(t *testing.T) {
 	if MaintenanceInterval() <= 0 {
 		t.Fatalf("maintenance interval must be positive")
