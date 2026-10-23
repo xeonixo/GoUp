@@ -193,6 +193,12 @@ func (s *Server) handlePrettyTenantPath(w http.ResponseWriter, r *http.Request) 
 	case len(parts) == 2 && parts[1] == "manifest.webmanifest":
 		s.handleTenantManifest(w, r)
 		return true
+	case len(parts) == 2 && parts[1] == "status":
+		s.handleStatusPage(w, r)
+		return true
+	case len(parts) == 2 && parts[1] == "metrics":
+		s.handleTenantMetrics(w, r)
+		return true
 	case len(parts) == 2 && parts[1] == "login":
 		s.handleTenantLoginPage(w, r)
 		return true
@@ -274,6 +280,11 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/settings/profile/notifiers/{kind}/test", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileNotifierTest)))
 	mux.Handle("/settings/profile/notifiers/delete", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileNotifierDelete)))
 	mux.Handle("/settings/profile/password", s.requireAuth(http.HandlerFunc(s.handleSettingsProfilePassword)))
+	mux.Handle("/settings/push/key", s.requireAuth(http.HandlerFunc(s.handlePushKey)))
+	mux.Handle("/settings/push/subscribe", s.requireAuth(http.HandlerFunc(s.handlePushSubscribe)))
+	mux.Handle("/settings/push/unsubscribe", s.requireAuth(http.HandlerFunc(s.handlePushUnsubscribe)))
+	mux.Handle("/settings/push/test", s.requireAuth(http.HandlerFunc(s.handlePushTest)))
+	mux.Handle("/settings/push/prefs", s.requireAuth(http.HandlerFunc(s.handlePushPrefs)))
 	mux.Handle("/settings/users", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUsers)))
 	mux.Handle("/settings/webhooks", s.requireUserManagement(http.HandlerFunc(s.handleSettingsWebhooks)))
 	mux.Handle("/settings/webhooks/save", s.requireUserManagement(http.HandlerFunc(s.handleSettingsWebhooksSave)))
@@ -284,6 +295,10 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/settings/providers/{providerKey}/edit", s.requireUserManagement(http.HandlerFunc(s.handleSettingsProviderForm)))
 	mux.Handle("/settings/providers/save", s.requireUserManagement(http.HandlerFunc(s.handleSettingsProviderSave)))
 	mux.Handle("/settings/providers/{providerKey}/delete", s.requireUserManagement(http.HandlerFunc(s.handleSettingsProviderDelete)))
+	mux.Handle("/settings/status-page", s.requireUserManagement(http.HandlerFunc(s.handleSettingsStatusPage)))
+	mux.Handle("/settings/status-page/save", s.requireUserManagement(http.HandlerFunc(s.handleSettingsStatusPageSave)))
+	mux.Handle("/settings/status-page/tokens/create", s.requireUserManagement(http.HandlerFunc(s.handleSettingsAPITokenCreate)))
+	mux.Handle("/settings/status-page/tokens/{id}/revoke", s.requireUserManagement(http.HandlerFunc(s.handleSettingsAPITokenRevoke)))
 	mux.Handle("/settings/remote-nodes", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSettingsRemoteNodes))))
 	mux.Handle("/settings/remote-nodes/live", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSettingsRemoteNodesLive))))
 	mux.Handle("/settings/remote-nodes/live/snapshot", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSettingsRemoteNodesLiveSnapshot))))

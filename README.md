@@ -452,6 +452,51 @@ valid := hmac.Equal([]byte(signature), []byte(expected))
 
 ---
 
+## Public status page
+
+Each tenant can publish an opt-in status page at `/{slug}/status`. It needs no login and is disabled by default.
+
+1. Sign in as a tenant admin and open **Settings → Status & metrics**.
+2. Enable the page, set a title and optional description, tick the monitors to show and give each a public display name (defaults to the monitor name). Use **Copy public URL** to share the link.
+
+The page shows an overall banner, each monitor's current status, 90-day daily uptime bars with the percentage (computed from the hourly rollups, so unknown and maintenance checks do not count) and the time of the last update. It never exposes targets, hosts, URLs, error messages or latencies. If a selected monitor belongs to a monitor group, the group name is shown as a heading. The response is cached on the server for 30 seconds and sent with `Cache-Control: public, max-age=30`, so changes appear after at most about 30 seconds. A disabled page or an inactive tenant returns 404.
+
+## Prometheus metrics
+
+`GET /{slug}/metrics` serves tenant metrics in the Prometheus text exposition format (0.0.4). The endpoint requires a bearer token:
+
+1. In **Settings → Status & metrics → API tokens for metrics** a tenant admin creates a token. It is shown once; only its SHA-256 hash is stored. Tokens can be revoked at any time.
+2. Add a scrape job:
+
+```yaml
+scrape_configs:
+  - job_name: goup-acme
+    scheme: https
+    metrics_path: /acme/metrics
+    authorization:
+      type: Bearer
+      credentials: goup_xxxxxxxxxxxxxxxx   # or credentials_file: /etc/prometheus/goup.token
+    static_configs:
+      - targets: ["goup.example.com"]
+```
+
+(Older Prometheus versions use `bearer_token` / `bearer_token_file` instead of `authorization`.)
+
+Exposed series, labelled with `monitor`, `monitor_id`, `kind` and `group`:
+
+| Metric | Meaning |
+| --- | --- |
+| `goup_monitor_up` | 1 for up/degraded, 0 for down (absent without a verdict) |
+| `goup_monitor_status{status=...}` | one-hot: `up`, `degraded`, `down`, `unknown`, `paused` |
+| `goup_monitor_latency_milliseconds` | latency of the last up/degraded check |
+| `goup_monitor_cert_expiry_timestamp_seconds` | certificate expiry (Unix time), if known |
+| `goup_monitor_uptime_ratio{window="24h\|7d\|30d"}` | uptime ratio 0-1 from the hourly rollups |
+| `goup_monitor_paused`, `goup_monitor_muted` | 1 if the monitor is paused / muted |
+| `goup_monitor_last_check_timestamp_seconds` | time of the last check |
+| `goup_build_info{version=...}` | build information |
+
+Repeated requests with an invalid token are rate limited per client IP (HTTP 429). Monitor targets and hosts are never part of the output.
+
 ## Running behind a reverse proxy
 
 GoUp validates `Origin` and `Referer` on state-changing requests against `GOUP_BASE_URL`.

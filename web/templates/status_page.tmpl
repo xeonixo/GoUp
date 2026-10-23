@@ -1,0 +1,46 @@
+{{define "content"}}
+{{$sp := .StatusPage}}
+<div class="status-page">
+  <header class="status-page-header">
+    <h1>{{$sp.Title}}</h1>
+    {{if $sp.Description}}<p class="muted">{{$sp.Description}}</p>{{end}}
+  </header>
+
+  <div class="status-banner {{$sp.OverallClass}}" role="status">
+    <span class="status-banner-icon" aria-hidden="true"></span>
+    <strong>{{$sp.OverallLabel}}</strong>
+  </div>
+
+  {{range $sp.MaintenanceNotices}}
+  <div class="notice warning">
+    <strong>{{index $.Translations "status_page.maintenance"}}:</strong> {{.Title}} <span class="muted">{{.StartsAt}} – {{.EndsAt}}</span>
+  </div>
+  {{end}}
+
+  {{range $sp.Groups}}
+  <section class="status-group" {{if .Name}}aria-label="{{.Name}}"{{end}}>
+    {{if .Name}}<h2 class="status-group-title">{{.Name}}</h2>{{end}}
+    {{range .Monitors}}
+    <article class="card status-item">
+      <div class="status-item-head">
+        <h3 class="status-item-name">{{.Name}}</h3>
+        <span class="status-pill {{.StatusClass}}">{{.StatusLabel}}</span>
+      </div>
+      <div class="trend-bars status-bars" role="img" aria-label="{{index $.Translations "status_page.uptime_90d"}}: {{.UptimeLabel}}">
+        {{range .Bars}}<span class="trend-bar {{.Class}}" title="{{.Label}}"></span>{{end}}
+      </div>
+      <div class="status-item-foot muted">
+        <span>{{index $.Translations "status_page.days_ago"}}</span>
+        <span>{{index $.Translations "status_page.uptime_90d"}}: <strong>{{.UptimeLabel}}</strong></span>
+        <span>{{index $.Translations "status_page.today"}}</span>
+      </div>
+    </article>
+    {{end}}
+  </section>
+  {{end}}
+
+  <footer class="status-page-footer muted">
+    {{index $.Translations "status_page.updated"}}: {{$sp.UpdatedAt}}
+  </footer>
+</div>
+{{end}}

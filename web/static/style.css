@@ -4532,3 +4532,200 @@ a[target="_blank"]::after {
     overscroll-behavior-y: none;
   }
 }
+
+/* Public status page and status/metrics settings */
+.status-page {
+  display: grid;
+  gap: 1rem;
+  max-width: 48rem;
+  margin: 0 auto;
+}
+
+.status-page-header h1 {
+  margin: 0 0 0.25rem;
+}
+
+.status-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.status-banner-icon::before {
+  font-weight: 900;
+}
+
+.status-banner.is-ok {
+  background: rgba(var(--rgb-ok-bg), 0.9);
+  color: var(--ok-text);
+}
+
+.status-banner.is-ok .status-banner-icon::before {
+  content: "\2713";
+}
+
+.status-banner.is-partial {
+  background: rgba(var(--rgb-warn-bg), 0.9);
+  color: var(--warn-text);
+}
+
+.status-banner.is-partial .status-banner-icon::before {
+  content: "\25B2";
+}
+
+.status-banner.is-down {
+  background: rgba(var(--rgb-bad-bg), 0.9);
+  color: var(--bad-text);
+}
+
+.status-banner.is-down .status-banner-icon::before {
+  content: "\2715";
+}
+
+.status-banner.is-none .status-banner-icon::before {
+  content: "?";
+}
+
+.status-group {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.status-group-title {
+  margin: 0.4rem 0 0;
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+
+.status-item {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.status-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.status-item-name {
+  margin: 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.status-bars {
+  min-width: 0;
+  gap: 1px;
+  grid-auto-columns: minmax(1px, 1fr);
+  height: 1.6rem;
+}
+
+.status-item-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.status-page-footer {
+  text-align: center;
+  font-size: 0.85rem;
+}
+
+.status-admin-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.status-admin-row {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.status-url-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.status-url-row input {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .status-admin-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+  }
+}
+
+/* ── Web Push settings ─────────────────────────────────────────────── */
+.push-panel [hidden] {
+  display: none !important;
+}
+
+.push-status {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--text-soft);
+}
+
+.push-status[data-state="active"] {
+  border-color: var(--success);
+}
+
+.push-status[data-state="warn"] {
+  border-color: var(--warning);
+}
+
+.push-status[data-state="error"] {
+  border-color: var(--danger);
+}
+
+.push-device-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.push-device {
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.push-device-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.push-device-head .button {
+  margin-left: auto;
+}
+
+.push-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin-top: 0.5rem;
+}

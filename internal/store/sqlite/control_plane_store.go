@@ -1474,7 +1474,13 @@ func (s *ControlPlaneStore) initSchema(ctx context.Context) error {
 	if err := s.ensureUserNotificationChannelsTable(ctx); err != nil {
 		return err
 	}
+	if err := s.ensurePushTables(ctx); err != nil {
+		return err
+	}
 	if err := s.ensureRemoteNodesTable(ctx); err != nil {
+		return err
+	}
+	if err := s.ensureAPITokensTable(ctx); err != nil {
 		return err
 	}
 	if err := s.ensureLocalCredentialsTenantScoped(ctx); err != nil {

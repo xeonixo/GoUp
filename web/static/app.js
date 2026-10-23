@@ -210,4 +210,36 @@
     }
     window.location.reload();
   });
+
+  // ── Copy-to-clipboard buttons ──────────────────────────────────────
+  // <button data-action="copy" data-copy-target="<input id>" data-copied-label="...">
+  document.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+    const trigger = target.closest('[data-action="copy"]');
+    if (!trigger) {
+      return;
+    }
+    const source = document.getElementById(trigger.getAttribute('data-copy-target') || '');
+    if (!(source instanceof HTMLInputElement)) {
+      return;
+    }
+    event.preventDefault();
+    const originalLabel = trigger.textContent;
+    const done = () => {
+      const copiedLabel = trigger.getAttribute('data-copied-label');
+      if (copiedLabel) {
+        trigger.textContent = copiedLabel;
+        window.setTimeout(() => { trigger.textContent = originalLabel; }, 2000);
+      }
+    };
+    source.select();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(source.value).then(done, () => {});
+    } else if (document.execCommand && document.execCommand('copy')) {
+      done();
+    }
+  });
 })();

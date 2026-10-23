@@ -12,6 +12,7 @@ import (
 
 	"goup/internal/auth"
 	"goup/internal/config"
+	webpushnotify "goup/internal/notify/webpush"
 	store "goup/internal/store/sqlite"
 	"goup/web"
 )
@@ -57,10 +58,14 @@ type Server struct {
 	usedResetTokens     map[string]time.Time
 	notifierTestMu      sync.Mutex
 	notifierTestLast    map[string]time.Time
+	pushOnce            sync.Once
+	pushSenderInst      *webpushnotify.Sender
+	pushTestLast        map[string]time.Time
 	setupTokenMu        sync.Mutex
 	setupToken          string
 	resetLimitMu        sync.Mutex
 	resetAttempts       map[string][]time.Time
+	statusCache         statusPageCache
 }
 
 func New(deps Dependencies) (*Server, error) {

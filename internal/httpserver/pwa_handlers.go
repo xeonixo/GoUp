@@ -286,7 +286,7 @@ func (s *Server) applyNavBack(data *pageData, name string) {
 		if tenantID > 0 {
 			set("/admin/tenants/"+strconv.FormatInt(tenantID, 10)+"/local-users", "layout.back_up")
 		}
-	case "settings_users", "settings_profile", "settings_webhooks", "settings_providers", "settings_remote_nodes",
+	case "settings_users", "settings_profile", "settings_webhooks", "settings_providers", "settings_remote_nodes", "settings_status_page",
 		"state_events_history", "notification_events_history", "monitors_import":
 		if base := pwaTenantBase(data); base != "" {
 			set(base, "layout.back_dashboard")

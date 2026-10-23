@@ -45,7 +45,13 @@ func (s *Server) handleSettingsProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	pushDevices, err := s.controlStore.ListUserPushSubscriptions(r.Context(), user.TenantID, user.UserID)
+	if err != nil {
+		s.logger.Warn("settings profile load push devices failed", "tenant_id", user.TenantID, "user_id", user.UserID, "error", err)
+	}
+
 	s.render(w, "settings_profile", pageData{
+		PushDevices:     pushDeviceViews(pushDevices),
 		Title:           "Einstellungen · Profil · GoUp",
 		UILanguage:      normalizeUILanguage(profileUser.PreferredLanguage),
 		User:            user,
