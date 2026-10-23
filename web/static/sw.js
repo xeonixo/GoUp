@@ -120,7 +120,7 @@ self.addEventListener('fetch', (event) => {
   }
 });
 
-// ── Web Push (Phase 4 placeholder) ────────────────────────────────────
+// ── Web Push ──────────────────────────────────────────────────────────
 // Payload: { title, body, url, tag, badgeCount }
 self.addEventListener('push', (event) => {
   let payload = {};
@@ -139,6 +139,10 @@ self.addEventListener('push', (event) => {
     badge: '/favicon-32x32.png',
     data: { url: (payload && payload.url) || '/' }
   };
+  if (options.tag) {
+    // A newer message for the same monitor replaces the old one and alerts again.
+    options.renotify = true;
+  }
 
   const tasks = [self.registration.showNotification(title, options)];
   const badgeCount = Number(payload && payload.badgeCount);
@@ -182,4 +186,55 @@ self.addEventListener('notificationclick', (event) => {
       return undefined;
     })
   );
+});
+
+function urlBase64ToUint8Array(value) {
+  const padding = '='.repeat((4 - (value.length % 4)) % 4);
+  const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i += 1) {
+    out[i] = raw.charCodeAt(i);
+  }
+  return out;
+}
+
+// The push service rotated or expired the subscription: subscribe again and tell the server,
+// which moves the device's preferences over (oldEndpoint). The subscribe URL is tenant specific
+// and was stored by the settings page in the "push-config" cache (not prefixed "goup-", so
+// it survives cache cleanup on activate). Needs a still valid session cookie.
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil((async () => {
+    try {
+      const cache = await caches.open('push-config');
+      const stored = await cache.match('/__push-config');
+      if (!stored) {
+        return;
+      }
+      const config = await stored.json();
+      const oldSubscription = event.oldSubscription || null;
+      let key = oldSubscription && oldSubscription.options && oldSubscription.options.applicationServerKey;
+      if (!key) {
+        const response = await fetch(config.keyUrl, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+        if (!response.ok) {
+          return;
+        }
+        key = urlBase64ToUint8Array((await response.json()).publicKey);
+      }
+      const subscription = event.newSubscription || await self.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: key
+      });
+      const body = Object.assign({}, subscription.toJSON(), {
+        oldEndpoint: oldSubscription ? oldSubscription.endpoint : ''
+      });
+      await fetch(config.subscribeUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(body)
+      });
+    } catch (_) {
+    }
+  })());
 });

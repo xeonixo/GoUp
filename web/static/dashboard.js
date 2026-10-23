@@ -2919,6 +2919,28 @@
       return changed;
     };
 
+    // App icon badge (installed PWA): number of monitors that are currently down. The push
+    // handler in sw.js sets the same number while the app is closed.
+    const updateAppBadge = () => {
+      if (typeof navigator.setAppBadge !== 'function') {
+        return;
+      }
+      try {
+        const downIDs = new Set();
+        document.querySelectorAll('.monitor-card[data-status="status-DOWN"]').forEach((card) => {
+          downIDs.add(card.getAttribute('data-monitor-id') || String(downIDs.size));
+        });
+        const result = downIDs.size > 0
+          ? navigator.setAppBadge(downIDs.size)
+          : (typeof navigator.clearAppBadge === 'function' ? navigator.clearAppBadge() : null);
+        if (result && typeof result.catch === 'function') {
+          result.catch(() => {});
+        }
+      } catch (_) {
+      }
+    };
+    window.setTimeout(updateAppBadge, 0);
+
     applyLiveSnapshot = async (requestedParts = [], requestedBoardGroups = []) => {
       if (hasOpenDialog()) {
         return false;
@@ -2994,6 +3016,7 @@
       }
 
       const changed = updates.some(Boolean);
+      updateAppBadge();
 
       if (!changed) {
         return false;

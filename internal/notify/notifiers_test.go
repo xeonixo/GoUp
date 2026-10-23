@@ -28,8 +28,8 @@ func TestBuildReturnsCompleteNotifierSet(t *testing.T) {
 		if err != nil {
 			t.Fatalf("build (admin=%v): %v", admin, err)
 		}
-		if len(notifiers) != 3 {
-			t.Fatalf("got %d notifiers, want matrix, email and webhook", len(notifiers))
+		if len(notifiers) != 4 {
+			t.Fatalf("got %d notifiers, want matrix, email, webpush and webhook", len(notifiers))
 		}
 		fanouts := 0
 		for _, n := range notifiers {
