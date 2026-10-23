@@ -164,6 +164,15 @@ func formatTransitionMessage(transition monitor.Transition, language string) str
 		strings.ToUpper(string(transition.Previous)),
 		strings.ToUpper(string(transition.Current)),
 	)
+	if transition.Reminder {
+		headline = strings.NewReplacer(
+			"{emoji}", "🔁",
+			"{name}", transition.Monitor.Name,
+			"{duration}", monitor.FormatOutageDuration(transition.OutageDuration),
+		).Replace(matrixText(tr, "matrix.reminder.headline", "{emoji} {name}: still DOWN for {duration}"))
+	} else if transition.CatchUp {
+		headline += "\n" + matrixText(tr, "matrix.catchup", "Summary after mute or maintenance")
+	}
 	var lines []string
 	if grp := strings.TrimSpace(transition.Monitor.Group); grp != "" {
 		lines = append(lines, matrixText(tr, "matrix.group", "Group")+": "+grp)

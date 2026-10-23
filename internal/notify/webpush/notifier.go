@@ -35,14 +35,15 @@ const (
 	CategoryDown     Category = "down"
 	CategoryRecovery Category = "recovery"
 	CategoryDegraded Category = "degraded"
-	// CategoryReminder is used by repeated outage reminders (planned for Phase 6). The
-	// transition type has no marker for it yet, so CategoryOf never returns it today.
+	// CategoryReminder is used by repeated outage reminders (Transition.Reminder).
 	CategoryReminder Category = "reminder"
 )
 
-// CategoryOf maps a transition to the preference category used for filtering. When Phase 6
-// adds reminder transitions, map them to CategoryReminder here.
+// CategoryOf maps a transition to the preference category used for filtering.
 func CategoryOf(t monitor.Transition) Category {
+	if t.Reminder {
+		return CategoryReminder
+	}
 	switch t.Current {
 	case monitor.StatusUp:
 		return CategoryRecovery
@@ -142,7 +143,7 @@ func (n *Notifier) Notify(ctx context.Context, transition monitor.Transition) er
 	}
 	category := CategoryOf(transition)
 	tag := MonitorTag(n.tenantID, transition.Monitor.ID)
-	dedupeKey := fmt.Sprintf("%s|%s|%d|%v", tag, transition.Current, transition.CheckedAt.Unix(), transition.CatchUp)
+	dedupeKey := fmt.Sprintf("%s|%s|%d|%v", tag, transition.Current, transition.CheckedAt.Unix(), transition.CatchUp || transition.Reminder)
 
 	var subs []store.PushSubscription
 	langs := make(map[int64]string)
@@ -247,9 +248,15 @@ func BuildPayload(t monitor.Transition, tenantID int64, tenantSlug, language str
 	case monitor.StatusUnknown:
 		titleKey = "push.title.unknown"
 	}
+	if t.Reminder {
+		titleKey = "push.title.reminder"
+	}
 	title := strings.ReplaceAll(text(tr, titleKey, "{name}"), "{name}", name)
 
 	var parts []string
+	if t.Reminder && t.OutageDuration > 0 {
+		parts = append(parts, strings.ReplaceAll(text(tr, "push.body.reminder", "Down for {duration}"), "{duration}", formatDuration(t.OutageDuration)))
+	}
 	if t.CatchUp {
 		parts = append(parts, text(tr, "push.body.catchup", "Summary after mute"))
 	}

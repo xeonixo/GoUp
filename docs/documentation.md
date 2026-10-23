@@ -124,6 +124,11 @@ Key startup logic is in `internal/app/app.go`.
 4. State transition is evaluated.
 5. Notifications are sent and notification events are persisted.
 
+Dispatcher details (`internal/monitor/dispatch.go`, shared by the local runner and the remote-node report path):
+
+- **Maintenance windows:** `Store.ActiveMaintenance` (30 s cache, dropped on changes) marks the result `in_maintenance`; no transition is announced, downtime creates no incident/state event, and the status before the window is kept in `monitors.mute_start_status` so that one catch-up summary follows after the window (shared with the mute catch-up).
+- **Outage reminders:** `monitors.remind_every_minutes` / `monitors.last_alert_at`. A down alert (or catch-up to down) stores `last_alert_at`; while the monitor stays down, a `Transition{Reminder: true, OutageDuration}` is sent once the interval has elapsed since `last_alert_at` (stored before sending). Recovery or any non-down result clears it. Muted monitors and monitors in maintenance get none. Reminder retries are stored in `notification_retries` (`reminder`, `outage_seconds`), kept unique per monitor and endpoint, and superseded when stale.
+
 ## 5.3 Remote node flow
 
 1. Agent bootstraps with node ID + bootstrap key.
@@ -140,7 +145,7 @@ Key startup logic is in `internal/app/app.go`.
 ## 6.1 Database topology
 
 - `controlplane.db`: tenants, auth providers, local credentials, remote nodes, global settings, audit artifacts.
-- `<tenant>.db`: monitors, monitor results, incidents/state, notification endpoints/events, aggregation rollups.
+- `<tenant>.db`: monitors, monitor results, incidents/state, notification endpoints/events, aggregation rollups, maintenance windows (`maintenance_windows`, `maintenance_window_targets`).
 
 ## 6.2 SQLite strategy
 
@@ -152,7 +157,7 @@ Key startup logic is in `internal/app/app.go`.
 
 Maintenance includes:
 
-- hourly rollup backfill,
+- hourly rollup backfill (respects `monitor_results.in_maintenance`),
 - raw result retention,
 - rollup retention,
 - monthly `PRAGMA optimize`.
@@ -249,7 +254,11 @@ Current runner iteration is sequential per due monitor. This is simple and deter
 - Tenant user-level targets
 - Per-target delivery attempts with error aggregation
 
-## 9.3 Event recording
+## 9.3 Reminders and webhook events
+
+Reminder transitions are rendered by every notifier: email subject `[STILL DOWN] <monitor>: down for <duration>`, Matrix headline "still DOWN for <duration>", Web Push category `reminder`, webhook event `status_reminder_webhook` (payload `transition.reminder = true`, `transition.outage_seconds`). The summary after a mute/maintenance window carries `catch_up = true` in webhook payloads.
+
+## 9.4 Event recording
 
 Notification success/failure is persisted for observability and postmortem analysis.
 

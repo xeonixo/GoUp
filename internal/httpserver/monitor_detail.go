@@ -101,7 +101,7 @@ func (s *Server) handleMonitorDetail(w http.ResponseWriter, r *http.Request) {
 	lang := s.requestLanguage(r)
 	translations := s.translationsForLanguage(lang)
 	curUser := s.currentUser(r)
-	views := buildMonitorViews([]monitor.Snapshot{*snapshot}, rollups, now, supportedTrendRanges[0], nil)
+	views := buildMonitorViews([]monitor.Snapshot{*snapshot}, rollups, now, supportedTrendRanges[0], nil, appStore.MaintenanceSet(r.Context()))
 
 	detail := &monitorDetailView{
 		Monitor:   views[0],

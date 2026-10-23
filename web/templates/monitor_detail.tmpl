@@ -12,7 +12,7 @@
     </div>
     <div class="monitor-detail-status">
       {{if .Monitor.Muted}}<span class="muted-badge" title="{{index $.Translations "dashboard.monitor.muted_until"}} {{.Monitor.MutedUntilLabel}}">🔕 {{index $.Translations "dashboard.monitor.muted_until"}} {{.Monitor.MutedUntilLabel}}</span>{{end}}
-      <span class="status-pill {{.Monitor.StatusClass}}">{{.Monitor.StatusLabel}}</span>
+      <span class="status-pill {{.Monitor.StatusClass}}"{{if .Monitor.InMaintenance}} title="{{.Monitor.MaintenanceTitle}}"{{end}}>{{if .Monitor.InMaintenance}}{{index $.Translations "status.maintenance"}}{{else}}{{.Monitor.StatusLabel}}{{end}}</span>
     </div>
   </div>
 

@@ -40,7 +40,7 @@ func (s *Server) handleReorderMonitor(w http.ResponseWriter, r *http.Request) {
 			s.dashboardActionRedirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitore konnten nicht geladen werden"))
 			return
 		}
-		monitorViews := buildMonitorViews(snapshots, nil, time.Now().UTC(), supportedTrendRanges[0], nil)
+		monitorViews := buildMonitorViews(snapshots, nil, time.Now().UTC(), supportedTrendRanges[0], nil, monitor.MaintenanceSet{})
 		groupName := strings.TrimSpace(r.FormValue("group"))
 		draggedGroupName := ""
 		targetGroupName := ""
@@ -98,7 +98,7 @@ func (s *Server) handleReorderMonitor(w http.ResponseWriter, r *http.Request) {
 		s.dashboardActionRedirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitore konnten nicht geladen werden"))
 		return
 	}
-	monitorViews := buildMonitorViews(snapshots, nil, time.Now().UTC(), supportedTrendRanges[0], nil)
+	monitorViews := buildMonitorViews(snapshots, nil, time.Now().UTC(), supportedTrendRanges[0], nil, monitor.MaintenanceSet{})
 	groupItems := make([]monitorView, 0)
 	for _, item := range monitorViews {
 		if monitorServiceLabel(item) == groupName {
@@ -342,6 +342,8 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 		}(),
 		CertWarningDays: func() int { v, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("cert_warning_days"))); return v }(),
 		ConfirmAfter:    func() int { v, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("confirm_after"))); return v }(),
+		// Invalid values are rejected by the store (only the offered intervals are valid).
+		RemindEveryMinutes: func() int { v, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("remind_every"))); return v }(),
 	}
 
 	if monitorID > 0 {

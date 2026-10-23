@@ -8,13 +8,20 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
+
+	"goup/internal/monitor"
 
 	_ "modernc.org/sqlite"
 )
 
 type Store struct {
 	db *sql.DB
+
+	maintenanceMu     sync.Mutex
+	maintenanceCache  monitor.MaintenanceSet
+	maintenanceLoaded time.Time
 }
 
 type DashboardStats struct {
@@ -203,6 +210,9 @@ func (s *Store) initSchema(ctx context.Context) error {
 		return err
 	}
 	if err := s.ensureStatusPageTables(ctx); err != nil {
+		return err
+	}
+	if err := s.ensurePhase6Schema(ctx); err != nil {
 		return err
 	}
 	return nil
@@ -778,6 +788,8 @@ CREATE TABLE IF NOT EXISTS monitors (
     cert_warning_days INTEGER NOT NULL DEFAULT 7,
     confirm_after INTEGER NOT NULL DEFAULT 1,
     mute_start_status TEXT NOT NULL DEFAULT '',
+    remind_every_minutes INTEGER NOT NULL DEFAULT 0,
+    last_alert_at DATETIME,
     config_json TEXT NOT NULL DEFAULT '{}',
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL
@@ -794,6 +806,7 @@ CREATE TABLE IF NOT EXISTS monitor_results (
     tls_valid INTEGER,
     tls_not_after DATETIME,
     tls_days_remaining INTEGER,
+    in_maintenance INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY(monitor_id) REFERENCES monitors(id) ON DELETE CASCADE
 );
 

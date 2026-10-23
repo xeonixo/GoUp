@@ -55,8 +55,8 @@ type statusPageView struct {
 	OverallLabel string
 	UpdatedAt    string
 	Groups       []statusPageGroupView
-	// MaintenanceNotices lists current maintenance windows; it stays empty until maintenance
-	// windows are available.
+	// MaintenanceNotices lists running and upcoming (next 7 days) maintenance windows that
+	// affect at least one shown monitor. Only title and time range are public.
 	MaintenanceNotices []statusPageMaintenanceView
 }
 
@@ -188,7 +188,7 @@ func (s *Server) buildStatusPage(r *http.Request, tenantID int64, lang string, n
 		tenantName = tenant.Name
 	}
 	translations := s.translationsForLanguage(lang)
-	view := buildStatusPageView(settings, selected, snapshots, rollups, tenantName, translations, now)
+	view := buildStatusPageView(settings, selected, snapshots, rollups, tenantName, translations, now, appStore.MaintenanceSet(r.Context()))
 
 	data := pageData{
 		Title:        view.Title,
@@ -212,7 +212,7 @@ func (s *Server) buildStatusPage(r *http.Request, tenantID int64, lang string, n
 	return buf.Bytes(), nil
 }
 
-func buildStatusPageView(settings store.StatusPageSettings, selected []store.StatusPageMonitor, snapshots []monitor.Snapshot, rollups []store.MonitorHourlyRollup, tenantName string, tr map[string]string, now time.Time) statusPageView {
+func buildStatusPageView(settings store.StatusPageSettings, selected []store.StatusPageMonitor, snapshots []monitor.Snapshot, rollups []store.MonitorHourlyRollup, tenantName string, tr map[string]string, now time.Time, maintenance monitor.MaintenanceSet) statusPageView {
 	byID := make(map[int64]monitor.Snapshot, len(snapshots))
 	for _, snap := range snapshots {
 		byID[snap.Monitor.ID] = snap
@@ -232,13 +232,16 @@ func buildStatusPageView(settings store.StatusPageSettings, selected []store.Sta
 	}
 
 	groupIndex := make(map[string]int)
-	active, down, impaired := 0, 0, 0
+	active, down, impaired, underMaintenance := 0, 0, 0, 0
 	for _, item := range selected {
 		snap, ok := byID[item.MonitorID]
 		if !ok {
 			continue
 		}
 		status := publicMonitorStatus(snap)
+		if _, inMaintenance := maintenance.Active(snap.Monitor.ID, snap.Monitor.Group, now); inMaintenance && snap.Monitor.Enabled {
+			status = "maintenance"
+		}
 		name := strings.TrimSpace(item.DisplayName)
 		if name == "" {
 			name = strings.TrimSpace(snap.Monitor.Name)
@@ -278,6 +281,8 @@ func buildStatusPageView(settings store.StatusPageSettings, selected []store.Sta
 			impaired++
 		case "up", "unknown":
 			active++
+		case "maintenance":
+			underMaintenance++
 		}
 
 		group := strings.TrimSpace(snap.Monitor.Group)
@@ -294,6 +299,9 @@ func buildStatusPageView(settings store.StatusPageSettings, selected []store.Sta
 	case len(view.Groups) == 0:
 		view.OverallClass = "is-none"
 		view.OverallLabel = statusPageTr(tr, "status_page.overall.empty", "No services to display")
+	case active == 0 && underMaintenance > 0:
+		view.OverallClass = "is-maintenance"
+		view.OverallLabel = statusPageTr(tr, "status_page.overall.maintenance", "Scheduled maintenance")
 	case active > 0 && down == active:
 		view.OverallClass = "is-down"
 		view.OverallLabel = statusPageTr(tr, "status_page.overall.down", "Outage")
@@ -304,7 +312,35 @@ func buildStatusPageView(settings store.StatusPageSettings, selected []store.Sta
 		view.OverallClass = "is-ok"
 		view.OverallLabel = statusPageTr(tr, "status_page.overall.ok", "All systems operational")
 	}
+	view.MaintenanceNotices = buildStatusPageMaintenance(maintenance, selected, byID, now)
 	return view
+}
+
+// statusPageMaintenanceHorizon is how far ahead upcoming maintenance is announced.
+const statusPageMaintenanceHorizon = 7 * 24 * time.Hour
+
+// buildStatusPageMaintenance lists the running and the next-7-days windows that cover at least
+// one monitor shown on the page. Descriptions and targets are never exposed.
+func buildStatusPageMaintenance(set monitor.MaintenanceSet, selected []store.StatusPageMonitor, byID map[int64]monitor.Snapshot, now time.Time) []statusPageMaintenanceView {
+	var notices []statusPageMaintenanceView
+	for _, occ := range set.Upcoming(now, now.Add(statusPageMaintenanceHorizon)) {
+		affects := false
+		for _, item := range selected {
+			if snap, ok := byID[item.MonitorID]; ok && occ.Window.Covers(snap.Monitor.ID, snap.Monitor.Group) {
+				affects = true
+				break
+			}
+		}
+		if !affects {
+			continue
+		}
+		notices = append(notices, statusPageMaintenanceView{
+			Title:    strings.TrimSpace(occ.Window.Title),
+			StartsAt: occ.Start.UTC().Format("2006-01-02 15:04 UTC"),
+			EndsAt:   occ.End.UTC().Format("2006-01-02 15:04 UTC"),
+		})
+	}
+	return notices
 }
 
 // publicMonitorStatus maps a snapshot to up, degraded, down, unknown or paused.

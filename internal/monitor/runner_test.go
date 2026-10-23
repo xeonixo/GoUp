@@ -23,6 +23,40 @@ type runnerTestStore struct {
 	cleared            []int64
 	snapshots          map[int64]Snapshot
 	recentStatuses     []Status // newest first
+
+	markers       map[int64]Status // SetMonitorMuteStartStatus
+	lastAlerts    []*time.Time     // SetMonitorLastAlert calls, in order
+	outageStart   time.Time
+	inMaintenance bool
+}
+
+func (s *runnerTestStore) ActiveMaintenance(context.Context, int64, string, time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.inMaintenance
+}
+
+func (s *runnerTestStore) SetMonitorMuteStartStatus(_ context.Context, monitorID int64, status Status) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.markers == nil {
+		s.markers = map[int64]Status{}
+	}
+	s.markers[monitorID] = status
+	return nil
+}
+
+func (s *runnerTestStore) SetMonitorLastAlert(_ context.Context, _ int64, at *time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastAlerts = append(s.lastAlerts, at)
+	return nil
+}
+
+func (s *runnerTestStore) CurrentOutageStart(context.Context, int64) (time.Time, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.outageStart, !s.outageStart.IsZero(), nil
 }
 
 func (s *runnerTestStore) ListMonitorSnapshots(context.Context) ([]Snapshot, error) {

@@ -90,7 +90,7 @@ func (s *Server) handleTenantMetrics(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodHead {
 		return
 	}
-	_, _ = w.Write([]byte(renderMetrics(snapshots, rollups, now, version.Version)))
+	_, _ = w.Write([]byte(renderMetrics(snapshots, rollups, now, version.Version, appStore.MaintenanceSet(r.Context()))))
 }
 
 func escapeMetricLabel(value string) string {
@@ -127,7 +127,7 @@ func formatMetricFloat(v float64) string {
 
 // renderMetrics renders the Prometheus text exposition format (version 0.0.4). It never contains
 // monitor targets, hosts or URLs.
-func renderMetrics(snapshots []monitor.Snapshot, rollups []store.MonitorHourlyRollup, now time.Time, buildVersion string) string {
+func renderMetrics(snapshots []monitor.Snapshot, rollups []store.MonitorHourlyRollup, now time.Time, buildVersion string, maintenance monitor.MaintenanceSet) string {
 	sorted := append([]monitor.Snapshot(nil), snapshots...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Monitor.ID < sorted[j].Monitor.ID })
 	rollupsByMonitor := groupRollupsByMonitor(rollups)
@@ -218,6 +218,12 @@ func renderMetrics(snapshots []monitor.Snapshot, rollups []store.MonitorHourlyRo
 	family("goup_monitor_muted", "1 if notifications of the monitor are muted.", "gauge")
 	for _, snap := range sorted {
 		fmt.Fprintf(&b, "goup_monitor_muted%s %d\n", base(snap), boolToInt(snap.Monitor.IsMuted(now)))
+	}
+
+	family("goup_monitor_in_maintenance", "1 if a maintenance window currently covers the monitor.", "gauge")
+	for _, snap := range sorted {
+		_, active := maintenance.Active(snap.Monitor.ID, snap.Monitor.Group, now)
+		fmt.Fprintf(&b, "goup_monitor_in_maintenance%s %d\n", base(snap), boolToInt(active && snap.Monitor.Enabled))
 	}
 
 	family("goup_monitor_last_check_timestamp_seconds", "Time of the last check (Unix time).", "gauge")

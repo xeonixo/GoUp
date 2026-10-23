@@ -396,3 +396,25 @@ func TestCategoryOf(t *testing.T) {
 		}
 	}
 }
+
+func TestReminderCategoryAndPayload(t *testing.T) {
+	tr := monitor.Transition{
+		Monitor:  monitor.Monitor{ID: 4, Name: "API"},
+		Previous: monitor.StatusDown, Current: monitor.StatusDown,
+		Reminder: true, OutageDuration: 135 * time.Minute,
+	}
+	if got := CategoryOf(tr); got != CategoryReminder {
+		t.Fatalf("category = %s, want reminder", got)
+	}
+	if !Wants(store.PushSubscription{NotifyReminder: true}, CategoryOf(tr)) || Wants(store.PushSubscription{NotifyDown: true}, CategoryOf(tr)) {
+		t.Fatal("reminders must follow the reminder preference only")
+	}
+	p := BuildPayload(tr, 1, "acme", "en", nil, 0, 0)
+	if !strings.Contains(p.Title, "still DOWN") || !strings.Contains(p.Body, "2 h 15 min") {
+		t.Fatalf("payload = %+v", p)
+	}
+	de := BuildPayload(tr, 1, "acme", "de", nil, 0, 0)
+	if !strings.Contains(de.Title, "weiterhin DOWN") || !strings.Contains(de.Body, "2 h 15 min") {
+		t.Fatalf("german payload = %+v", de)
+	}
+}

@@ -20,20 +20,30 @@ func (s *Store) EnqueueNotificationRetry(ctx context.Context, p monitor.Notifica
 	}
 	t := p.Transition
 	now := time.Now().UTC()
+	if t.Reminder {
+		// At most one pending reminder per monitor and channel: an older one is obsolete.
+		if _, err := s.db.ExecContext(ctx, `
+UPDATE notification_retries
+SET status = 'superseded', error_message = 'superseded: newer reminder', updated_at = ?
+WHERE monitor_id = ? AND endpoint_id = ? AND reminder = 1 AND status = 'pending'
+`, now, p.MonitorID, p.EndpointID); err != nil && !isMalformedSQLiteError(err) {
+			return fmt.Errorf("supersede older reminder retries: %w", err)
+		}
+	}
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO notification_retries (
     monitor_id, endpoint_id, event_type,
     monitor_name, monitor_kind, monitor_target, monitor_group,
     previous_status, current_status, checked_at, result_detail,
     attempt_count, max_attempts, next_attempt_at,
-    status, error_message, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'pending', '', ?, ?)
+    status, error_message, created_at, updated_at, reminder, outage_seconds
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'pending', '', ?, ?, ?, ?)
 `,
 		p.MonitorID, p.EndpointID, strings.TrimSpace(p.EventType),
 		t.Monitor.Name, string(t.Monitor.Kind), t.Monitor.Target, t.Monitor.Group,
 		string(t.Previous), string(t.Current), t.CheckedAt.UTC(), t.ResultDetail,
 		p.MaxAttempts, p.NextAttemptAt.UTC(),
-		now, now,
+		now, now, boolToInt(t.Reminder), int64(t.OutageDuration.Seconds()),
 	)
 	if err != nil {
 		if isMalformedSQLiteError(err) {
@@ -52,7 +62,7 @@ func (s *Store) ListDueNotificationRetries(ctx context.Context, now time.Time, l
 SELECT id, monitor_id, endpoint_id, event_type,
        monitor_name, monitor_kind, monitor_target, monitor_group,
        previous_status, current_status, checked_at, result_detail,
-       attempt_count, max_attempts, next_attempt_at
+       attempt_count, max_attempts, next_attempt_at, reminder, outage_seconds
 FROM notification_retries
 WHERE status = 'pending' AND next_attempt_at <= ?
 ORDER BY next_attempt_at ASC
@@ -84,12 +94,14 @@ LIMIT ?
 			attemptCount   int
 			maxAttempts    int
 			nextAttemptAt  time.Time
+			reminder       int
+			outageSeconds  int64
 		)
 		if err := rows.Scan(
 			&id, &monitorID, &endpointID, &eventType,
 			&monitorName, &monitorKind, &monitorTarget, &monitorGroup,
 			&previousStatus, &currentStatus, &checkedAt, &resultDetail,
-			&attemptCount, &maxAttempts, &nextAttemptAt,
+			&attemptCount, &maxAttempts, &nextAttemptAt, &reminder, &outageSeconds,
 		); err != nil {
 			if isMalformedSQLiteError(err) {
 				return []monitor.NotificationRetry{}, nil
@@ -108,10 +120,12 @@ LIMIT ?
 					Target: monitorTarget,
 					Group:  monitorGroup,
 				},
-				Previous:     monitor.Status(previousStatus),
-				Current:      monitor.Status(currentStatus),
-				CheckedAt:    checkedAt,
-				ResultDetail: resultDetail,
+				Previous:       monitor.Status(previousStatus),
+				Current:        monitor.Status(currentStatus),
+				CheckedAt:      checkedAt,
+				ResultDetail:   resultDetail,
+				Reminder:       reminder == 1,
+				OutageDuration: time.Duration(outageSeconds) * time.Second,
 			},
 			AttemptCount:  attemptCount,
 			MaxAttempts:   maxAttempts,

@@ -23,6 +23,7 @@ import (
 const (
 	NotificationKind = "webhook"
 	EventType        = "status_transition_webhook"
+	ReminderEvent    = "status_reminder_webhook"
 	TestEventType    = "test_notification_webhook"
 	defaultTimeout   = 10 * time.Second
 	maxTimeout       = 30 * time.Second
@@ -99,7 +100,7 @@ func (n *Notifier) NotifyAll(ctx context.Context, transition monitor.Transition)
 		activeCount++
 		results = append(results, monitor.FanoutDeliveryResult{
 			EndpointID: endpoint.ID,
-			Error:      n.deliverToEndpoint(ctx, endpoint, transition, EventType),
+			Error:      n.deliverToEndpoint(ctx, endpoint, transition, eventTypeFor(transition)),
 		})
 	}
 	if activeCount == 0 {
@@ -118,10 +119,18 @@ func (n *Notifier) NotifyEndpoint(ctx context.Context, endpointID int64, transit
 	}
 	for _, endpoint := range endpoints {
 		if endpoint.ID == endpointID && endpoint.Enabled {
-			return n.deliverToEndpoint(ctx, endpoint, transition, EventType)
+			return n.deliverToEndpoint(ctx, endpoint, transition, eventTypeFor(transition))
 		}
 	}
 	return fmt.Errorf("webhook endpoint %d not found", endpointID)
+}
+
+// eventTypeFor names the delivery: reminders for ongoing outages are a distinct event.
+func eventTypeFor(transition monitor.Transition) string {
+	if transition.Reminder {
+		return ReminderEvent
+	}
+	return EventType
 }
 
 func (n *Notifier) SendTest(ctx context.Context, endpointID int64, tenantSlug string) error {
@@ -203,6 +212,12 @@ type payloadStatus struct {
 	Current      string    `json:"current"`
 	CheckedAt    time.Time `json:"checked_at"`
 	ResultDetail string    `json:"result_detail,omitempty"`
+	// Reminder is true for repeated alerts of an ongoing outage (event_type
+	// status_reminder_webhook); OutageSeconds is how long the monitor has been down.
+	Reminder      bool  `json:"reminder,omitempty"`
+	OutageSeconds int64 `json:"outage_seconds,omitempty"`
+	// CatchUp is true for the single summary sent after a mute or maintenance window ended.
+	CatchUp bool `json:"catch_up,omitempty"`
 }
 
 func buildPayload(eventType string, tenantID, endpointID int64, transition monitor.Transition, occurredAt time.Time) payload {
@@ -222,10 +237,13 @@ func buildPayload(eventType string, tenantID, endpointID int64, transition monit
 			Group:  strings.TrimSpace(transition.Monitor.Group),
 		},
 		Transition: payloadStatus{
-			Previous:     string(transition.Previous),
-			Current:      string(transition.Current),
-			CheckedAt:    transition.CheckedAt.UTC(),
-			ResultDetail: strings.TrimSpace(transition.ResultDetail),
+			Previous:      string(transition.Previous),
+			Current:       string(transition.Current),
+			CheckedAt:     transition.CheckedAt.UTC(),
+			ResultDetail:  strings.TrimSpace(transition.ResultDetail),
+			Reminder:      transition.Reminder,
+			OutageSeconds: int64(transition.OutageDuration.Seconds()),
+			CatchUp:       transition.CatchUp,
 		},
 	}
 }

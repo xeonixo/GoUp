@@ -33,6 +33,8 @@ type CreateMonitorParams struct {
 	// ConfirmAfter is the number of consecutive failed checks required before a down/degraded
 	// transition is announced (flapping protection). 1 announces immediately.
 	ConfirmAfter int
+	// RemindEveryMinutes repeats the down alert while the outage lasts (0 = off).
+	RemindEveryMinutes int
 }
 
 type UpdateMonitorParams struct {
@@ -98,10 +100,10 @@ func (s *Store) CreateMonitor(ctx context.Context, params CreateMonitorParams) (
 INSERT INTO monitors (
 	name, group_name, sort_order, executor_kind, executor_ref, kind, target, interval_seconds, timeout_seconds, enabled,
     tls_mode, expected_status_code, expected_text, notify_on_recovery,
-    retry_count, retry_interval_seconds, cert_warning_days, confirm_after,
+    retry_count, retry_interval_seconds, cert_warning_days, confirm_after, remind_every_minutes,
     created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, params.Name, strings.TrimSpace(params.Group), nextSortOrder, executorKind, executorRef, string(params.Kind), params.Target, int(params.Interval.Seconds()), int(params.Timeout.Seconds()), boolToInt(params.Enabled), string(params.TLSMode), params.ExpectedStatusCode, strings.TrimSpace(params.ExpectedText), boolToInt(params.NotifyOnRecovery), params.RetryCount, int(params.RetryInterval.Seconds()), normalizeCertWarningDays(params.CertWarningDays), normalizeConfirmAfter(params.ConfirmAfter), now, now)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, params.Name, strings.TrimSpace(params.Group), nextSortOrder, executorKind, executorRef, string(params.Kind), params.Target, int(params.Interval.Seconds()), int(params.Timeout.Seconds()), boolToInt(params.Enabled), string(params.TLSMode), params.ExpectedStatusCode, strings.TrimSpace(params.ExpectedText), boolToInt(params.NotifyOnRecovery), params.RetryCount, int(params.RetryInterval.Seconds()), normalizeCertWarningDays(params.CertWarningDays), normalizeConfirmAfter(params.ConfirmAfter), params.RemindEveryMinutes, now, now)
 	if err != nil {
 		return 0, fmt.Errorf("create monitor: %w", err)
 	}
@@ -148,6 +150,7 @@ SET
     retry_interval_seconds = ?,
     cert_warning_days = ?,
     confirm_after = ?,
+    remind_every_minutes = ?,
     updated_at = ?
 WHERE id = ?
 `,
@@ -168,6 +171,7 @@ WHERE id = ?
 		int(params.RetryInterval.Seconds()),
 		normalizeCertWarningDays(params.CertWarningDays),
 		normalizeConfirmAfter(params.ConfirmAfter),
+		params.RemindEveryMinutes,
 		now,
 		params.ID,
 	)
@@ -525,6 +529,8 @@ SELECT
     m.cert_warning_days,
     m.confirm_after,
     m.mute_start_status,
+    m.remind_every_minutes,
+    m.last_alert_at,
     m.created_at,
     m.updated_at,
     r.id,
@@ -592,6 +598,8 @@ SELECT
     cert_warning_days,
     confirm_after,
     mute_start_status,
+    remind_every_minutes,
+    last_alert_at,
     created_at,
     updated_at
 FROM monitors
@@ -617,6 +625,7 @@ ORDER BY sort_order ASC, id ASC
 			expectedStatusCode   sql.NullInt64
 			mutedUntil           sql.NullTime
 			muteStartStatus      string
+			lastAlertAt          sql.NullTime
 		)
 
 		if err := rows.Scan(
@@ -641,6 +650,8 @@ ORDER BY sort_order ASC, id ASC
 			&item.Monitor.CertWarningDays,
 			&item.Monitor.ConfirmAfter,
 			&muteStartStatus,
+			&item.Monitor.RemindEveryMinutes,
+			&lastAlertAt,
 			&item.Monitor.CreatedAt,
 			&item.Monitor.UpdatedAt,
 		); err != nil {
@@ -649,6 +660,7 @@ ORDER BY sort_order ASC, id ASC
 		item.Monitor.MutedUntil = nullableTime(mutedUntil)
 		item.Monitor.MuteStartStatus = monitor.Status(strings.TrimSpace(muteStartStatus))
 		item.Monitor.ConfirmAfter = normalizeConfirmAfter(item.Monitor.ConfirmAfter)
+		item.Monitor.LastAlertAt = nullableTime(lastAlertAt)
 
 		item.Monitor.Kind = monitor.Kind(kindRaw)
 		if strings.TrimSpace(item.Monitor.ExecutorKind) == "" {
@@ -1338,14 +1350,14 @@ func (s *Store) SaveMonitorResult(ctx context.Context, result monitor.Result) er
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO monitor_results (
     monitor_id, checked_at, status, latency_ms, message,
-    http_status_code, tls_valid, tls_not_after, tls_days_remaining
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, result.MonitorID, checkedAt, string(result.Status), int(result.Latency.Milliseconds()), strings.TrimSpace(result.Message), result.HTTPStatusCode, nullableBoolInt(result.TLSValid), result.TLSNotAfter, result.TLSDaysRemaining)
+    http_status_code, tls_valid, tls_not_after, tls_days_remaining, in_maintenance
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, result.MonitorID, checkedAt, string(result.Status), int(result.Latency.Milliseconds()), strings.TrimSpace(result.Message), result.HTTPStatusCode, nullableBoolInt(result.TLSValid), result.TLSNotAfter, result.TLSDaysRemaining, boolToInt(result.InMaintenance))
 	if err != nil {
 		return fmt.Errorf("save monitor result: %w", err)
 	}
 
-	if err := upsertHourlyRollup(ctx, tx, result.MonitorID, checkedAt, result.Status, int(result.Latency.Milliseconds())); err != nil {
+	if err := upsertHourlyRollup(ctx, tx, result.MonitorID, checkedAt, result.Status, int(result.Latency.Milliseconds()), result.InMaintenance); err != nil {
 		return err
 	}
 
@@ -1535,6 +1547,9 @@ func validateCreateMonitorParams(params CreateMonitorParams) error {
 	if params.CertWarningDays < 0 || params.CertWarningDays > 365 {
 		return errors.New("certificate warning days must be between 1 and 365")
 	}
+	if !monitor.ValidRemindEvery(params.RemindEveryMinutes) {
+		return errors.New("reminder interval must be one of 0, 15, 30, 60, 120, 240, 720 or 1440 minutes")
+	}
 	expectedText := strings.TrimSpace(params.ExpectedText)
 	if expectedText != "" && params.Kind != monitor.KindHTTPS && params.Kind != monitor.KindDNS && params.Kind != monitor.KindUDP {
 		return errors.New("expected value is only valid for HTTPS, DNS and UDP monitors")
@@ -1683,6 +1698,7 @@ func scanMonitorSnapshot(scanner interface{ Scan(dest ...any) error }) (monitor.
 	var expectedText string
 	var mutedUntil sql.NullTime
 	var muteStartStatus string
+	var lastAlertAt sql.NullTime
 	var resultID sql.NullInt64
 	var checkedAt sql.NullTime
 	var status sql.NullString
@@ -1715,6 +1731,8 @@ func scanMonitorSnapshot(scanner interface{ Scan(dest ...any) error }) (monitor.
 		&item.Monitor.CertWarningDays,
 		&item.Monitor.ConfirmAfter,
 		&muteStartStatus,
+		&item.Monitor.RemindEveryMinutes,
+		&lastAlertAt,
 		&item.Monitor.CreatedAt,
 		&item.Monitor.UpdatedAt,
 		&resultID,
@@ -1748,6 +1766,7 @@ func scanMonitorSnapshot(scanner interface{ Scan(dest ...any) error }) (monitor.
 	item.Monitor.MutedUntil = nullableTime(mutedUntil)
 	item.Monitor.MuteStartStatus = monitor.Status(strings.TrimSpace(muteStartStatus))
 	item.Monitor.ConfirmAfter = normalizeConfirmAfter(item.Monitor.ConfirmAfter)
+	item.Monitor.LastAlertAt = nullableTime(lastAlertAt)
 	if expectedStatusCode.Valid {
 		value := int(expectedStatusCode.Int64)
 		item.Monitor.ExpectedStatusCode = &value

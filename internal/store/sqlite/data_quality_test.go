@@ -78,7 +78,7 @@ func TestUpsertHourlyRollupIgnoresDownLatency(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			st, monitorID := openDataQualityStore(t)
 			for i, step := range tc.steps {
-				if err := upsertHourlyRollup(ctx, st.db, monitorID, hour.Add(time.Duration(i)*time.Minute), step.status, step.latency); err != nil {
+				if err := upsertHourlyRollup(ctx, st.db, monitorID, hour.Add(time.Duration(i)*time.Minute), step.status, step.latency, false); err != nil {
 					t.Fatalf("upsert: %v", err)
 				}
 			}
@@ -98,7 +98,7 @@ func TestUpsertHourlyRollupCountsUnknownSeparately(t *testing.T) {
 	st, monitorID := openDataQualityStore(t)
 	hour := time.Date(2026, 5, 11, 10, 0, 0, 0, time.UTC)
 	for i, status := range []monitor.Status{monitor.StatusUp, monitor.StatusUnknown, monitor.StatusUnknown, monitor.StatusDown} {
-		if err := upsertHourlyRollup(ctx, st.db, monitorID, hour.Add(time.Duration(i)*time.Minute), status, 0); err != nil {
+		if err := upsertHourlyRollup(ctx, st.db, monitorID, hour.Add(time.Duration(i)*time.Minute), status, 0, false); err != nil {
 			t.Fatalf("upsert: %v", err)
 		}
 	}

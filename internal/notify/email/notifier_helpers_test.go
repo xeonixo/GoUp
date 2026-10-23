@@ -51,3 +51,24 @@ func TestBuildStatusTransitionSubject(t *testing.T) {
 		t.Fatalf("subject missing monitor name: %q", subject)
 	}
 }
+
+func TestReminderSubjectAndBody(t *testing.T) {
+	tr := monitor.Transition{
+		Monitor:  monitor.Monitor{Name: "API", Kind: monitor.KindHTTPS, Target: "https://x"},
+		Previous: monitor.StatusDown, Current: monitor.StatusDown,
+		CheckedAt: time.Now().UTC(), Reminder: true, OutageDuration: 135 * time.Minute,
+	}
+	tr2 := map[string]string{"email.reminder.subject": "[STILL DOWN] {monitor}: down for {duration}", "email.reminder.text": "Still down for {duration}", "email.reminder.label": "Outage reminder"}
+	if got := buildStatusTransitionSubject(tr, tr2); got != "[STILL DOWN] API: down for 2 h 15 min" {
+		t.Fatalf("subject = %q", got)
+	}
+	body := buildHTMLEmail(tr, "https://goup/", tr2)
+	if !strings.Contains(body, "Still down for 2 h 15 min") || !strings.Contains(body, "Outage reminder") || strings.Contains(body, "{transitionText}") {
+		t.Fatalf("reminder body wrong")
+	}
+	// Plain transitions keep the old rendering.
+	plain := monitor.Transition{Monitor: monitor.Monitor{Name: "API"}, Previous: monitor.StatusDown, Current: monitor.StatusUp, CheckedAt: time.Now().UTC()}
+	if b := buildHTMLEmail(plain, "https://goup/", map[string]string{}); !strings.Contains(b, "DOWN &#8594; UP") {
+		t.Fatalf("plain transition rendering changed: missing arrow text")
+	}
+}

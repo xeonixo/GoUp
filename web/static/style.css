@@ -4729,3 +4729,79 @@ a[target="_blank"]::after {
   gap: 0.25rem 1rem;
   margin-top: 0.5rem;
 }
+
+/* Maintenance windows: a neutral blue state that is neither healthy nor an outage. */
+.monitor-card.status-MAINTENANCE {
+  border-color: rgba(var(--rgb-accent), 0.34);
+}
+
+.monitor-card.status-MAINTENANCE .monitor-cycle-indicator {
+  border-color: rgba(var(--rgb-accent), 0.3);
+  border-top-color: rgba(var(--rgb-accent), 0.85);
+}
+
+.monitor-diagnostics.status-MAINTENANCE {
+  border-color: rgba(var(--rgb-accent), 0.3);
+  background: rgba(var(--rgb-accent-raised), 0.5);
+}
+
+.status-pill.status-MAINTENANCE,
+.history-status-badge.status-MAINTENANCE {
+  background: rgba(var(--rgb-accent), 0.14);
+  color: var(--primary-solid);
+  border-color: rgba(var(--rgb-accent), 0.38);
+}
+
+.status-pill.status-MAINTENANCE::before,
+.history-status-badge.status-MAINTENANCE::before {
+  content: "\1F527";
+  font-size: 0.85em;
+}
+
+.attention-item.status-MAINTENANCE .attention-status-dot {
+  background: var(--primary-solid);
+  box-shadow: 0 0 0 3px rgba(var(--rgb-accent), 0.14);
+}
+
+.status-banner.is-maintenance {
+  background: rgba(var(--rgb-accent-raised), 0.9);
+  color: var(--text);
+}
+
+.status-banner.is-maintenance .status-banner-icon::before {
+  content: "\1F527";
+}
+
+.maintenance-state {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.maintenance-state-active {
+  background: rgba(var(--rgb-accent), 0.14);
+  border-color: rgba(var(--rgb-accent), 0.38);
+  color: var(--primary-solid);
+}
+
+.maintenance-state-past {
+  color: var(--text-muted);
+}
+
+#maintenance-form fieldset {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.6rem 0.8rem;
+  margin: 0;
+}
+
+#maintenance-form fieldset[hidden] {
+  display: none;
+}
+
+.table-actions {
+  white-space: nowrap;
+}

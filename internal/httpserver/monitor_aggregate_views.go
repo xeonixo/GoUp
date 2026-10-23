@@ -18,8 +18,12 @@ func aggregateServiceStatus(items []monitorView) (label string, class string, in
 	hasUnknown := false
 	hasPaused := false
 	hasUp := false
+	hasMaintenance := false
 	for _, item := range items {
 		switch item.StatusLabel {
+		case "MAINTENANCE":
+			// Planned work neither makes a group look broken nor healthy.
+			hasMaintenance = true
 		case "DOWN":
 			hasDown = true
 		case "DEGRADED":
@@ -31,6 +35,9 @@ func aggregateServiceStatus(items []monitorView) (label string, class string, in
 		default:
 			hasUnknown = true
 		}
+	}
+	if hasMaintenance && !hasDown && !hasDegraded && !hasUnknown && !hasPaused && !hasUp {
+		return "MAINTENANCE", "status-MAINTENANCE", "Wartung"
 	}
 	hasOnlyDown := hasDown && !hasUp && !hasDegraded && !hasUnknown && !hasPaused
 	hasOnlyUnknown := hasUnknown && !hasUp && !hasDown && !hasDegraded && !hasPaused

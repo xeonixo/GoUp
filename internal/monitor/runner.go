@@ -33,6 +33,19 @@ type Store interface {
 	RecentMonitorStatuses(ctx context.Context, monitorID int64, limit int) ([]Status, error)
 	// ClearMonitorMuteStartStatus drops the pending mute catch-up marker.
 	ClearMonitorMuteStartStatus(ctx context.Context, monitorID int64) error
+	// SetMonitorMuteStartStatus stores the catch-up marker (status before notifications were
+	// suppressed). Mutes and maintenance windows share it.
+	SetMonitorMuteStartStatus(ctx context.Context, monitorID int64, status Status) error
+	// SetMonitorLastAlert records when the current outage was last announced; nil clears it.
+	SetMonitorLastAlert(ctx context.Context, monitorID int64, at *time.Time) error
+	// CurrentOutageStart returns when the ongoing run of down results began.
+	CurrentOutageStart(ctx context.Context, monitorID int64) (time.Time, bool, error)
+}
+
+// MaintenanceChecker tells whether a monitor is inside a maintenance window. The sqlite store
+// implements it; the dispatcher uses it when the store does.
+type MaintenanceChecker interface {
+	ActiveMaintenance(ctx context.Context, monitorID int64, group string, now time.Time) bool
 }
 
 type Checker interface {
@@ -66,6 +79,10 @@ type Transition struct {
 	ResultDetail string
 	// CatchUp marks the single summary sent after a mute ended; Previous is the status at mute start.
 	CatchUp bool
+	// Reminder marks a repeated alert for an ongoing outage (Previous == Current == down);
+	// OutageDuration is how long the monitor has been down.
+	Reminder       bool
+	OutageDuration time.Duration
 }
 
 type Notifier interface {
