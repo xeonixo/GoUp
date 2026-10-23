@@ -511,6 +511,23 @@ func (a *App) runMaintenanceOnce(ctx context.Context) {
 		return
 	}
 	now := time.Now().UTC()
+
+	controlResult, err := a.controlStore.RunMaintenance(ctx, now)
+	if err != nil {
+		a.logger.Error("control-plane maintenance failed", "error", err)
+	} else {
+		if controlResult.CompactionSkipped != "" {
+			a.logger.Warn("control-plane compaction skipped", "reason", controlResult.CompactionSkipped)
+		}
+		if controlResult.DeletedRemoteNodeEvents > 0 || controlResult.Vacuumed {
+			a.logger.Info(
+				"control-plane maintenance completed",
+				"remote_node_events_deleted", controlResult.DeletedRemoteNodeEvents,
+				"vacuumed", controlResult.Vacuumed,
+			)
+		}
+	}
+
 	for _, tenant := range tenants {
 		if !tenant.Active || !tenantHasAppDatabase(tenant.DBPath) {
 			continue
@@ -523,14 +540,19 @@ func (a *App) runMaintenanceOnce(ctx context.Context) {
 		result, err := tenantStore.RunMaintenance(ctx, now, store.MaintenanceOptions{
 			StateEventRetentionDays:        tenant.StateEventRetentionDays,
 			NotificationEventRetentionDays: tenant.NotificationEventRetentionDays,
+			RawResultRetentionDays:         tenant.RawResultRetentionDays,
 		})
 		if err != nil {
 			a.logger.Error("database maintenance failed", "tenant", tenant.Slug, "error", err)
 			continue
 		}
+		if result.CompactionSkipped != "" {
+			a.logger.Warn("database compaction skipped", "tenant", tenant.Slug, "reason", result.CompactionSkipped)
+		}
 
 		if !result.BackfilledHourlyRollups &&
 			!result.Optimized &&
+			!result.Vacuumed &&
 			result.DeletedRawResults == 0 &&
 			result.DeletedHourlyRollups == 0 &&
 			result.DeletedStateEvents == 0 &&
@@ -547,6 +569,7 @@ func (a *App) runMaintenanceOnce(ctx context.Context) {
 			"state_events_deleted", result.DeletedStateEvents,
 			"notification_events_deleted", result.DeletedNotificationEvents,
 			"optimized", result.Optimized,
+			"vacuumed", result.Vacuumed,
 		)
 	}
 }

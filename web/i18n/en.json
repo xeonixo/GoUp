@@ -445,6 +445,8 @@
   "admin.tenant_form.database_auto_created": "Created automatically",
   "admin.tenant_form.database_derived_note": "The path is derived automatically from the tenant slug and GOUP_DATA_DIR.",
   "admin.tenant_form.active_checkbox": "Active",
+  "admin.tenant_form.raw_result_retention_label": "Keep individual check results (days)",
+  "admin.tenant_form.raw_result_retention_hint": "7–90 days. Older data stays available for 12 months as hourly rollups for trends; fewer days = smaller database.",
   "admin.tenant_form.state_event_retention_label": "Keep status changes (days)",
   "admin.tenant_form.notification_event_retention_label": "Keep notification events (days)",
   "admin.tenant_form.retention_hint": "Allowed range is 1 to 3650 days. Default: 365.",

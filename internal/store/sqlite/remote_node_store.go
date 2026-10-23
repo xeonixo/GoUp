@@ -42,7 +42,56 @@ const (
 	remoteNodeIDRandomBytes           = 24
 	remoteNodeBootstrapKeyRandomBytes = 48
 	remoteNodeAccessTokenRandomBytes  = 48
+	remoteNodeEventRetentionDays      = 30
 )
+
+type ControlPlaneMaintenanceResult struct {
+	DeletedRemoteNodeEvents int64
+	Vacuumed                bool
+	CompactionSkipped       string
+}
+
+// RunMaintenance prunes remote node events and compacts the control-plane database.
+func (s *ControlPlaneStore) RunMaintenance(ctx context.Context, now time.Time) (ControlPlaneMaintenanceResult, error) {
+	result := ControlPlaneMaintenanceResult{}
+
+	deleted, err := s.pruneRemoteNodeEvents(ctx, now.UTC().AddDate(0, 0, -remoteNodeEventRetentionDays))
+	if err != nil {
+		return result, err
+	}
+	result.DeletedRemoteNodeEvents = deleted
+
+	vacuumed, err := compactDatabase(ctx, s.db)
+	if err != nil {
+		if !errors.Is(err, ErrInsufficientDiskSpace) {
+			return result, err
+		}
+		result.CompactionSkipped = err.Error()
+	}
+	result.Vacuumed = vacuumed
+	return result, nil
+}
+
+func (s *ControlPlaneStore) pruneRemoteNodeEvents(ctx context.Context, cutoff time.Time) (int64, error) {
+	// Older versions logged every poll and every fully accepted report. These rows
+	// are no longer written, so removing them is idempotent and cheap after the first run.
+	res, err := s.db.ExecContext(ctx, `
+DELETE FROM remote_node_events
+WHERE created_at < ?
+   OR event_type = 'poll'
+   OR (event_type = 'report'
+       AND details LIKE 'accepted=% received=%'
+       AND substr(details, 10, instr(details, ' ') - 10) = substr(details, instr(details, 'received=') + 9))
+`, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("prune remote node events: %w", err)
+	}
+	deleted, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("read pruned remote node event rows: %w", err)
+	}
+	return deleted, nil
+}
 
 func (n RemoteNode) IsOnline(now time.Time) bool {
 	if !n.Enabled || n.LastSeenAt == nil {

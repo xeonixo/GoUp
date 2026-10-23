@@ -107,6 +107,7 @@ func (s *Server) handleAdminTenantSave(w http.ResponseWriter, r *http.Request) {
 	active := r.FormValue("active") == "1"
 	stateEventRetentionDays := parseTenantRetentionDays(r.FormValue("state_event_retention_days"))
 	notificationEventRetentionDays := parseTenantRetentionDays(r.FormValue("notification_event_retention_days"))
+	rawResultRetentionDays := parseRawResultRetentionDays(r.FormValue("raw_result_retention_days"))
 
 	if name == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
@@ -135,6 +136,9 @@ func (s *Server) handleAdminTenantSave(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/admin/tenants/new?error="+url.QueryEscape("Tenant-Speicher konnte nicht vorbereitet werden"), http.StatusSeeOther)
 			return
 		}
+		if err := s.controlStore.SetTenantRawResultRetentionDays(r.Context(), tenant.ID, rawResultRetentionDays); err != nil {
+			s.logger.Error("store tenant raw result retention failed", "tenant", tenant.Slug, "error", err)
+		}
 		s.writeAudit(r, "tenant.create", "tenant", tenant.ID, fmt.Sprintf("slug=%s name=%s", tenant.Slug, tenant.Name))
 		http.Redirect(w, r, "/admin/tenants/"+fmt.Sprintf("%d", tenant.ID)+"/edit?notice="+url.QueryEscape("Tenant erstellt"), http.StatusSeeOther)
 	} else {
@@ -155,6 +159,11 @@ func (s *Server) handleAdminTenantSave(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/admin/tenants/"+id+"/edit?error="+url.QueryEscape("Tenant konnte nicht gespeichert werden"), http.StatusSeeOther)
 			return
 		}
+		if err := s.controlStore.SetTenantRawResultRetentionDays(r.Context(), tenantID, rawResultRetentionDays); err != nil {
+			s.logger.Error("update tenant raw result retention failed", "error", err)
+			http.Redirect(w, r, "/admin/tenants/"+id+"/edit?error="+url.QueryEscape("Tenant konnte nicht gespeichert werden"), http.StatusSeeOther)
+			return
+		}
 		if active {
 			if err := s.ensureTenantStorage(tenant.Slug); err != nil {
 				s.logger.Error("prepare tenant storage failed", "tenant", tenant.Slug, "error", err)
@@ -162,7 +171,7 @@ func (s *Server) handleAdminTenantSave(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		s.writeAudit(r, "tenant.update", "tenant", tenantID, fmt.Sprintf("name=%s active=%t state_event_retention_days=%d notification_event_retention_days=%d", name, active, stateEventRetentionDays, notificationEventRetentionDays))
+		s.writeAudit(r, "tenant.update", "tenant", tenantID, fmt.Sprintf("name=%s active=%t state_event_retention_days=%d notification_event_retention_days=%d raw_result_retention_days=%d", name, active, stateEventRetentionDays, notificationEventRetentionDays, rawResultRetentionDays))
 		http.Redirect(w, r, "/admin/tenants?notice="+url.QueryEscape("Tenant aktualisiert"), http.StatusSeeOther)
 	}
 }
@@ -173,6 +182,14 @@ func parseTenantRetentionDays(value string) int {
 		return store.NormalizeEventRetentionDays(0)
 	}
 	return store.NormalizeEventRetentionDays(days)
+}
+
+func parseRawResultRetentionDays(value string) int {
+	days, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return store.NormalizeRawResultRetentionDays(0)
+	}
+	return store.NormalizeRawResultRetentionDays(days)
 }
 
 func autoTenantDBPath(dataDir string, slug string) string {

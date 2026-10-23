@@ -40,6 +40,7 @@ type Tenant struct {
 	Active                         bool
 	StateEventRetentionDays        int
 	NotificationEventRetentionDays int
+	RawResultRetentionDays         int
 }
 
 type ResolvedUser struct {
@@ -290,7 +291,7 @@ ON CONFLICT(tenant_id, provider_key) DO UPDATE SET
 
 func (s *ControlPlaneStore) GetTenantBySlug(ctx context.Context, slug string) (Tenant, error) {
 	return s.getTenant(ctx, `
-SELECT id, slug, name, db_path, active, state_event_retention_days, notification_event_retention_days
+SELECT id, slug, name, db_path, active, state_event_retention_days, notification_event_retention_days, raw_result_retention_days
 FROM tenants
 WHERE slug = ?
 `, slug)
@@ -298,7 +299,7 @@ WHERE slug = ?
 
 func (s *ControlPlaneStore) GetTenantByID(ctx context.Context, tenantID int64) (Tenant, error) {
 	return s.getTenant(ctx, `
-SELECT id, slug, name, db_path, active, state_event_retention_days, notification_event_retention_days
+SELECT id, slug, name, db_path, active, state_event_retention_days, notification_event_retention_days, raw_result_retention_days
 FROM tenants
 WHERE id = ?
 `, tenantID)
@@ -315,6 +316,7 @@ func (s *ControlPlaneStore) getTenant(ctx context.Context, query string, args ..
 		&active,
 		&tenant.StateEventRetentionDays,
 		&tenant.NotificationEventRetentionDays,
+		&tenant.RawResultRetentionDays,
 	)
 	if err != nil {
 		return Tenant{}, fmt.Errorf("get tenant: %w", err)
@@ -322,6 +324,7 @@ func (s *ControlPlaneStore) getTenant(ctx context.Context, query string, args ..
 	tenant.Active = active == 1
 	tenant.StateEventRetentionDays = normalizeEventRetentionDays(tenant.StateEventRetentionDays)
 	tenant.NotificationEventRetentionDays = normalizeEventRetentionDays(tenant.NotificationEventRetentionDays)
+	tenant.RawResultRetentionDays = NormalizeRawResultRetentionDays(tenant.RawResultRetentionDays)
 	return tenant, nil
 }
 
@@ -1164,6 +1167,7 @@ CREATE TABLE IF NOT EXISTS tenants (
 	active INTEGER NOT NULL DEFAULT 1,
 	state_event_retention_days INTEGER NOT NULL DEFAULT 365,
 	notification_event_retention_days INTEGER NOT NULL DEFAULT 365,
+	raw_result_retention_days INTEGER NOT NULL DEFAULT 30,
 	created_at DATETIME NOT NULL,
 	updated_at DATETIME NOT NULL
 );
@@ -1330,6 +1334,7 @@ func (s *ControlPlaneStore) ensureTenantRetentionColumns(ctx context.Context) er
 	}{
 		{"state_event_retention_days", `ALTER TABLE tenants ADD COLUMN state_event_retention_days INTEGER NOT NULL DEFAULT 365`},
 		{"notification_event_retention_days", `ALTER TABLE tenants ADD COLUMN notification_event_retention_days INTEGER NOT NULL DEFAULT 365`},
+		{"raw_result_retention_days", `ALTER TABLE tenants ADD COLUMN raw_result_retention_days INTEGER NOT NULL DEFAULT 30`},
 	}
 	for _, column := range columns {
 		hasColumn, err := s.tableHasColumn(ctx, "tenants", column.name)
@@ -1536,7 +1541,7 @@ FROM local_credentials lc
 // GetAllTenants returns all tenants, optionally filtered by active status
 func (s *ControlPlaneStore) GetAllTenants(ctx context.Context) ([]Tenant, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, slug, name, db_path, active, state_event_retention_days, notification_event_retention_days
+SELECT id, slug, name, db_path, active, state_event_retention_days, notification_event_retention_days, raw_result_retention_days
 FROM tenants
 ORDER BY created_at ASC
 `)
@@ -1557,12 +1562,14 @@ ORDER BY created_at ASC
 			&active,
 			&t.StateEventRetentionDays,
 			&t.NotificationEventRetentionDays,
+			&t.RawResultRetentionDays,
 		); err != nil {
 			return nil, fmt.Errorf("scan tenant: %w", err)
 		}
 		t.Active = active == 1
 		t.StateEventRetentionDays = normalizeEventRetentionDays(t.StateEventRetentionDays)
 		t.NotificationEventRetentionDays = normalizeEventRetentionDays(t.NotificationEventRetentionDays)
+		t.RawResultRetentionDays = NormalizeRawResultRetentionDays(t.RawResultRetentionDays)
 		tenants = append(tenants, t)
 	}
 	if err := rows.Err(); err != nil {
@@ -1630,6 +1637,19 @@ INSERT INTO tenants (
 	}
 
 	return tenant, nil
+}
+
+// SetTenantRawResultRetentionDays sets how many days of raw check results the tenant keeps.
+func (s *ControlPlaneStore) SetTenantRawResultRetentionDays(ctx context.Context, id int64, days int) error {
+	_, err := s.db.ExecContext(ctx, `
+UPDATE tenants
+SET raw_result_retention_days = ?, updated_at = ?
+WHERE id = ?
+`, NormalizeRawResultRetentionDays(days), time.Now().UTC(), id)
+	if err != nil {
+		return fmt.Errorf("update tenant raw result retention: %w", err)
+	}
+	return nil
 }
 
 // UpdateTenant updates an existing tenant

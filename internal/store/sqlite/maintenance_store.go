@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,8 +11,11 @@ import (
 )
 
 const (
-	rawResultRetentionDays         = 30
-	hourlyRollupRetentionDays      = 365
+	defaultRawResultRetentionDays = 30
+	// The latency detail chart reads raw results for up to 7 days (history_handlers.go).
+	minRawResultRetentionDays      = 7
+	maxRawResultRetentionDays      = 90
+	hourlyRollupRetentionDays      = 400 // 12 full calendar months for the 12M trend view
 	defaultStoreEventRetentionDays = 365
 	maintenanceInterval            = 6 * time.Hour
 	retentionRunInterval           = 24 * time.Hour
@@ -29,11 +33,16 @@ type MaintenanceResult struct {
 	DeletedStateEvents        int64
 	DeletedNotificationEvents int64
 	Optimized                 bool
+	// Vacuumed reports the one-time full VACUUM that enables incremental auto-vacuum.
+	Vacuumed bool
+	// CompactionSkipped holds the reason when compaction could not run, e.g. low disk space.
+	CompactionSkipped string
 }
 
 type MaintenanceOptions struct {
 	StateEventRetentionDays        int
 	NotificationEventRetentionDays int
+	RawResultRetentionDays         int
 }
 
 type sqlExecutor interface {
@@ -60,7 +69,7 @@ func (s *Store) RunMaintenance(ctx context.Context, now time.Time, options ...Ma
 	}
 	result.BackfilledHourlyRollups = backfilled
 
-	deleted, err := s.pruneRawResultsIfDue(ctx, now)
+	deleted, err := s.pruneRawResultsIfDue(ctx, now, opts.RawResultRetentionDays)
 	if err != nil {
 		return result, err
 	}
@@ -89,6 +98,15 @@ func (s *Store) RunMaintenance(ctx context.Context, now time.Time, options ...Ma
 		return result, err
 	}
 
+	vacuumed, err := compactDatabase(ctx, s.db)
+	if err != nil {
+		if !errors.Is(err, ErrInsufficientDiskSpace) {
+			return result, err
+		}
+		result.CompactionSkipped = err.Error()
+	}
+	result.Vacuumed = vacuumed
+
 	return result, nil
 }
 
@@ -96,13 +114,30 @@ func normalizeMaintenanceOptions(options ...MaintenanceOptions) MaintenanceOptio
 	opts := MaintenanceOptions{
 		StateEventRetentionDays:        defaultStoreEventRetentionDays,
 		NotificationEventRetentionDays: defaultStoreEventRetentionDays,
+		RawResultRetentionDays:         defaultRawResultRetentionDays,
 	}
 	if len(options) > 0 {
 		opts = options[0]
 	}
 	opts.StateEventRetentionDays = normalizeRetentionDays(opts.StateEventRetentionDays)
 	opts.NotificationEventRetentionDays = normalizeRetentionDays(opts.NotificationEventRetentionDays)
+	opts.RawResultRetentionDays = NormalizeRawResultRetentionDays(opts.RawResultRetentionDays)
 	return opts
+}
+
+// NormalizeRawResultRetentionDays clamps the raw check result retention. Older
+// data stays available as hourly rollups, so long raw retention mostly costs disk.
+func NormalizeRawResultRetentionDays(days int) int {
+	if days <= 0 {
+		return defaultRawResultRetentionDays
+	}
+	if days < minRawResultRetentionDays {
+		return minRawResultRetentionDays
+	}
+	if days > maxRawResultRetentionDays {
+		return maxRawResultRetentionDays
+	}
+	return days
 }
 
 func normalizeRetentionDays(days int) int {
@@ -233,7 +268,7 @@ ON CONFLICT(monitor_id, hour_bucket) DO UPDATE SET
 	return true, nil
 }
 
-func (s *Store) pruneRawResultsIfDue(ctx context.Context, now time.Time) (int64, error) {
+func (s *Store) pruneRawResultsIfDue(ctx context.Context, now time.Time, retentionDays int) (int64, error) {
 	due, err := s.shouldRunAfter(ctx, lastRetentionRunSettingKey, retentionRunInterval, now)
 	if err != nil {
 		return 0, fmt.Errorf("check retention schedule: %w", err)
@@ -242,7 +277,7 @@ func (s *Store) pruneRawResultsIfDue(ctx context.Context, now time.Time) (int64,
 		return 0, nil
 	}
 
-	cutoff := now.AddDate(0, 0, -rawResultRetentionDays)
+	cutoff := now.AddDate(0, 0, -retentionDays)
 	result, err := s.db.ExecContext(ctx, `
 DELETE FROM monitor_results
 WHERE checked_at < ?

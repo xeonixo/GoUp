@@ -113,7 +113,6 @@ func (s *Server) handleRemoteNodePoll(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unable to rotate access token", http.StatusInternalServerError)
 		return
 	}
-	_ = s.controlStore.InsertRemoteNodeEvent(r.Context(), node.TenantID, node.NodeID, "poll", s.clientIP(r), strings.TrimSpace(r.UserAgent()), fmt.Sprintf("assigned_monitors=%d", len(monitors)), time.Now().UTC())
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -203,7 +202,10 @@ func (s *Server) handleRemoteNodeReport(w http.ResponseWriter, r *http.Request) 
 		previousByID[monitorConfig.ID] = &resultCopy
 		accepted++
 	}
-	_ = s.controlStore.InsertRemoteNodeEvent(r.Context(), node.TenantID, node.NodeID, "report", s.clientIP(r), strings.TrimSpace(r.UserAgent()), fmt.Sprintf("accepted=%d received=%d", accepted, len(payload.Results)), time.Now().UTC())
+	// Polls and fully accepted reports arrive every few seconds; only rejected results are worth an event row.
+	if accepted < len(payload.Results) {
+		_ = s.controlStore.InsertRemoteNodeEvent(r.Context(), node.TenantID, node.NodeID, "report", s.clientIP(r), strings.TrimSpace(r.UserAgent()), fmt.Sprintf("accepted=%d received=%d", accepted, len(payload.Results)), time.Now().UTC())
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{

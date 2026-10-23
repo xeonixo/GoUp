@@ -445,6 +445,8 @@
   "admin.tenant_form.database_auto_created": "Wird automatisch erzeugt",
   "admin.tenant_form.database_derived_note": "Der Pfad wird automatisch aus Tenant-Slug und GOUP_DATA_DIR abgeleitet.",
   "admin.tenant_form.active_checkbox": "Aktiv",
+  "admin.tenant_form.raw_result_retention_label": "Einzelne Check-Ergebnisse aufbewahren (Tage)",
+  "admin.tenant_form.raw_result_retention_hint": "7–90 Tage. Ältere Daten bleiben 12 Monate als Stundenwerte für Trends erhalten; weniger Tage = kleinere Datenbank.",
   "admin.tenant_form.state_event_retention_label": "Statusänderungen aufbewahren (Tage)",
   "admin.tenant_form.notification_event_retention_label": "Notification-Events aufbewahren (Tage)",
   "admin.tenant_form.retention_hint": "Erlaubt sind 1 bis 3650 Tage. Standard: 365.",
