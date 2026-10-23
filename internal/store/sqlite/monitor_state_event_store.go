@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -205,5 +206,45 @@ LIMIT ?
 		return nil, fmt.Errorf("iterate monitor state events: %w", err)
 	}
 
+	return items, nil
+}
+
+type MonitorIncident struct {
+	ID         int64
+	StartedAt  time.Time
+	ResolvedAt *time.Time
+	Cause      string
+}
+
+// ListMonitorIncidents returns a monitor's most recent incidents, newest first.
+func (s *Store) ListMonitorIncidents(ctx context.Context, monitorID int64, limit int) ([]MonitorIncident, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, started_at, resolved_at, cause
+FROM incidents
+WHERE monitor_id = ?
+ORDER BY started_at DESC
+LIMIT ?
+`, monitorID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list monitor incidents: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]MonitorIncident, 0, limit)
+	for rows.Next() {
+		var item MonitorIncident
+		var resolvedAt sql.NullTime
+		if err := rows.Scan(&item.ID, &item.StartedAt, &resolvedAt, &item.Cause); err != nil {
+			return nil, fmt.Errorf("scan monitor incident: %w", err)
+		}
+		item.ResolvedAt = nullableTime(resolvedAt)
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate monitor incidents: %w", err)
+	}
 	return items, nil
 }

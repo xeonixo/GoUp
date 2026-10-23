@@ -52,8 +52,28 @@ type Monitor struct {
 	NotifyOnRecovery   bool
 	RetryCount         int
 	RetryInterval      time.Duration
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	// MutedUntil suppresses notifications (checks keep running) until this time.
+	MutedUntil *time.Time
+	// CertWarningDays marks a monitor degraded when its certificate expires within this many days.
+	CertWarningDays int
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+// DefaultCertWarningDays is used when a monitor has no certificate warning threshold of its own.
+const DefaultCertWarningDays = 7
+
+// IsMuted reports whether notifications for this monitor are currently suppressed.
+func (m Monitor) IsMuted(now time.Time) bool {
+	return m.MutedUntil != nil && now.Before(*m.MutedUntil)
+}
+
+// EffectiveCertWarningDays returns the monitor's threshold or the default.
+func (m Monitor) EffectiveCertWarningDays() int {
+	if m.CertWarningDays <= 0 {
+		return DefaultCertWarningDays
+	}
+	return m.CertWarningDays
 }
 
 type Result struct {

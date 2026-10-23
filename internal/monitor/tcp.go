@@ -139,7 +139,7 @@ func (c TCPChecker) checkTarget(ctx context.Context, item Monitor, checkedAt tim
 
 	state := tlsConn.ConnectionState()
 	applyTLSMetadata(&result, state)
-	status, message := finalizeTLSResult(&result, fmt.Sprintf("TCP TLS handshake ok in %s", formatLatency(result.Latency)))
+	status, message := finalizeTLSResult(&result, fmt.Sprintf("TCP TLS handshake ok in %s", formatLatency(result.Latency)), item.EffectiveCertWarningDays())
 	if !verifyCertificate && len(state.PeerCertificates) > 0 {
 		leaf := state.PeerCertificates[0]
 		if leaf.CheckSignatureFrom(leaf) == nil && result.TLSDaysRemaining != nil {

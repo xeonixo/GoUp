@@ -110,11 +110,14 @@ func TestFinalizeTLSResult(t *testing.T) {
 	result := Result{}
 	days := 3
 	result.TLSDaysRemaining = &days
-	status, msg := finalizeTLSResult(&result, "ok")
+	status, msg := finalizeTLSResult(&result, "ok", DefaultCertWarningDays)
 	if status != StatusDegraded {
 		t.Fatalf("status = %q, want %q", status, StatusDegraded)
 	}
 	if msg == "ok" {
 		t.Fatalf("expected degraded message details")
+	}
+	if status, _ := finalizeTLSResult(&result, "ok", 2); status != StatusUp {
+		t.Fatalf("status with 2-day threshold = %q, want %q", status, StatusUp)
 	}
 }

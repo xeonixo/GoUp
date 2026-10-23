@@ -340,6 +340,7 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 			v, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("retry_interval_seconds")))
 			return time.Duration(v) * time.Second
 		}(),
+		CertWarningDays: func() int { v, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("cert_warning_days"))); return v }(),
 	}
 
 	if monitorID > 0 {

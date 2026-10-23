@@ -19,7 +19,7 @@ func applyTLSMetadata(result *Result, state tls.ConnectionState) {
 	result.TLSDaysRemaining = &daysRemaining
 }
 
-func finalizeTLSResult(result *Result, okMessage string) (Status, string) {
+func finalizeTLSResult(result *Result, okMessage string, warningDays int) (Status, string) {
 	if result.TLSDaysRemaining == nil {
 		return StatusUp, okMessage
 	}
@@ -28,7 +28,7 @@ func finalizeTLSResult(result *Result, okMessage string) (Status, string) {
 	if daysRemaining < 0 {
 		return StatusDown, fmt.Sprintf("certificate expired %d days ago", -daysRemaining)
 	}
-	if daysRemaining <= certificateWarningDays {
+	if daysRemaining <= warningDays {
 		return StatusDegraded, fmt.Sprintf("%s; certificate expires in %d days", okMessage, daysRemaining)
 	}
 

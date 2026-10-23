@@ -571,6 +571,8 @@ func (s *Store) ensureMonitorRetryColumns(ctx context.Context) error {
 
 	hasRetryCount := false
 	hasRetryInterval := false
+	hasMutedUntil := false
+	hasCertWarningDays := false
 	for rows.Next() {
 		var cid int
 		var name string
@@ -587,6 +589,10 @@ func (s *Store) ensureMonitorRetryColumns(ctx context.Context) error {
 			hasRetryCount = true
 		case "retry_interval_seconds":
 			hasRetryInterval = true
+		case "muted_until":
+			hasMutedUntil = true
+		case "cert_warning_days":
+			hasCertWarningDays = true
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -605,6 +611,16 @@ func (s *Store) ensureMonitorRetryColumns(ctx context.Context) error {
 	if !hasRetryInterval {
 		if _, err := s.db.ExecContext(ctx, `ALTER TABLE monitors ADD COLUMN retry_interval_seconds INTEGER NOT NULL DEFAULT 0`); err != nil {
 			return fmt.Errorf("add monitor retry_interval_seconds column: %w", err)
+		}
+	}
+	if !hasMutedUntil {
+		if _, err := s.db.ExecContext(ctx, `ALTER TABLE monitors ADD COLUMN muted_until DATETIME`); err != nil {
+			return fmt.Errorf("add monitor muted_until column: %w", err)
+		}
+	}
+	if !hasCertWarningDays {
+		if _, err := s.db.ExecContext(ctx, `ALTER TABLE monitors ADD COLUMN cert_warning_days INTEGER NOT NULL DEFAULT 7`); err != nil {
+			return fmt.Errorf("add monitor cert_warning_days column: %w", err)
 		}
 	}
 
@@ -657,6 +673,8 @@ CREATE TABLE IF NOT EXISTS monitors (
     notify_on_recovery INTEGER NOT NULL DEFAULT 1,
     retry_count INTEGER NOT NULL DEFAULT 0,
     retry_interval_seconds INTEGER NOT NULL DEFAULT 0,
+    muted_until DATETIME,
+    cert_warning_days INTEGER NOT NULL DEFAULT 7,
     config_json TEXT NOT NULL DEFAULT '{}',
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL

@@ -1,7 +1,9 @@
 package sqlite
 
 import (
+	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -176,5 +178,62 @@ func TestMonitorHourlyRollupFields(t *testing.T) {
 	}
 	if r.MonitorID <= 0 {
 		t.Errorf("MonitorID should be positive, got %d", r.MonitorID)
+	}
+}
+
+func TestMonitorMuteAndCertWarningDaysPersist(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "tenant.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	id, err := st.CreateMonitor(ctx, CreateMonitorParams{
+		Name: "Web", Kind: monitor.KindHTTPS, Target: "https://example.com", Interval: time.Minute,
+		Timeout: 10 * time.Second, Enabled: true, TLSMode: monitor.TLSModeTLS, CertWarningDays: 21,
+	})
+	if err != nil {
+		t.Fatalf("create monitor: %v", err)
+	}
+	other, err := st.CreateMonitor(ctx, CreateMonitorParams{
+		Name: "Default", Kind: monitor.KindHTTPS, Target: "https://example.org", Interval: time.Minute,
+		Timeout: 10 * time.Second, Enabled: true, TLSMode: monitor.TLSModeTLS,
+	})
+	if err != nil {
+		t.Fatalf("create second monitor: %v", err)
+	}
+
+	until := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	updated, err := st.SetMonitorsMutedUntil(ctx, []int64{id, other}, &until)
+	if err != nil || updated != 2 {
+		t.Fatalf("mute monitors: updated=%d err=%v", updated, err)
+	}
+
+	byID := func() map[int64]monitor.Monitor {
+		snapshots, err := st.ListMonitorSnapshots(ctx)
+		if err != nil {
+			t.Fatalf("list snapshots: %v", err)
+		}
+		out := map[int64]monitor.Monitor{}
+		for _, item := range snapshots {
+			out[item.Monitor.ID] = item.Monitor
+		}
+		return out
+	}
+	monitors := byID()
+	if monitors[id].CertWarningDays != 21 || monitors[other].CertWarningDays != monitor.DefaultCertWarningDays {
+		t.Fatalf("unexpected cert warning days: %d / %d", monitors[id].CertWarningDays, monitors[other].CertWarningDays)
+	}
+	if monitors[id].MutedUntil == nil || !monitors[id].MutedUntil.Equal(until) || !monitors[id].IsMuted(time.Now()) {
+		t.Fatalf("expected monitor muted until %s, got %v", until, monitors[id].MutedUntil)
+	}
+
+	if _, err := st.SetMonitorsMutedUntil(ctx, []int64{id}, nil); err != nil {
+		t.Fatalf("unmute: %v", err)
+	}
+	monitors = byID()
+	if monitors[id].MutedUntil != nil || monitors[other].MutedUntil == nil {
+		t.Fatalf("unmute should only clear the selected monitor: %v / %v", monitors[id].MutedUntil, monitors[other].MutedUntil)
 	}
 }

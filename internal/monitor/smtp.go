@@ -142,7 +142,7 @@ func (c SMTPChecker) checkTLS(ctx context.Context, item Monitor, family TCPAddre
 	}
 
 	applyTLSMetadata(&result, tlsConn.ConnectionState())
-	result.Status, result.Message = finalizeTLSResult(&result, fmt.Sprintf("SMTP TLS ok in %s", formatLatency(result.Latency)))
+	result.Status, result.Message = finalizeTLSResult(&result, fmt.Sprintf("SMTP TLS ok in %s", formatLatency(result.Latency)), item.EffectiveCertWarningDays())
 	return result
 }
 
@@ -225,7 +225,7 @@ func (c SMTPChecker) checkSTARTTLS(ctx context.Context, item Monitor, family TCP
 	result.Latency = time.Since(startedAt)
 
 	applyTLSMetadata(&result, tlsConn.ConnectionState())
-	result.Status, result.Message = finalizeTLSResult(&result, fmt.Sprintf("SMTP STARTTLS ok in %s", formatLatency(result.Latency)))
+	result.Status, result.Message = finalizeTLSResult(&result, fmt.Sprintf("SMTP STARTTLS ok in %s", formatLatency(result.Latency)), item.EffectiveCertWarningDays())
 	return result
 }
 

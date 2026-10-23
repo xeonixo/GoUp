@@ -195,7 +195,7 @@ func (s *Server) handleRemoteNodeReport(w http.ResponseWriter, r *http.Request) 
 		if err := appStore.RecordMonitorState(r.Context(), monitorConfig.ID, result.Status, result.Message, result.CheckedAt); err != nil {
 			continue
 		}
-		if transition, shouldNotify := buildRemoteTransition(monitorConfig, previousByID[monitorConfig.ID], result); shouldNotify {
+		if transition, shouldNotify := buildRemoteTransition(monitorConfig, previousByID[monitorConfig.ID], result); shouldNotify && !monitorConfig.IsMuted(time.Now()) {
 			s.notifyRemoteTransition(r.Context(), appStore, node.TenantID, transition)
 		}
 		resultCopy := result

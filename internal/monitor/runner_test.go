@@ -220,3 +220,56 @@ func TestRunnerClearsInFlightWhenCheckerIgnoresTimeout(t *testing.T) {
 	r.scheduleMu.Unlock()
 	t.Fatalf("monitor remained in flight after checker timeout; inFlight=%v results=%d", inFlight, store.resultCount())
 }
+
+type countingNotifier struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (n *countingNotifier) Enabled() bool     { return true }
+func (n *countingNotifier) EndpointID() int64 { return 1 }
+func (n *countingNotifier) EventType() string { return "status_transition" }
+func (n *countingNotifier) Notify(context.Context, Transition) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.calls++
+	return nil
+}
+
+func TestRunnerSkipsNotificationsWhileMuted(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	scheduledAt := time.Date(2026, 5, 11, 10, 0, 0, 0, time.UTC)
+	previous := &Result{Status: StatusUp, CheckedAt: scheduledAt.Add(-time.Minute)}
+	mutedUntil := time.Now().Add(time.Hour)
+	expired := time.Now().Add(-time.Hour)
+
+	for _, tc := range []struct {
+		name       string
+		mutedUntil *time.Time
+		wantCalls  int
+	}{
+		{"muted", &mutedUntil, 0},
+		{"mute expired", &expired, 1},
+		{"not muted", nil, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &runnerTestStore{}
+			notifier := &countingNotifier{}
+			r := NewRunner(logger, store, notifier)
+			r.checkers[KindHTTPS] = &sequenceChecker{results: []Result{{Status: StatusDown, Message: "down"}}}
+			snapshot := Snapshot{
+				Monitor:    Monitor{ID: 5, Kind: KindHTTPS, Enabled: true, Timeout: time.Second, MutedUntil: tc.mutedUntil},
+				LastResult: previous,
+			}
+
+			r.runSnapshot(context.Background(), snapshot, scheduledAt)
+
+			if store.resultCount() != 1 || len(store.states) != 1 {
+				t.Fatalf("muting must not skip results/state: results=%d states=%d", store.resultCount(), len(store.states))
+			}
+			if notifier.calls != tc.wantCalls {
+				t.Fatalf("notifier calls = %d, want %d", notifier.calls, tc.wantCalls)
+			}
+		})
+	}
+}

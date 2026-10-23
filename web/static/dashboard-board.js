@@ -149,7 +149,8 @@
           'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
           Accept: 'application/json'
         },
-        body: new URLSearchParams(new FormData(form)).toString()
+        // Include the clicked button so multi-action forms (mute 1h/8h/24h) send their action.
+        body: new URLSearchParams(new FormData(form, event.submitter || undefined)).toString()
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload.ok === false) {
@@ -167,6 +168,86 @@
     }
   });
 
+  // Bulk selection: the selected ids live in a Set so they survive live re-renders of the cards.
+  const bulkToggle = document.getElementById('bulk-toggle');
+  const bulkBar = document.getElementById('bulk-bar');
+  const bulkForm = document.getElementById('bulk-form');
+  const bulkCount = document.getElementById('bulk-count');
+  const board = document.getElementById('dashboard-live-board');
+  const selected = new Set();
+  let selecting = false;
+
+  const syncBulkUI = () => {
+    document.body.classList.toggle('bulk-selecting', selecting);
+    document.querySelectorAll('#dashboard-live-board .bulk-select').forEach((checkbox) => {
+      checkbox.checked = selected.has(checkbox.value);
+    });
+    if (bulkBar) {
+      bulkBar.hidden = !selecting;
+    }
+    if (bulkCount) {
+      bulkCount.textContent = String(i18n.bulkSelected || '{count} selected').replace('{count}', String(selected.size));
+    }
+    if (bulkForm) {
+      bulkForm.querySelectorAll('button').forEach((button) => {
+        button.disabled = selected.size === 0;
+      });
+    }
+    if (bulkToggle) {
+      bulkToggle.setAttribute('aria-pressed', selecting ? 'true' : 'false');
+      bulkToggle.classList.toggle('button-secondary', !selecting);
+    }
+  };
+
+  if (bulkToggle && bulkForm && board) {
+    bulkToggle.addEventListener('click', () => {
+      selecting = !selecting;
+      if (!selecting) {
+        selected.clear();
+      }
+      syncBulkUI();
+    });
+    board.addEventListener('change', (event) => {
+      const checkbox = event.target;
+      if (checkbox instanceof HTMLInputElement && checkbox.classList.contains('bulk-select')) {
+        if (checkbox.checked) {
+          selected.add(checkbox.value);
+        } else {
+          selected.delete(checkbox.value);
+        }
+        syncBulkUI();
+      }
+    });
+    document.getElementById('bulk-select-visible')?.addEventListener('click', () => {
+      document.querySelectorAll('#dashboard-live-board .monitor-card').forEach((card) => {
+        if (!card.hidden && !card.closest('.service-cluster')?.hidden && card.dataset.monitorId) {
+          selected.add(card.dataset.monitorId);
+        }
+      });
+      syncBulkUI();
+    });
+    // Capture phase: runs before the async submit handler, so the ids are in place when it reads the form.
+    bulkForm.addEventListener('submit', (event) => {
+      if (event.submitter?.value === 'delete' && !window.confirm(bulkForm.dataset.confirmDelete || 'Delete?')) {
+        event.preventDefault();
+        return;
+      }
+      bulkForm.querySelectorAll('input[name="id"]').forEach((input) => input.remove());
+      selected.forEach((id) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'id';
+        input.value = id;
+        bulkForm.appendChild(input);
+      });
+      if (event.submitter?.value === 'delete') {
+        selected.clear();
+      }
+    }, true);
+    document.addEventListener('goup:board-updated', syncBulkUI);
+    syncBulkUI();
+  }
+
   // The advanced section of the monitor modal: open it when a field inside fails validation
   // (the browser cannot focus fields in a closed <details>) or holds non-default values.
   const advanced = document.getElementById('monitor-advanced');
@@ -182,13 +263,42 @@
         return;
       }
       const data = trigger.dataset;
-      advanced.open = trigger.classList.contains('edit-monitor') && (
+      const isEdit = trigger.classList.contains('edit-monitor');
+      const certDays = isEdit ? Number(data.certWarningDays || 7) : 7;
+      const certField = document.getElementById('monitor-cert-warning-days');
+      if (certField) {
+        certField.value = String(certDays);
+      }
+      advanced.open = isEdit && (
         Number(data.retryCount || 0) > 0 ||
         Number(data.timeout || 10) !== 10 ||
-        data.notifyOnRecovery === '0'
+        data.notifyOnRecovery === '0' ||
+        certDays !== 7
       );
     });
   }
+
+  // Clone: open the edit dialog of the same card, then turn it into a new monitor.
+  document.addEventListener('click', (event) => {
+    const cloneButton = event.target instanceof Element ? event.target.closest('.clone-monitor') : null;
+    const editButton = cloneButton?.closest('.action-menu-list')?.querySelector('.edit-monitor');
+    if (!editButton) {
+      return;
+    }
+    editButton.click();
+    const idField = document.getElementById('monitor-id');
+    const nameField = document.getElementById('monitor-name');
+    const modalTitle = document.getElementById('monitor-modal-title');
+    if (idField) {
+      idField.value = '';
+    }
+    if (nameField) {
+      nameField.value = `${nameField.value} ${i18n.copySuffix || '(copy)'}`.trim();
+    }
+    if (modalTitle) {
+      modalTitle.textContent = i18n.cloneTitle || 'Clone monitor';
+    }
+  });
 
   applyFilter();
 })();

@@ -1,0 +1,91 @@
+{{define "content"}}
+{{with .MonitorDetail}}
+<div class="admin-section monitor-detail">
+  <nav class="admin-nav card">
+    <a href="{{$.AppBase}}" class="admin-nav-link">← {{index $.Translations "settings.nav.dashboard"}}</a>
+  </nav>
+
+  <div class="admin-header monitor-detail-header">
+    <div>
+      <h1>{{.Monitor.Name}}</h1>
+      <p class="muted compact">{{.Monitor.Kind}}{{if .Monitor.TLSMode}} / {{.Monitor.TLSMode}}{{end}} · {{.Monitor.Group}} · <span class="break-all">{{.Monitor.Target}}</span></p>
+    </div>
+    <div class="monitor-detail-status">
+      {{if .Monitor.Muted}}<span class="muted-badge" title="{{index $.Translations "dashboard.monitor.muted_until"}} {{.Monitor.MutedUntilLabel}}">🔕 {{index $.Translations "dashboard.monitor.muted_until"}} {{.Monitor.MutedUntilLabel}}</span>{{end}}
+      <span class="status-pill {{.Monitor.StatusClass}}">{{.Monitor.StatusLabel}}</span>
+    </div>
+  </div>
+
+  <section class="stats-grid monitor-detail-uptime">
+    {{range .Uptime}}
+    <article class="card stat-card uptime-tile {{.Class}}">
+      <h2>{{index $.Translations "monitor_detail.uptime"}} · {{.Label}}</h2>
+      <div class="metric">{{.Percent}}</div>
+      <p class="muted compact">Ø {{.AvgLatency}} · {{.Checks}} Checks</p>
+    </article>
+    {{end}}
+  </section>
+
+  <section class="card stack">
+    <h3>{{index $.Translations "monitor_detail.last_90_days"}}</h3>
+    <div class="trend-bars trend-bars-large detail-day-bars">
+      {{range .DayBars}}<span class="trend-bar {{.Class}}" title="{{.Label}}"></span>{{end}}
+    </div>
+  </section>
+
+  <section class="card stack">
+    <h3>{{index $.Translations "monitor_detail.latency_365"}}</h3>
+    {{if .Latency.HasData}}
+    <div class="detail-latency-chart">
+      <div class="detail-latency-axis-y" aria-hidden="true"><span>{{.Latency.MaxLabel}}</span><span>{{.Latency.MidLabel}}</span><span>0 ms</span></div>
+      <svg viewBox="0 0 {{.Latency.Width}} {{.Latency.Height}}" preserveAspectRatio="none" role="img" aria-label="{{index $.Translations "monitor_detail.latency_365"}}">
+        <polyline class="detail-latency-line" points="{{.Latency.Polyline}}" fill="none" vector-effect="non-scaling-stroke"></polyline>
+      </svg>
+    </div>
+    <div class="detail-latency-axis-x muted compact"><span>{{.Latency.StartLabel}}</span><span>{{.Latency.EndLabel}}</span></div>
+    {{else}}
+    <p class="muted">{{index $.Translations "dashboard.trend_detail.no_data"}}</p>
+    {{end}}
+  </section>
+
+  <section class="card stack">
+    <h3>{{index $.Translations "monitor_detail.details"}}</h3>
+    <dl class="detail-facts">
+      <dt>{{index $.Translations "monitor_detail.last_check"}}</dt><dd>{{if .Monitor.LastCheckedAt}}{{.Monitor.LastCheckedAt}}{{else}}—{{end}}</dd>
+      <dt>{{index $.Translations "monitor_detail.last_result"}}</dt><dd class="break-all">{{if .Monitor.LastMessage}}{{.Monitor.LastMessage}}{{else}}—{{end}}</dd>
+      <dt>{{index $.Translations "monitor_detail.latency"}}</dt><dd>{{if .Monitor.LastLatency}}{{.Monitor.LastLatency}}{{else}}—{{end}}</dd>
+      <dt>{{index $.Translations "monitor_detail.interval"}}</dt><dd>{{.Monitor.Interval}} / {{.Monitor.Timeout}}</dd>
+      {{if .Monitor.TLSDaysRemaining}}<dt>{{index $.Translations "monitor_detail.certificate"}}</dt><dd>{{.Monitor.TLSDaysRemaining}} · {{.Monitor.TLSNotAfter}} ({{index $.Translations "monitor_detail.warning_at"}} {{.Monitor.CertWarningDays}})</dd>{{end}}
+    </dl>
+  </section>
+
+  <section class="card stack">
+    <h3>{{index $.Translations "monitor_detail.incidents"}}</h3>
+    {{if .Incidents}}
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>{{index $.Translations "monitor_detail.incident_start"}}</th>
+          <th>{{index $.Translations "monitor_detail.incident_end"}}</th>
+          <th>{{index $.Translations "monitor_detail.incident_duration"}}</th>
+          <th>{{index $.Translations "monitor_detail.incident_cause"}}</th>
+        </tr></thead>
+        <tbody>
+          {{range .Incidents}}
+          <tr>
+            <td>{{.Started}}</td>
+            <td>{{if .Open}}<span class="status-pill status-DOWN">{{index $.Translations "monitor_detail.incident_open"}}</span>{{else}}{{.Resolved}}{{end}}</td>
+            <td>{{.Duration}}</td>
+            <td class="break-all"><span class="event-message-cell">{{.Cause}}</span></td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <p class="muted">{{index $.Translations "monitor_detail.no_incidents"}}</p>
+    {{end}}
+  </section>
+</div>
+{{end}}
+{{end}}

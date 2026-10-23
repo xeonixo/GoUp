@@ -139,7 +139,7 @@ func (c IMAPChecker) checkTLS(ctx context.Context, item Monitor, family TCPAddre
 	}
 
 	applyTLSMetadata(&result, tlsConn.ConnectionState())
-	result.Status, result.Message = finalizeTLSResult(&result, fmt.Sprintf("IMAP TLS ok in %s", formatLatency(result.Latency)))
+	result.Status, result.Message = finalizeTLSResult(&result, fmt.Sprintf("IMAP TLS ok in %s", formatLatency(result.Latency)), item.EffectiveCertWarningDays())
 	return result
 }
 
@@ -222,7 +222,7 @@ func (c IMAPChecker) checkSTARTTLS(ctx context.Context, item Monitor, family TCP
 	result.Latency = time.Since(startedAt)
 
 	applyTLSMetadata(&result, tlsConn.ConnectionState())
-	result.Status, result.Message = finalizeTLSResult(&result, fmt.Sprintf("IMAP STARTTLS ok in %s", formatLatency(result.Latency)))
+	result.Status, result.Message = finalizeTLSResult(&result, fmt.Sprintf("IMAP STARTTLS ok in %s", formatLatency(result.Latency)), item.EffectiveCertWarningDays())
 	return result
 }
 

@@ -12,7 +12,6 @@ import (
 	"time"
 )
 
-const certificateWarningDays = 7
 const maxHTTPSBodyBytes = 1024 * 1024
 
 type HTTPSChecker struct{}
@@ -186,7 +185,7 @@ func (c HTTPSChecker) checkTarget(ctx context.Context, item Monitor, checkedAt t
 		if daysRemaining < 0 {
 			status = StatusDown
 			message = fmt.Sprintf("certificate expired %d days ago", -daysRemaining)
-		} else if daysRemaining <= certificateWarningDays && status == StatusUp {
+		} else if daysRemaining <= item.EffectiveCertWarningDays() && status == StatusUp {
 			status = StatusDegraded
 			message = fmt.Sprintf("certificate expires in %d days", daysRemaining)
 		} else if isSelfSigned && status == StatusUp {

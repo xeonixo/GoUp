@@ -41,3 +41,24 @@ func TestAggregateDailyLatency(t *testing.T) {
 		t.Fatalf("unexpected fully down day: %+v", second)
 	}
 }
+
+func TestAppMuxRegistersMonitorDetailRoute(t *testing.T) {
+	// Registering "/monitors/{id}" next to the literal /monitors/... routes must not panic.
+	s := &Server{}
+	if s.buildAppMux() == nil {
+		t.Fatalf("expected app mux")
+	}
+}
+
+func TestFormatIncidentDuration(t *testing.T) {
+	for d, want := range map[time.Duration]string{
+		30 * time.Second:              "<1m",
+		61 * time.Second:              "1m",
+		2*time.Hour + 5*time.Minute:   "2h 5m",
+		26*time.Hour + 10*time.Minute: "1d 2h",
+	} {
+		if got := formatIncidentDuration(d); got != want {
+			t.Errorf("formatIncidentDuration(%s) = %q, want %q", d, got, want)
+		}
+	}
+}

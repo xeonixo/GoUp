@@ -311,7 +311,8 @@ doneRetrying:
 		r.logger.Error("record monitor state failed", "monitor_id", snapshot.Monitor.ID, "error", err)
 	}
 
-	if transition, ok := buildTransition(snapshot, result); ok {
+	// Muted monitors still record results and state changes; only notifications are skipped.
+	if transition, ok := buildTransition(snapshot, result); ok && !snapshot.Monitor.IsMuted(time.Now()) {
 		for _, notifier := range r.notifiers {
 			if notifier == nil || !notifier.Enabled() {
 				continue

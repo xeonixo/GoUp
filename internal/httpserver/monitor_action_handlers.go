@@ -55,6 +55,79 @@ func (s *Server) handleSetMonitorEnabled(w http.ResponseWriter, r *http.Request)
 	s.dashboardActionRedirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape(message))
 }
 
+// monitorMuteDurations are the mute presets offered in the dashboard.
+var monitorMuteDurations = map[string]time.Duration{
+	"mute_1h":  time.Hour,
+	"mute_8h":  8 * time.Hour,
+	"mute_24h": 24 * time.Hour,
+}
+
+// handleBulkMonitorAction applies one action (enable, pause, mute_*, unmute, delete) to one or
+// more monitors. The single-monitor menu uses it as well, with a single id.
+func (s *Server) handleBulkMonitorAction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	base := s.tenantAppBase(r)
+	appStore, err := s.appStore(r)
+	if err != nil {
+		s.dashboardActionRedirect(w, r, base+"?error="+url.QueryEscape("Tenant konnte nicht aufgelöst werden"))
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.dashboardActionRedirect(w, r, base+"?error="+url.QueryEscape("Formular konnte nicht gelesen werden"))
+		return
+	}
+
+	ids := make([]int64, 0, len(r.Form["id"]))
+	for _, raw := range r.Form["id"] {
+		id, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if err != nil || id <= 0 {
+			s.dashboardActionRedirect(w, r, base+"?error="+url.QueryEscape("Ungültige Monitor-ID"))
+			return
+		}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		s.dashboardActionRedirect(w, r, base+"?error="+url.QueryEscape("Keine Monitore ausgewählt"))
+		return
+	}
+
+	action := strings.TrimSpace(r.FormValue("action"))
+	var updated int64
+	switch action {
+	case "enable", "pause":
+		for _, id := range ids {
+			if err := appStore.SetMonitorEnabled(r.Context(), id, action == "enable"); err == nil {
+				updated++
+			}
+		}
+	case "delete":
+		for _, id := range ids {
+			if err := appStore.DeleteMonitor(r.Context(), id); err == nil {
+				updated++
+			}
+		}
+	case "unmute":
+		updated, err = appStore.SetMonitorsMutedUntil(r.Context(), ids, nil)
+	default:
+		duration, ok := monitorMuteDurations[action]
+		if !ok {
+			s.dashboardActionRedirect(w, r, base+"?error="+url.QueryEscape("Unbekannte Aktion"))
+			return
+		}
+		until := time.Now().UTC().Add(duration)
+		updated, err = appStore.SetMonitorsMutedUntil(r.Context(), ids, &until)
+	}
+	if err != nil {
+		s.dashboardActionRedirect(w, r, base+"?error="+url.QueryEscape("Monitor konnte nicht aktualisiert werden"))
+		return
+	}
+	s.writeAudit(r, "monitor.bulk."+action, "tenant", tenantIDFromRequest(r), fmt.Sprintf("monitor_ids=%v updated=%d", ids, updated))
+	s.dashboardActionRedirect(w, r, base+"?notice="+url.QueryEscape(fmt.Sprintf("%d Monitor(e) aktualisiert", updated)))
+}
+
 // dashboardActionRedirect finishes a dashboard action. Form posts get the usual redirect with
 // notice/error query parameters; fetch requests (Accept: application/json) get the same outcome
 // as localized JSON so the dashboard can update in place without a full page reload.

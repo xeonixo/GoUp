@@ -78,6 +78,10 @@ type monitorView struct {
 	TLSDaysRemaining     string
 	TLSNotAfter          string
 	TLSNotAfterRaw       string
+	Muted                bool
+	MutedUntilRaw        string
+	MutedUntilLabel      string
+	CertWarningDays      int
 }
 
 func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRollup, now time.Time, selectedTrend trendRange, remoteNodeNames map[string]string) []monitorView {
@@ -114,6 +118,12 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 			RetryIntervalSeconds: int(item.Monitor.RetryInterval / time.Second),
 			TrendLabel:           selectedTrend.Label,
 			TrendPoints:          buildTrendPoints(rollupsByMonitor[item.Monitor.ID], now, selectedTrend),
+			Muted:                item.Monitor.IsMuted(now),
+			CertWarningDays:      item.Monitor.EffectiveCertWarningDays(),
+		}
+		if view.Muted {
+			view.MutedUntilRaw = item.Monitor.MutedUntil.UTC().Format(time.RFC3339)
+			view.MutedUntilLabel = item.Monitor.MutedUntil.UTC().Format("2006-01-02 15:04 UTC")
 		}
 		if view.ExecutorKind == "" {
 			view.ExecutorKind = "local"

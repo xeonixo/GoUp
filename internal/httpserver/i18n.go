@@ -153,6 +153,8 @@ var flashMessageTranslationKeys = map[string]string{
 	"WebHook-Secret konnte nicht gespeichert werden":                  "flash.webhook_secret_save_failed",
 	"WebHooks konnten nicht geladen werden":                           "flash.webhooks_load_failed",
 	"Ungültige Importdaten":                                           "flash.import_invalid_data",
+	"Keine Monitore ausgewählt":                                       "flash.no_monitors_selected",
+	"Unbekannte Aktion":                                               "flash.unknown_action",
 }
 
 var (
@@ -162,6 +164,7 @@ var (
 	remoteNodeCreatedPattern   = regexp.MustCompile(`^Remote-Node erstellt\.\s+(REMOTE_NODE_ID=.*)$`)
 	bootstrapKeyRotatedPattern = regexp.MustCompile(`^Bootstrap-Key rotiert\.\s+(REMOTE_NODE_ID=.*)$`)
 	monitorsImportedPattern    = regexp.MustCompile(`^(\d+) Monitor\(e\) importiert$`)
+	monitorsUpdatedPattern     = regexp.MustCompile(`^(\d+) Monitor\(e\) aktualisiert$`)
 )
 
 type translationCatalog struct {
@@ -358,6 +361,9 @@ func localizeFlashMessage(translations map[string]string, message string) string
 	}
 	if matches := monitorsImportedPattern.FindStringSubmatch(message); len(matches) == 2 {
 		return translateFlashMessage(translations, "flash.monitors_imported", message, map[string]string{"count": matches[1]})
+	}
+	if matches := monitorsUpdatedPattern.FindStringSubmatch(message); len(matches) == 2 {
+		return translateFlashMessage(translations, "flash.monitors_updated", message, map[string]string{"count": matches[1]})
 	}
 	return message
 }

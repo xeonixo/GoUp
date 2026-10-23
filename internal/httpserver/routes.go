@@ -249,6 +249,9 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/icons/render", s.requireAuth(http.HandlerFunc(s.handleRenderIcon)))
 	mux.Handle("/monitors/delete", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleDeleteMonitor))))
 	mux.Handle("/monitors/enabled", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSetMonitorEnabled))))
+	// Literal /monitors/... routes above are more specific and take precedence over this pattern.
+	mux.Handle("/monitors/{id}", s.requireAuth(http.HandlerFunc(s.handleMonitorDetail)))
+	mux.Handle("/monitors/bulk", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleBulkMonitorAction))))
 	mux.Handle("/monitors/check-now", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleCheckMonitorNow))))
 	mux.Handle("/monitors/latency-history", s.requireAuth(http.HandlerFunc(s.handleMonitorLatencyHistory)))
 	mux.Handle("/monitors/export", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleMonitorExport))))
