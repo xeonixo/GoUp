@@ -1,10 +1,12 @@
 [changelog]
 header = ""
+# Only the subject line of each commit goes into the notes; bodies and trailers stay in git.
+# Group names carry an HTML comment prefix to control their order; striptags removes it.
 body = """
 {% for group, commits in commits | group_by(attribute="group") %}
-### {{ group }}\n
+### {{ group | striptags | trim }}\n
 {% for commit in commits %}
-- {{ commit.message | upper_first }} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/xeonixo/goup/commit/{{ commit.id }}))\
+- {{ commit.message | split(pat="\n") | first | trim | upper_first }} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/xeonixo/goup/commit/{{ commit.id }}))\
 {% endfor %}
 {% endfor %}\n
 """
@@ -16,17 +18,19 @@ conventional_commits = true
 filter_unconventional = false
 split_commits = false
 commit_parsers = [
-  { message = "^[Ff]eat", group = "Features" },
-  { message = "^[Ff]ix", group = "Bug Fixes" },
-  { message = "^[Pp]erf", group = "Performance" },
-  { message = "^[Rr]efactor", group = "Refactoring" },
-  { message = "^[Rr]efractor", group = "Refactoring" },
-  { message = "^[Dd]ocs", group = "Documentation" },
+  { message = "^[Ff]eat", group = "<!-- 0 -->Features" },
+  { message = "^[Aa]dd", group = "<!-- 0 -->Features" },
+  { message = "^[Ff]ix", group = "<!-- 1 -->Bug Fixes" },
+  { message = "^[Pp]erf", group = "<!-- 2 -->Performance" },
+  { message = "^[Rr]efactor", group = "<!-- 3 -->Refactoring" },
+  { message = "^[Rr]efractor", group = "<!-- 3 -->Refactoring" },
+  { message = "^([Uu]pdate|[Bb]ump) .*(dependenc|deps|toolchain)", group = "<!-- 5 -->Dependencies" },
+  { message = "^[Dd]ocs", group = "<!-- 6 -->Documentation" },
   { message = "^[Cc]hore", skip = true },
   { message = "^[Cc]i", skip = true },
   { message = "^[Ss]tyle", skip = true },
   { message = "^[Tt]est", skip = true },
-  { message = ".*", group = "Changes" },
+  { message = ".*", group = "<!-- 4 -->Changes" },
 ]
 filter_commits = false
 tag_pattern = "v[0-9].*"

@@ -11,7 +11,25 @@ permissions:
   packages: write
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
   build-and-push:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -50,3 +68,5 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,15 +1,19 @@
-FROM golang:1.27-alpine3.24 AS build
+# The build stage runs on the native build platform and cross-compiles for the target,
+# so multi-arch builds do not run the Go compiler under QEMU emulation.
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine3.24 AS build
 WORKDIR /src
 
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
 
-COPY go.mod ./
-RUN go mod download
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
-RUN set -eux; \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    set -eux; \
     export CGO_ENABLED=0; \
     export GOOS=${TARGETOS:-linux}; \
     if [ -n "${TARGETARCH:-}" ]; then export GOARCH="${TARGETARCH}"; fi; \
