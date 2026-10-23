@@ -1,8 +1,10 @@
 package httpserver
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +18,8 @@ type uptimeTileView struct {
 	Percent    string
 	Checks     int
 	AvgLatency string
+	// P95Latency is only set for windows inside the raw result retention.
+	P95Latency string
 	Class      string
 }
 
@@ -106,6 +110,7 @@ func (s *Server) handleMonitorDetail(w http.ResponseWriter, r *http.Request) {
 		Latency:   buildLatencyChart(aggregateDailyLatency(rollups)),
 		Incidents: buildIncidentViews(incidents, now),
 	}
+	s.addP95Latency(r.Context(), appStore, monitorID, detail.Uptime, now)
 	for i := range detail.DayBars {
 		if day, err := time.Parse(time.RFC3339, detail.DayBars[i].BucketRaw); err == nil {
 			detail.DayBars[i].Label = day.Format("2006-01-02") + " · " + detail.DayBars[i].Label
@@ -123,6 +128,40 @@ func (s *Server) handleMonitorDetail(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// p95Windows are the uptime tiles (by index) whose range lies within the minimum raw retention,
+// so a percentile can be computed from the raw results.
+var p95Windows = map[int]time.Duration{0: 24 * time.Hour, 1: 7 * 24 * time.Hour}
+
+func (s *Server) addP95Latency(ctx context.Context, appStore *store.Store, monitorID int64, tiles []uptimeTileView, now time.Time) {
+	for idx, window := range p95Windows {
+		if idx >= len(tiles) {
+			continue
+		}
+		values, err := appStore.ListLatenciesSince(ctx, monitorID, now.Add(-window))
+		if err != nil {
+			s.logger.Warn("load latencies for p95 failed", "monitor_id", monitorID, "error", err)
+			continue
+		}
+		if p95, ok := percentileLatency(values, 95); ok {
+			tiles[idx].P95Latency = fmt.Sprintf("%d ms", p95)
+		}
+	}
+}
+
+// percentileLatency returns the nearest-rank percentile of the values.
+func percentileLatency(values []int, percentile int) (int, bool) {
+	if len(values) == 0 {
+		return 0, false
+	}
+	sorted := append([]int(nil), values...)
+	sort.Ints(sorted)
+	rank := (percentile*len(sorted) + 99) / 100
+	if rank < 1 {
+		rank = 1
+	}
+	return sorted[rank-1], true
+}
+
 // buildUptimeTiles sums the hourly rollups (oldest first) over the usual reporting windows.
 func buildUptimeTiles(rollups []store.MonitorHourlyRollup, now time.Time, translations map[string]string) []uptimeTileView {
 	windows := []struct {
@@ -137,12 +176,12 @@ func buildUptimeTiles(rollups []store.MonitorHourlyRollup, now time.Time, transl
 	}
 	tiles := make([]uptimeTileView, 0, len(windows))
 	for _, window := range windows {
-		total, up, latencyChecks, latencySum := 0, 0, 0, 0
+		effective, up, latencyChecks, latencySum := 0, 0, 0, 0
 		for _, rollup := range rollups {
 			if rollup.HourBucket.Before(window.since.Truncate(time.Hour)) {
 				continue
 			}
-			total += rollup.TotalChecks
+			effective += rollup.EffectiveChecks()
 			up += rollup.UpChecks
 			latencyChecks += rollup.UpChecks + rollup.DegradedChecks
 			latencySum += rollup.LatencySumMS
@@ -151,10 +190,10 @@ func buildUptimeTiles(rollups []store.MonitorHourlyRollup, now time.Time, transl
 		if label == "" {
 			label = window.fallback
 		}
-		tile := uptimeTileView{Label: label, Percent: "—", AvgLatency: "—", Class: "uptime-none", Checks: total}
-		if total > 0 {
-			percent := float64(up) / float64(total) * 100
-			tile.Percent = strconv.FormatFloat(percent, 'f', 2, 64) + "%"
+		tile := uptimeTileView{Label: label, Percent: "—", AvgLatency: "—", Class: "uptime-none", Checks: effective}
+		if effective > 0 {
+			percent := float64(uptimeBasisPoints(up, effective)) / 100
+			tile.Percent = formatUptimePercent(up, effective)
 			switch {
 			case percent >= 99.9:
 				tile.Class = "uptime-good"

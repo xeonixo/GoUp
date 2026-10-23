@@ -14,9 +14,7 @@ import (
 	"goup/internal/config"
 	"goup/internal/httpserver"
 	monitorrunner "goup/internal/monitor"
-	emailnotify "goup/internal/notify/email"
-	matrixnotify "goup/internal/notify/matrix"
-	webhooknotify "goup/internal/notify/webhook"
+	"goup/internal/notify"
 	store "goup/internal/store/sqlite"
 )
 
@@ -335,10 +333,6 @@ func (a *App) checkRemoteNodesHeartbeat(ctx context.Context) {
 			a.logger.Warn("resolve tenant store for remote node heartbeat failed", "tenant_id", node.TenantID, "node_id", node.NodeID, "error", storeErr)
 			continue
 		}
-		matrixEndpointID, emailEndpointID, endpointErr := ensureNotifierEndpoints(ctx, appStore)
-		if endpointErr != nil {
-			continue
-		}
 		tenant, tenantErr := a.controlStore.GetTenantByID(ctx, node.TenantID)
 		if tenantErr != nil {
 			continue
@@ -367,10 +361,15 @@ func (a *App) checkRemoteNodesHeartbeat(ctx context.Context) {
 		if err := a.controlStore.InsertRemoteNodeEvent(ctx, node.TenantID, node.NodeID, eventType, "control-plane", "GoUp", transition.ResultDetail, now); err != nil {
 			a.logger.Warn("record remote node heartbeat status event failed", "node_id", node.NodeID, "event_type", eventType, "error", err)
 		}
-		notifiers := []monitorrunner.Notifier{
-			matrixnotify.NewTenantAdminNotifier(a.controlStore, matrixEndpointID, node.TenantID),
-			emailnotify.NewTenantAdminNotifier(a.controlStore, emailEndpointID, node.TenantID, a.config.BaseURL, tenant.Slug),
-			webhooknotify.NewNotifier(appStore, a.controlStore, node.TenantID),
+		notifiers, buildErr := notify.Build(ctx, a.controlStore, appStore, notify.Options{
+			TenantID:   node.TenantID,
+			TenantSlug: tenant.Slug,
+			BaseURL:    a.config.BaseURL,
+			AdminOnly:  true,
+		})
+		if buildErr != nil {
+			a.logger.Warn("build notifiers for remote node heartbeat failed", "tenant_id", node.TenantID, "error", buildErr)
+			continue
 		}
 		for _, notifier := range notifiers {
 			if notifier == nil || !notifier.Enabled() {
@@ -415,6 +414,25 @@ func (a *App) markRemoteNodeMonitorsUnknown(ctx context.Context, appStore *store
 		previousByID[snapshots[i].Monitor.ID] = &result
 	}
 
+	var notifiers []monitorrunner.Notifier
+	if a.controlStore != nil {
+		tenant, tenantErr := a.controlStore.GetTenantByID(ctx, node.TenantID)
+		if tenantErr != nil {
+			a.logger.Warn("load tenant for offline remote monitors failed", "tenant_id", node.TenantID, "error", tenantErr)
+		} else {
+			var buildErr error
+			notifiers, buildErr = notify.Build(ctx, a.controlStore, appStore, notify.Options{
+				TenantID:   node.TenantID,
+				TenantSlug: tenant.Slug,
+				BaseURL:    a.config.BaseURL,
+			})
+			if buildErr != nil {
+				a.logger.Warn("build notifiers for offline remote monitors failed", "tenant_id", node.TenantID, "error", buildErr)
+			}
+		}
+	}
+	dispatcher := monitorrunner.NewDispatcher(a.logger, appStore, notifiers...)
+
 	nodeName := strings.TrimSpace(node.Name)
 	if nodeName == "" {
 		nodeName = strings.TrimSpace(node.NodeID)
@@ -431,62 +449,9 @@ func (a *App) markRemoteNodeMonitorsUnknown(ctx context.Context, appStore *store
 			Status:    monitorrunner.StatusUnknown,
 			Message:   message,
 		}
-		if err := appStore.SaveMonitorResult(ctx, result); err != nil {
-			a.logger.Warn("save unknown monitor result for offline remote node failed", "tenant_id", node.TenantID, "node_id", node.NodeID, "monitor_id", item.ID, "error", err)
-			continue
-		}
-		if err := appStore.RecordMonitorState(ctx, item.ID, result.Status, result.Message, result.CheckedAt); err != nil {
-			a.logger.Warn("record unknown monitor state for offline remote node failed", "tenant_id", node.TenantID, "node_id", node.NodeID, "monitor_id", item.ID, "error", err)
-			continue
-		}
-		if transition, ok := buildOfflineRemoteMonitorTransition(item, previous, result); ok {
-			a.notifyRemoteMonitorTransition(ctx, appStore, node.TenantID, transition)
-		}
-	}
-}
-
-func buildOfflineRemoteMonitorTransition(item monitorrunner.Monitor, previous *monitorrunner.Result, current monitorrunner.Result) (monitorrunner.Transition, bool) {
-	if previous == nil || previous.Status == current.Status {
-		return monitorrunner.Transition{}, false
-	}
-	return monitorrunner.Transition{
-		Monitor:      item,
-		Previous:     previous.Status,
-		Current:      current.Status,
-		CheckedAt:    current.CheckedAt,
-		ResultDetail: current.Message,
-	}, true
-}
-
-func (a *App) notifyRemoteMonitorTransition(ctx context.Context, appStore *store.Store, tenantID int64, transition monitorrunner.Transition) {
-	if a == nil || a.controlStore == nil || appStore == nil {
-		return
-	}
-	matrixEndpointID, emailEndpointID, endpointErr := ensureNotifierEndpoints(ctx, appStore)
-	if endpointErr != nil {
-		a.logger.Warn("ensure notification endpoints for offline remote monitor failed", "tenant_id", tenantID, "error", endpointErr)
-		return
-	}
-	tenant, tenantErr := a.controlStore.GetTenantByID(ctx, tenantID)
-	if tenantErr != nil {
-		a.logger.Warn("load tenant for offline remote monitor notification failed", "tenant_id", tenantID, "error", tenantErr)
-		return
-	}
-	notifiers := []monitorrunner.Notifier{
-		matrixnotify.NewTenantNotifier(a.controlStore, matrixEndpointID, tenantID),
-		emailnotify.NewNotifier(a.controlStore, emailEndpointID, tenantID, a.config.BaseURL, tenant.Slug),
-		webhooknotify.NewNotifier(appStore, a.controlStore, tenantID),
-	}
-	for _, notifier := range notifiers {
-		if notifier == nil || !notifier.Enabled() {
-			continue
-		}
-		notifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		err := notifier.Notify(notifyCtx, transition)
-		cancel()
-		if err != nil && err != monitorrunner.ErrNoRecipients {
-			a.logger.Warn("offline remote monitor notification failed", "monitor_id", transition.Monitor.ID, "endpoint_id", notifier.EndpointID(), "error", err)
-		}
+		// The shared dispatcher saves the result and announces the change with the same
+		// notifier set, mute handling and retry queue as the local runner.
+		dispatcher.ProcessResult(ctx, monitorrunner.Snapshot{Monitor: item, LastResult: previous}, result)
 	}
 }
 
@@ -622,34 +587,20 @@ func parseLogLevel(value string) slog.Level {
 	}
 }
 
-func ensureNotifierEndpoints(ctx context.Context, s *store.Store) (matrixID, emailID int64, err error) {
-	matrixID, err = s.EnsureSystemNotificationEndpoint(ctx, "matrix", "user-matrix", `{}`, true)
-	if err != nil {
-		return 0, 0, fmt.Errorf("matrix: %w", err)
-	}
-	emailID, err = s.EnsureSystemNotificationEndpoint(ctx, "email", "user-email", `{}`, true)
-	if err != nil {
-		return 0, 0, fmt.Errorf("email: %w", err)
-	}
-	return matrixID, emailID, nil
-}
-
 func buildTenantRunner(ctx context.Context, logger *slog.Logger, controlStore *store.ControlPlaneStore, tenantStores *store.TenantStoreManager, cfg config.Config, tenant store.Tenant) (*monitorrunner.Runner, error) {
 	ts, err := tenantStores.StoreForTenant(ctx, tenant.ID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve tenant db: %w", err)
 	}
-	matrixEndpointID, emailEndpointID, endpointErr := ensureNotifierEndpoints(ctx, ts)
-	if endpointErr != nil {
-		return nil, endpointErr
+	notifiers, err := notify.Build(ctx, controlStore, ts, notify.Options{
+		TenantID:   tenant.ID,
+		TenantSlug: tenant.Slug,
+		BaseURL:    cfg.BaseURL,
+	})
+	if err != nil {
+		return nil, err
 	}
-	runner := monitorrunner.NewRunner(
-		logger,
-		ts,
-		matrixnotify.NewTenantNotifier(controlStore, matrixEndpointID, tenant.ID),
-		emailnotify.NewNotifier(controlStore, emailEndpointID, tenant.ID, cfg.BaseURL, tenant.Slug),
-		webhooknotify.NewNotifier(ts, controlStore, tenant.ID),
-	)
+	runner := monitorrunner.NewRunner(logger, ts, notifiers...)
 	runner.SetWorkers(cfg.MonitorWorkers)
 	return runner, nil
 }

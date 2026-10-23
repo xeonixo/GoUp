@@ -56,6 +56,13 @@ type Monitor struct {
 	MutedUntil *time.Time
 	// CertWarningDays marks a monitor degraded when its certificate expires within this many days.
 	CertWarningDays int
+	// ConfirmAfter is the number of consecutive failed checks needed before a down/degraded
+	// transition is announced; 0 or 1 announces immediately. Recovery is always immediate.
+	ConfirmAfter int
+	// MuteStartStatus is the status the monitor had when its notifications were muted. It is a
+	// pending catch-up marker: once the mute is over the runner compares it with the current
+	// status, sends at most one summary notification and clears it.
+	MuteStartStatus Status
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }

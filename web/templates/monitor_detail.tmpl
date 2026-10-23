@@ -21,7 +21,7 @@
     <article class="card stat-card uptime-tile {{.Class}}">
       <h2>{{index $.Translations "monitor_detail.uptime"}} · {{.Label}}</h2>
       <div class="metric">{{.Percent}}</div>
-      <p class="muted compact">Ø {{.AvgLatency}} · {{.Checks}} Checks</p>
+      <p class="muted compact">Ø {{.AvgLatency}}{{if .P95Latency}} · P95 {{.P95Latency}}{{end}} · {{.Checks}} Checks</p>
     </article>
     {{end}}
   </section>

@@ -183,6 +183,8 @@
   "dashboard.modal.save_button": "Speichern",
   "dashboard.modal.cancel_button": "Abbrechen",
   "dashboard.modal.advanced": "Erweitert: Timeout, Wiederholungen, Benachrichtigung",
+  "dashboard.modal.confirm_after_label": "Alarm nach N Fehlschlägen",
+  "dashboard.modal.confirm_after_hint": "Down- oder Degraded-Alarme werden erst nach so vielen aufeinanderfolgenden fehlgeschlagenen Checks gesendet (1 = sofort). Die Wiederherstellung wird immer sofort gemeldet.",
   "dashboard.modal.cert_warning_days_label": "Zertifikat-Warnung (Tage vor Ablauf)",
   "dashboard.modal.cert_warning_days_hint": "Für HTTPS und TLS: Monitor wird „degraded“, sobald das Zertifikat in so vielen Tagen abläuft.",
   "dashboard.group_icon.search_placeholder": "z. B. mailcow, nextcloud, postgres",
@@ -1006,5 +1008,16 @@
   "admin.provider_form.policy_note": "Neue Benutzer, die sich über diesen Provider anmelden, erhalten die gewählte Rolle; bestehende Mitglieder behalten ihre. Sind Domains gesetzt, dürfen sich nur Benutzer mit verifizierter E-Mail in einer dieser Domains anmelden. Sind Gruppen gesetzt, muss der 'groups'-Claim eine davon enthalten.",
   "settings.users.blocked_title": "Entfernte Benutzer",
   "settings.users.blocked_hint": "Diese Benutzer wurden entfernt und können sich erst nach erneutem Hinzufügen wieder anmelden.",
-  "settings.users.readd_button": "Wieder hinzufügen"
+  "settings.users.readd_button": "Wieder hinzufügen",
+  "layout.refresh_title": "Aktualisieren",
+  "layout.refresh_aria": "Seite aktualisieren",
+  "layout.back_dashboard": "Zurück zum Dashboard",
+  "layout.back_admin": "Zurück zur Admin-Übersicht",
+  "layout.back_tenants": "Zurück zu den Tenants",
+  "layout.back_up": "Zurück",
+  "offline.title": "Keine Verbindung",
+  "offline.message": "GoUp kann den Server gerade nicht erreichen. Prüfe deine Internetverbindung und versuche es erneut.",
+  "offline.retry": "Erneut versuchen",
+  "pwa.shortcut_dashboard": "Dashboard",
+  "pwa.shortcut_history": "Verlauf"
 }

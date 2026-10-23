@@ -82,6 +82,7 @@ type monitorView struct {
 	MutedUntilRaw        string
 	MutedUntilLabel      string
 	CertWarningDays      int
+	ConfirmAfter         int
 }
 
 func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRollup, now time.Time, selectedTrend trendRange, remoteNodeNames map[string]string) []monitorView {
@@ -120,6 +121,7 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 			TrendPoints:          buildTrendPoints(rollupsByMonitor[item.Monitor.ID], now, selectedTrend),
 			Muted:                item.Monitor.IsMuted(now),
 			CertWarningDays:      item.Monitor.EffectiveCertWarningDays(),
+			ConfirmAfter:         max(item.Monitor.ConfirmAfter, 1),
 		}
 		if view.Muted {
 			view.MutedUntilRaw = item.Monitor.MutedUntil.UTC().Format(time.RFC3339)

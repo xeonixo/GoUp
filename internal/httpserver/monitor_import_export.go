@@ -28,6 +28,7 @@ type monitorExportRecord struct {
 	NotifyOnRecovery     bool   `json:"notify_on_recovery"`
 	RetryCount           int    `json:"retry_count"`
 	RetryIntervalSeconds int    `json:"retry_interval_seconds"`
+	ConfirmAfter         int    `json:"confirm_after,omitempty"`
 	ExecutorKind         string `json:"executor_kind"`
 	ExecutorRef          string `json:"executor_ref"`
 }
@@ -54,6 +55,7 @@ type importPreviewRow struct {
 	NotifyOnRecovery     bool
 	RetryCount           int
 	RetryIntervalSeconds int
+	ConfirmAfter         int
 	ExecutorKind         string
 	ExecutorRef          string
 }
@@ -111,6 +113,7 @@ func (s *Server) handleMonitorExport(w http.ResponseWriter, r *http.Request) {
 			NotifyOnRecovery:     m.NotifyOnRecovery,
 			RetryCount:           m.RetryCount,
 			RetryIntervalSeconds: int(m.RetryInterval.Seconds()),
+			ConfirmAfter:         max(m.ConfirmAfter, 1),
 			ExecutorKind:         executorKind,
 			ExecutorRef:          m.ExecutorRef,
 		})
@@ -244,6 +247,7 @@ func (s *Server) handleMonitorImportPreview(w http.ResponseWriter, r *http.Reque
 			NotifyOnRecovery:     rec.NotifyOnRecovery,
 			RetryCount:           rec.RetryCount,
 			RetryIntervalSeconds: rec.RetryIntervalSeconds,
+			ConfirmAfter:         max(rec.ConfirmAfter, 1),
 			ExecutorKind:         executorKind,
 			ExecutorRef:          rec.ExecutorRef,
 		})
@@ -298,6 +302,7 @@ func (s *Server) handleMonitorImportConfirm(w http.ResponseWriter, r *http.Reque
 		}
 		retrySec, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("retry_interval_seconds_" + idx)))
 		retryCount, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("retry_count_" + idx)))
+		confirmAfter, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("confirm_after_" + idx)))
 
 		var expectedStatusCode *int
 		if raw := strings.TrimSpace(r.FormValue("expected_status_code_" + idx)); raw != "" {
@@ -326,6 +331,7 @@ func (s *Server) handleMonitorImportConfirm(w http.ResponseWriter, r *http.Reque
 			NotifyOnRecovery:   r.FormValue("notify_on_recovery_"+idx) == "on",
 			RetryCount:         retryCount,
 			RetryInterval:      time.Duration(retrySec) * time.Second,
+			ConfirmAfter:       confirmAfter,
 			ExecutorKind:       executorKind,
 			ExecutorRef:        strings.TrimSpace(r.FormValue("executor_ref_" + idx)),
 		}

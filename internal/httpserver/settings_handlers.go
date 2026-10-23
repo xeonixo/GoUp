@@ -83,7 +83,7 @@ func (s *Server) handleSettingsUserRoleSave(w http.ResponseWriter, r *http.Reque
 	if userID == user.UserID {
 		user.Role = strings.ToLower(strings.TrimSpace(role))
 		user.SessionVersion++
-		_ = s.sessions.Set(w, *user)
+		_ = s.sessions.SetSecure(w, *user, s.requestIsHTTPS(r))
 	}
 
 	s.writeAudit(r, "tenant_user.role_update", "tenant", user.TenantID, fmt.Sprintf("user_id=%d role=%s", userID, role))
@@ -235,7 +235,7 @@ func (s *Server) handleSettingsLocalUserSave(w http.ResponseWriter, r *http.Requ
 	if userID == user.UserID {
 		if session, err := s.sessionForRequest(r); err == nil {
 			session.Role = role
-			_ = s.sessions.Set(w, *session)
+			_ = s.sessions.SetSecure(w, *session, s.requestIsHTTPS(r))
 		}
 	}
 

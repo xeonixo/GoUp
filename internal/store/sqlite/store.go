@@ -196,6 +196,98 @@ func (s *Store) initSchema(ctx context.Context) error {
 	if err := s.repairCorruptedHistoryTables(ctx); err != nil {
 		return err
 	}
+	if err := s.ensurePhase2Columns(ctx); err != nil {
+		return err
+	}
+	if err := s.ensurePhase2Indexes(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+// tableHasColumn reports whether the table has the named column.
+func (s *Store) tableHasColumn(ctx context.Context, table, column string) (bool, error) {
+	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
+	if err != nil {
+		return false, fmt.Errorf("inspect %s columns: %w", table, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull, pk int
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			return false, fmt.Errorf("scan %s column: %w", table, err)
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("iterate %s columns: %w", table, err)
+	}
+	return false, nil
+}
+
+// ensureColumn adds a column when missing and reports whether it was added.
+func (s *Store) ensureColumn(ctx context.Context, table, column, definition string) (bool, error) {
+	exists, err := s.tableHasColumn(ctx, table, column)
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		return false, nil
+	}
+	if _, err := s.db.ExecContext(ctx, `ALTER TABLE `+table+` ADD COLUMN `+column+` `+definition); err != nil {
+		return false, fmt.Errorf("add %s.%s column: %w", table, column, err)
+	}
+	return true, nil
+}
+
+// ensurePhase2Columns adds the data-quality columns: rollup unknown/maintenance counters,
+// per-monitor flapping protection and mute catch-up state, and the suppressed notification flag.
+func (s *Store) ensurePhase2Columns(ctx context.Context) error {
+	if _, err := s.ensureColumn(ctx, "monitors", "confirm_after", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return err
+	}
+	if _, err := s.ensureColumn(ctx, "monitors", "mute_start_status", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if _, err := s.ensureColumn(ctx, "notification_events", "suppressed", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	addedUnknown, err := s.ensureColumn(ctx, "monitor_hourly_rollups", "unknown_checks", "INTEGER NOT NULL DEFAULT 0")
+	if err != nil {
+		return err
+	}
+	// maintenance_checks is filled by maintenance windows (Phase 6); checks inside a window
+	// count towards total_checks and this column only, never towards up/down/degraded.
+	if _, err := s.ensureColumn(ctx, "monitor_hourly_rollups", "maintenance_checks", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if addedUnknown {
+		// Before this column existed unknown checks were counted in total_checks only.
+		if _, err := s.db.ExecContext(ctx, `
+UPDATE monitor_hourly_rollups
+SET unknown_checks = total_checks - up_checks - down_checks - degraded_checks
+WHERE total_checks > up_checks + down_checks + degraded_checks
+`); err != nil {
+			return fmt.Errorf("backfill rollup unknown_checks: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *Store) ensurePhase2Indexes(ctx context.Context) error {
+	for _, stmt := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_notification_events_monitor_created ON notification_events(monitor_id, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_incidents_monitor ON incidents(monitor_id)`,
+	} {
+		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("create index: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -299,6 +391,7 @@ CREATE TABLE IF NOT EXISTS notification_events (
     created_at DATETIME NOT NULL,
     delivered_at DATETIME,
     error_message TEXT NOT NULL DEFAULT '',
+    suppressed INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY(monitor_id) REFERENCES monitors(id) ON DELETE CASCADE,
     FOREIGN KEY(endpoint_id) REFERENCES notification_endpoints(id) ON DELETE CASCADE
 )
@@ -318,6 +411,8 @@ CREATE TABLE IF NOT EXISTS monitor_hourly_rollups (
 	up_checks INTEGER NOT NULL DEFAULT 0,
 	down_checks INTEGER NOT NULL DEFAULT 0,
 	degraded_checks INTEGER NOT NULL DEFAULT 0,
+	unknown_checks INTEGER NOT NULL DEFAULT 0,
+	maintenance_checks INTEGER NOT NULL DEFAULT 0,
 	latency_sum_ms INTEGER NOT NULL DEFAULT 0,
 	latency_min_ms INTEGER NOT NULL DEFAULT 0,
 	latency_max_ms INTEGER NOT NULL DEFAULT 0,
@@ -678,6 +773,8 @@ CREATE TABLE IF NOT EXISTS monitors (
     retry_interval_seconds INTEGER NOT NULL DEFAULT 0,
     muted_until DATETIME,
     cert_warning_days INTEGER NOT NULL DEFAULT 7,
+    confirm_after INTEGER NOT NULL DEFAULT 1,
+    mute_start_status TEXT NOT NULL DEFAULT '',
     config_json TEXT NOT NULL DEFAULT '{}',
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL
@@ -710,6 +807,8 @@ CREATE TABLE IF NOT EXISTS monitor_hourly_rollups (
 	up_checks INTEGER NOT NULL DEFAULT 0,
 	down_checks INTEGER NOT NULL DEFAULT 0,
 	degraded_checks INTEGER NOT NULL DEFAULT 0,
+	unknown_checks INTEGER NOT NULL DEFAULT 0,
+	maintenance_checks INTEGER NOT NULL DEFAULT 0,
 	latency_sum_ms INTEGER NOT NULL DEFAULT 0,
 	latency_min_ms INTEGER NOT NULL DEFAULT 0,
 	latency_max_ms INTEGER NOT NULL DEFAULT 0,
@@ -763,6 +862,7 @@ CREATE TABLE IF NOT EXISTS notification_events (
     created_at DATETIME NOT NULL,
     delivered_at DATETIME,
     error_message TEXT NOT NULL DEFAULT '',
+    suppressed INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY(monitor_id) REFERENCES monitors(id) ON DELETE CASCADE,
     FOREIGN KEY(endpoint_id) REFERENCES notification_endpoints(id) ON DELETE CASCADE
 );

@@ -3024,10 +3024,112 @@
     };
 
     reformatLiveContent();
-    window.setInterval(() => {
+    const tickClientClock = () => {
       formatClientTimes(document);
       updateMonitorCycleIndicators(document);
-    }, 1000);
+    };
+    // The 1s clock is paused while the page is hidden (saves battery in a
+    // home-screen app) and resumed on visibility change.
+    let clientClockTimer = null;
+    const startClientClock = () => {
+      if (clientClockTimer === null) {
+        clientClockTimer = window.setInterval(tickClientClock, 1000);
+      }
+    };
+    const stopClientClock = () => {
+      if (clientClockTimer !== null) {
+        window.clearInterval(clientClockTimer);
+        clientClockTimer = null;
+      }
+    };
+    if (!document.hidden) {
+      startClientClock();
+    }
+
+    // Bring the dashboard back in sync after the app was suspended (iOS kills
+    // or silently stalls WebSockets in the background) or the network changed.
+    let hiddenSince = document.hidden ? Date.now() : 0;
+    let lastResumeAt = Date.now();
+    const resumeLiveUpdates = (force) => {
+      if (!liveUpdatesEnabled || document.hidden) {
+        return;
+      }
+      // visibilitychange, pageshow and focus often fire together: coalesce.
+      if (force !== true && Date.now() - lastResumeAt < 1500) {
+        return;
+      }
+      lastResumeAt = Date.now();
+      tickClientClock();
+      startClientClock();
+
+      const OPEN = window.WebSocket ? window.WebSocket.OPEN : 1;
+      const CONNECTING = window.WebSocket ? window.WebSocket.CONNECTING : 0;
+      const longHidden = hiddenSince > 0 && Date.now() - hiddenSince > 30000;
+      hiddenSince = 0;
+      if (liveSocket && liveSocket.readyState === OPEN) {
+        if (longHidden) {
+          // A socket that survived a long suspension is usually dead without
+          // having noticed; recycle it. The close handler reconnects.
+          liveReconnectDelayMS = 250;
+          try {
+            liveSocket.close();
+          } catch (_) {
+          }
+        }
+      } else if (!liveSocket || liveSocket.readyState !== CONNECTING) {
+        if (liveReconnectTimer !== null) {
+          window.clearTimeout(liveReconnectTimer);
+          liveReconnectTimer = null;
+        }
+        if (!liveSocket) {
+          liveReconnectDelayMS = 1000;
+          connectLiveUpdates();
+        }
+      }
+      refreshDashboardSnapshot();
+    };
+
+    const refreshDashboardSnapshot = () => {
+      if (!liveUpdatesEnabled || liveSnapshotInFlight || hasOpenDialog()) {
+        return;
+      }
+      liveSnapshotInFlight = true;
+      Promise.resolve(applyLiveSnapshot([])).catch(() => {
+      }).then(() => {
+        liveSnapshotInFlight = false;
+        liveLastReloadAt = Date.now();
+      });
+    };
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        hiddenSince = Date.now();
+        stopClientClock();
+        return;
+      }
+      resumeLiveUpdates(false);
+    });
+    window.addEventListener('pageshow', (event) => {
+      if (event.persisted) {
+        // Restored from the back/forward cache: beforeunload had disabled us.
+        liveUpdatesEnabled = true;
+        hiddenSince = Date.now() - 60000;
+        resumeLiveUpdates(true);
+      }
+    });
+    window.addEventListener('online', () => resumeLiveUpdates(true));
+    window.addEventListener('focus', () => resumeLiveUpdates(false));
+
+    // Topbar refresh button (app.js dispatches "goup:refresh").
+    window.addEventListener('goup:refresh', (event) => {
+      event.preventDefault();
+      hiddenSince = 0;
+      if (liveSocket && liveSocket.readyState === (window.WebSocket ? window.WebSocket.OPEN : 1)) {
+        refreshDashboardSnapshot();
+      } else {
+        resumeLiveUpdates(true);
+      }
+    });
 
     const formatDateValue = (value, format = 'datetime') => {
       if (!value) {
@@ -3209,7 +3311,8 @@
         }
         const status = String(point?.status || '').trim().toLowerCase();
         const latencyMS = Number(point?.latency_ms || 0);
-        const aggregatedChecks = Number(point?.total_checks || 0);
+        // Unknown and maintenance checks are not part of the uptime denominator.
+        const aggregatedChecks = Math.max(0, Number(point?.total_checks || 0) - Number(point?.unknown_checks || 0) - Number(point?.maintenance_checks || 0));
         if (aggregatedChecks > 0) {
           slot.hasStatus = true;
           slot.totalChecks += aggregatedChecks;
@@ -3227,7 +3330,7 @@
           }
           return;
         }
-        if (status) {
+        if (status && status !== 'unknown') {
           slot.status = status;
           slot.hasStatus = true;
           slot.totalChecks += 1;
@@ -3239,7 +3342,7 @@
             slot.degradedChecks += 1;
           }
         }
-        if (Number.isFinite(latencyMS) && latencyMS >= 0 && status !== 'down') {
+        if (Number.isFinite(latencyMS) && latencyMS >= 0 && status !== 'down' && status !== 'unknown') {
           slot.latencyChecks += 1;
           slot.latencySumMS += latencyMS;
           slot.latencyMinMS = slot.latencyChecks === 1 ? latencyMS : Math.min(slot.latencyMinMS, latencyMS);
@@ -3427,7 +3530,7 @@
         when.textContent = formatDateValue(new Date(slot.startMS).toISOString(), timeline.config.format || 'hour');
 
         const result = document.createElement('td');
-        const percent = slot.totalChecks > 0 ? Math.round((slot.upChecks / slot.totalChecks) * 100) : 0;
+        const percent = slot.totalChecks > 0 ? (Math.floor((slot.upChecks * 10000) / slot.totalChecks) / 100).toFixed(2) : '0.00';
         const badge = document.createElement('span');
         badge.className = `history-status-badge status-${String(slot.status || 'unknown').toUpperCase()}`;
         badge.textContent = String(slot.status || 'unknown').toUpperCase();

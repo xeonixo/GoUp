@@ -348,6 +348,11 @@
           </label>
         </div>
         <label>
+          <span>{{index $.Translations "dashboard.modal.confirm_after_label"}}</span>
+          <input type="number" name="confirm_after" id="monitor-confirm-after" min="1" max="10" value="1" inputmode="numeric">
+          <small class="muted compact">{{index $.Translations "dashboard.modal.confirm_after_hint"}}</small>
+        </label>
+        <label>
           <span>{{index $.Translations "dashboard.modal.cert_warning_days_label"}}</span>
           <input type="number" name="cert_warning_days" id="monitor-cert-warning-days" min="1" max="365" value="7" inputmode="numeric">
           <small class="muted compact">{{index $.Translations "dashboard.modal.cert_warning_days_hint"}}</small>
@@ -643,6 +648,7 @@
                   data-retry-interval="{{.RetryIntervalSeconds}}"
                   data-expected-status="{{.ExpectedStatus}}"
                   data-expected-text="{{.ExpectedText}}"
+                  data-confirm-after="{{.ConfirmAfter}}"
                   data-cert-warning-days="{{.CertWarningDays}}">
                   {{index $.Translations "common.edit"}}
                 </button>
@@ -969,6 +975,6 @@
     "bulkSelected": {{index $.Translations "dashboard.bulk.selected"}}
   }
 </script>
-<script src="/static/dashboard.js" defer></script>
-<script src="/static/dashboard-board.js" defer></script>
+<script src="/static/dashboard.js?v={{$.AssetVersion}}" defer></script>
+<script src="/static/dashboard-board.js?v={{$.AssetVersion}}" defer></script>
 {{end}}

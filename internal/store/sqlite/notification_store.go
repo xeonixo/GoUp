@@ -163,6 +163,8 @@ type NotificationEvent struct {
 	CreatedAt   time.Time
 	DeliveredAt *time.Time
 	Error       string
+	// Suppressed marks a notification that was deliberately not sent (e.g. monitor muted).
+	Suppressed bool
 }
 
 type WebhookEndpoint struct {
@@ -382,6 +384,41 @@ INSERT INTO notification_events (
 	return nil
 }
 
+// RecordSuppressedNotificationEvent logs a transition whose notification was intentionally not sent.
+func (s *Store) RecordSuppressedNotificationEvent(ctx context.Context, monitorID int64, endpointID int64, eventType string, reason string) error {
+	eventType = strings.TrimSpace(eventType)
+	if monitorID <= 0 || endpointID <= 0 || eventType == "" {
+		return fmt.Errorf("invalid notification event payload")
+	}
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO notification_events (monitor_id, endpoint_id, event_type, created_at, delivered_at, error_message, suppressed)
+VALUES (?, ?, ?, ?, NULL, ?, 1)
+`, monitorID, endpointID, eventType, time.Now().UTC(), strings.TrimSpace(reason))
+	if err != nil {
+		if isMalformedSQLiteError(err) {
+			return nil
+		}
+		return fmt.Errorf("record suppressed notification event: %w", err)
+	}
+	return nil
+}
+
+// SupersedeNotificationRetry closes a pending retry whose transition is no longer current.
+func (s *Store) SupersedeNotificationRetry(ctx context.Context, id int64, reason string) error {
+	_, err := s.db.ExecContext(ctx, `
+UPDATE notification_retries
+SET status = 'superseded', error_message = ?, updated_at = ?
+WHERE id = ?
+`, strings.TrimSpace(reason), time.Now().UTC(), id)
+	if err != nil {
+		if isMalformedSQLiteError(err) {
+			return nil
+		}
+		return fmt.Errorf("supersede notification retry: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) ListRecentNotificationEvents(ctx context.Context, limit int) ([]NotificationEvent, error) {
 	if limit <= 0 {
 		limit = 20
@@ -397,7 +434,8 @@ SELECT
     e.event_type,
     e.created_at,
     e.delivered_at,
-    e.error_message
+    e.error_message,
+    e.suppressed
 FROM notification_events e
 LEFT JOIN monitors m ON m.id = e.monitor_id
 LEFT JOIN notification_endpoints ne ON ne.id = e.endpoint_id
@@ -426,6 +464,7 @@ LIMIT ?
 			&item.CreatedAt,
 			&deliveredAt,
 			&item.Error,
+			&item.Suppressed,
 		); err != nil {
 			if isMalformedSQLiteError(err) {
 				return []NotificationEvent{}, nil
@@ -478,7 +517,8 @@ SELECT
     e.event_type,
     e.created_at,
     e.delivered_at,
-    e.error_message
+    e.error_message,
+    e.suppressed
 FROM notification_events e
 LEFT JOIN monitors m ON m.id = e.monitor_id
 LEFT JOIN notification_endpoints ne ON ne.id = e.endpoint_id
@@ -507,6 +547,7 @@ LIMIT ? OFFSET ?
 			&item.CreatedAt,
 			&deliveredAt,
 			&item.Error,
+			&item.Suppressed,
 		); err != nil {
 			if isMalformedSQLiteError(err) {
 				return []NotificationEvent{}, nil

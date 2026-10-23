@@ -107,7 +107,7 @@ func (s *Server) handleSettingsProfileSave(w http.ResponseWriter, r *http.Reques
 		session.Email = email
 		session.Name = displayName
 		session.PreferredLanguage = preferredLanguage
-		_ = s.sessions.Set(w, *session)
+		_ = s.sessions.SetSecure(w, *session, s.requestIsHTTPS(r))
 	}
 
 	http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?notice="+url.QueryEscape("Profil gespeichert"), http.StatusSeeOther)

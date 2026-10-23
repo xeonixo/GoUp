@@ -58,13 +58,14 @@ func aggregateServiceTrendPoints(items []monitorView) []trendPointView {
 	}
 	buckets := make([]trendPointView, len(items[0].TrendPoints))
 	type aggregate struct {
-		totalChecks   int
-		upChecks      int
-		latencyChecks int
-		latencySum    int
-		hasMinMS      bool
-		minMS         int
-		maxMS         int
+		totalChecks     int
+		effectiveChecks int
+		upChecks        int
+		latencyChecks   int
+		latencySum      int
+		hasMinMS        bool
+		minMS           int
+		maxMS           int
 	}
 	agg := make([]aggregate, len(items[0].TrendPoints))
 	for i, point := range items[0].TrendPoints {
@@ -77,13 +78,14 @@ func aggregateServiceTrendPoints(items []monitorView) []trendPointView {
 	}
 	for _, item := range items {
 		for i, point := range item.TrendPoints {
-			if i >= len(agg) || point.Checks <= 0 {
+			if i >= len(agg) || point.EffectiveChecks <= 0 {
 				continue
 			}
 			agg[i].totalChecks += point.Checks
-			agg[i].upChecks += int(float64(point.Percent) / 100.0 * float64(point.Checks))
+			agg[i].effectiveChecks += point.EffectiveChecks
+			agg[i].upChecks += point.UpChecks
 			agg[i].latencyChecks += point.LatencyChecks
-			agg[i].latencySum += point.AvgMS * point.LatencyChecks
+			agg[i].latencySum += point.LatencySumMS
 			if point.LatencyChecks > 0 && (!agg[i].hasMinMS || point.MinMS < agg[i].minMS) {
 				agg[i].hasMinMS = true
 				agg[i].minMS = point.MinMS
@@ -94,23 +96,25 @@ func aggregateServiceTrendPoints(items []monitorView) []trendPointView {
 		}
 	}
 	for i := range buckets {
-		if agg[i].totalChecks <= 0 {
+		if agg[i].effectiveChecks <= 0 {
 			continue
 		}
-		percent := int(float64(agg[i].upChecks) / float64(agg[i].totalChecks) * 100)
-		buckets[i].Percent = percent
+		buckets[i].Percent = float64(uptimeBasisPoints(agg[i].upChecks, agg[i].effectiveChecks)) / 100
 		buckets[i].Checks = agg[i].totalChecks
+		buckets[i].UpChecks = agg[i].upChecks
+		buckets[i].EffectiveChecks = agg[i].effectiveChecks
+		buckets[i].LatencySumMS = agg[i].latencySum
 		buckets[i].LatencyChecks = agg[i].latencyChecks
 		if agg[i].latencyChecks > 0 {
 			buckets[i].AvgMS = agg[i].latencySum / agg[i].latencyChecks
 		}
 		buckets[i].MinMS = agg[i].minMS
 		buckets[i].MaxMS = agg[i].maxMS
-		buckets[i].Label = strconv.Itoa(percent) + "% Uptime · " + strconv.Itoa(agg[i].totalChecks) + " Checks"
+		buckets[i].Label = formatUptimePercent(agg[i].upChecks, agg[i].effectiveChecks) + " Uptime · " + strconv.Itoa(agg[i].effectiveChecks) + " Checks"
 		switch {
-		case percent == 100:
+		case agg[i].upChecks == agg[i].effectiveChecks:
 			buckets[i].Class = "trend-up"
-		case percent == 0:
+		case agg[i].upChecks == 0:
 			buckets[i].Class = "trend-down"
 		default:
 			buckets[i].Class = "trend-degraded"
@@ -120,19 +124,15 @@ func aggregateServiceTrendPoints(items []monitorView) []trendPointView {
 }
 
 func summarizeTrendPoints(points []trendPointView) string {
-	totalPercent := 0
-	counted := 0
+	up, effective := 0, 0
 	for _, point := range points {
-		if point.Checks <= 0 {
-			continue
-		}
-		totalPercent += point.Percent
-		counted++
+		up += point.UpChecks
+		effective += point.EffectiveChecks
 	}
-	if counted == 0 {
+	if effective == 0 {
 		return "Keine Daten"
 	}
-	return strconv.Itoa(totalPercent/counted) + "% Uptime"
+	return formatUptimePercent(up, effective) + " Uptime"
 }
 
 func (s *Server) redirectDashboardPath(r *http.Request, trend string, notice string, errText string) string {

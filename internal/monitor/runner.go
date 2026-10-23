@@ -23,6 +23,16 @@ type Store interface {
 	EnqueueNotificationRetry(ctx context.Context, params NotificationRetryParams) error
 	ListDueNotificationRetries(ctx context.Context, now time.Time, limit int) ([]NotificationRetry, error)
 	UpdateNotificationRetry(ctx context.Context, id int64, succeeded bool, errorMessage string, nextAttemptAt time.Time, abandoned bool) error
+	// SupersedeNotificationRetry closes a retry whose transition is no longer the monitor's current state.
+	SupersedeNotificationRetry(ctx context.Context, id int64, reason string) error
+	// RecordSuppressedNotificationEvent logs a transition that was intentionally not announced (muted).
+	RecordSuppressedNotificationEvent(ctx context.Context, monitorID int64, endpointID int64, eventType string, reason string) error
+	// GetMonitorSnapshot loads one monitor with its latest result; sql.ErrNoRows when it was deleted.
+	GetMonitorSnapshot(ctx context.Context, monitorID int64) (Snapshot, error)
+	// RecentMonitorStatuses returns the latest result statuses, newest first.
+	RecentMonitorStatuses(ctx context.Context, monitorID int64, limit int) ([]Status, error)
+	// ClearMonitorMuteStartStatus drops the pending mute catch-up marker.
+	ClearMonitorMuteStartStatus(ctx context.Context, monitorID int64) error
 }
 
 type Checker interface {
@@ -30,18 +40,16 @@ type Checker interface {
 }
 
 type Runner struct {
-	logger              *slog.Logger
-	store               Store
-	notifiers           []Notifier
-	checkers            map[Kind]Checker
-	interval            time.Duration
-	checkTimeoutGrace   time.Duration
-	workers             int
-	workerSem           chan struct{}
-	scheduleMu          sync.Mutex
-	schedule            map[int64]*monitorScheduleState
-	notifyMaxRetries    int
-	notifyRetryInterval time.Duration
+	*Dispatcher
+	logger            *slog.Logger
+	store             Store
+	checkers          map[Kind]Checker
+	interval          time.Duration
+	checkTimeoutGrace time.Duration
+	workers           int
+	workerSem         chan struct{}
+	scheduleMu        sync.Mutex
+	schedule          map[int64]*monitorScheduleState
 }
 
 type monitorScheduleState struct {
@@ -56,6 +64,8 @@ type Transition struct {
 	Current      Status
 	CheckedAt    time.Time
 	ResultDetail string
+	// CatchUp marks the single summary sent after a mute ended; Previous is the status at mute start.
+	CatchUp bool
 }
 
 type Notifier interface {
@@ -79,15 +89,13 @@ type FanoutNotifier interface {
 
 func NewRunner(logger *slog.Logger, store Store, notifiers ...Notifier) *Runner {
 	r := &Runner{
-		logger:              logger,
-		store:               store,
-		notifiers:           notifiers,
-		interval:            5 * time.Second,
-		checkTimeoutGrace:   2 * time.Second,
-		workers:             4,
-		schedule:            make(map[int64]*monitorScheduleState),
-		notifyMaxRetries:    3,
-		notifyRetryInterval: 5 * time.Minute,
+		Dispatcher:        NewDispatcher(logger, store, notifiers...),
+		logger:            logger,
+		store:             store,
+		interval:          5 * time.Second,
+		checkTimeoutGrace: 2 * time.Second,
+		workers:           4,
+		schedule:          make(map[int64]*monitorScheduleState),
 		checkers: map[Kind]Checker{
 			KindHTTPS: HTTPSChecker{},
 			KindTCP:   TCPChecker{},
@@ -114,7 +122,7 @@ func (r *Runner) SetWorkers(workers int) {
 }
 
 func (r *Runner) Run(ctx context.Context) {
-	go r.runRetries(ctx)
+	go r.RunRetries(ctx)
 
 	r.runDueChecks(ctx)
 
@@ -302,66 +310,8 @@ func (r *Runner) runSnapshot(ctx context.Context, snapshot Snapshot, scheduledAt
 	}
 doneRetrying:
 
-	if err := r.store.SaveMonitorResult(ctx, result); err != nil {
-		r.logger.Error("save monitor result failed", "monitor_id", snapshot.Monitor.ID, "error", err)
+	if !r.ProcessResult(ctx, snapshot, result) {
 		return
-	}
-
-	if err := r.store.RecordMonitorState(ctx, snapshot.Monitor.ID, result.Status, result.Message, result.CheckedAt); err != nil {
-		r.logger.Error("record monitor state failed", "monitor_id", snapshot.Monitor.ID, "error", err)
-	}
-
-	// Muted monitors still record results and state changes; only notifications are skipped.
-	if transition, ok := buildTransition(snapshot, result); ok && !snapshot.Monitor.IsMuted(time.Now()) {
-		for _, notifier := range r.notifiers {
-			if notifier == nil || !notifier.Enabled() {
-				continue
-			}
-
-			if fanout, ok := notifier.(FanoutNotifier); ok {
-				r.dispatchFanoutTransition(ctx, snapshot.Monitor.ID, fanout, transition)
-				continue
-			}
-
-			notifyCtx, notifyCancel := context.WithTimeout(ctx, 5*time.Second)
-			err := notifier.Notify(notifyCtx, transition)
-			notifyCancel()
-
-			// No recipients configured – nothing was sent, don't pollute the log.
-			if errors.Is(err, ErrNoRecipients) {
-				continue
-			}
-
-			var deliveredAt *time.Time
-			errorMessage := ""
-			if err == nil {
-				now := time.Now().UTC()
-				deliveredAt = &now
-			} else {
-				errorMessage = err.Error()
-			}
-
-			if recordErr := r.store.RecordNotificationEvent(ctx, snapshot.Monitor.ID, notifier.EndpointID(), notifier.EventType(), deliveredAt, errorMessage); recordErr != nil {
-				r.logger.Error("record notification event failed", "monitor_id", snapshot.Monitor.ID, "endpoint_id", notifier.EndpointID(), "error", recordErr)
-			}
-
-			if err != nil {
-				r.logger.Error("send transition notification failed", "monitor_id", snapshot.Monitor.ID, "endpoint_id", notifier.EndpointID(), "error", err)
-				if r.notifyMaxRetries > 0 {
-					retryParams := NotificationRetryParams{
-						MonitorID:     snapshot.Monitor.ID,
-						EndpointID:    notifier.EndpointID(),
-						EventType:     notifier.EventType(),
-						Transition:    transition,
-						MaxAttempts:   r.notifyMaxRetries,
-						NextAttemptAt: time.Now().UTC().Add(r.notifyRetryInterval),
-					}
-					if enqErr := r.store.EnqueueNotificationRetry(ctx, retryParams); enqErr != nil {
-						r.logger.Error("enqueue notification retry failed", "monitor_id", snapshot.Monitor.ID, "endpoint_id", notifier.EndpointID(), "error", enqErr)
-					}
-				}
-			}
-		}
 	}
 
 	r.logger.Info("monitor check completed",
@@ -465,159 +415,4 @@ func skipRunningSlots(dueAt time.Time, interval time.Duration, now time.Time) (t
 	skipped := int(now.Sub(dueAt)/interval) + 1
 	nextDue := dueAt.Add(time.Duration(skipped) * interval)
 	return nextDue.UTC(), skipped
-}
-
-func (r *Runner) dispatchFanoutTransition(ctx context.Context, monitorID int64, notifier FanoutNotifier, transition Transition) {
-	notifyCtx, notifyCancel := context.WithTimeout(ctx, 5*time.Second)
-	results, err := notifier.NotifyAll(notifyCtx, transition)
-	notifyCancel()
-	if errors.Is(err, ErrNoRecipients) {
-		return
-	}
-	if err != nil {
-		r.logger.Error("send fanout notification failed", "monitor_id", monitorID, "event_type", notifier.EventType(), "error", err)
-		return
-	}
-	for _, result := range results {
-		if result.EndpointID <= 0 {
-			continue
-		}
-		var deliveredAt *time.Time
-		errorMessage := ""
-		if result.Error == nil {
-			now := time.Now().UTC()
-			deliveredAt = &now
-		} else {
-			errorMessage = result.Error.Error()
-		}
-
-		if recordErr := r.store.RecordNotificationEvent(ctx, monitorID, result.EndpointID, notifier.EventType(), deliveredAt, errorMessage); recordErr != nil {
-			r.logger.Error("record notification event failed", "monitor_id", monitorID, "endpoint_id", result.EndpointID, "error", recordErr)
-		}
-		if result.Error != nil && r.notifyMaxRetries > 0 {
-			retryParams := NotificationRetryParams{
-				MonitorID:     monitorID,
-				EndpointID:    result.EndpointID,
-				EventType:     notifier.EventType(),
-				Transition:    transition,
-				MaxAttempts:   r.notifyMaxRetries,
-				NextAttemptAt: time.Now().UTC().Add(r.notifyRetryInterval),
-			}
-			if enqErr := r.store.EnqueueNotificationRetry(ctx, retryParams); enqErr != nil {
-				r.logger.Error("enqueue notification retry failed", "monitor_id", monitorID, "endpoint_id", result.EndpointID, "error", enqErr)
-			}
-		}
-	}
-}
-
-func (r *Runner) runRetries(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			r.dispatchDueRetries(ctx)
-		}
-	}
-}
-
-func (r *Runner) dispatchDueRetries(ctx context.Context) {
-	due, err := r.store.ListDueNotificationRetries(ctx, time.Now().UTC(), 50)
-	if err != nil {
-		r.logger.Error("list due notification retries failed", "error", err)
-		return
-	}
-	for _, retry := range due {
-		r.dispatchRetry(ctx, retry)
-	}
-}
-
-func (r *Runner) dispatchRetry(ctx context.Context, retry NotificationRetry) {
-	var notifier Notifier
-	var fanout FanoutNotifier
-	for _, n := range r.notifiers {
-		if n == nil || !n.Enabled() || n.EventType() != retry.EventType {
-			continue
-		}
-		if candidate, ok := n.(FanoutNotifier); ok {
-			fanout = candidate
-			break
-		}
-		if n.EndpointID() == retry.EndpointID {
-			notifier = n
-			break
-		}
-	}
-	if notifier == nil && fanout == nil {
-		if err := r.store.UpdateNotificationRetry(ctx, retry.ID, false, "notifier not found", time.Time{}, true); err != nil {
-			r.logger.Error("abandon notification retry failed", "retry_id", retry.ID, "error", err)
-		}
-		r.logger.Warn("notification retry abandoned: notifier not found", "retry_id", retry.ID, "endpoint_id", retry.EndpointID)
-		return
-	}
-
-	notifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	var err error
-	if fanout != nil {
-		err = fanout.NotifyEndpoint(notifyCtx, retry.EndpointID, retry.Transition)
-	} else {
-		err = notifier.Notify(notifyCtx, retry.Transition)
-	}
-	cancel()
-
-	if errors.Is(err, ErrNoRecipients) {
-		// No recipients configured — treat as success, no point retrying.
-		if updateErr := r.store.UpdateNotificationRetry(ctx, retry.ID, true, "", time.Time{}, false); updateErr != nil {
-			r.logger.Error("update notification retry failed", "retry_id", retry.ID, "error", updateErr)
-		}
-		return
-	}
-
-	succeeded := err == nil
-	abandoned := !succeeded && (retry.AttemptCount+1) >= retry.MaxAttempts
-	nextAttemptAt := time.Now().UTC().Add(r.notifyRetryInterval)
-
-	errMsg := ""
-	if err != nil {
-		errMsg = err.Error()
-	}
-
-	if updateErr := r.store.UpdateNotificationRetry(ctx, retry.ID, succeeded, errMsg, nextAttemptAt, abandoned); updateErr != nil {
-		r.logger.Error("update notification retry failed", "retry_id", retry.ID, "error", updateErr)
-	}
-
-	if succeeded {
-		now := time.Now().UTC()
-		if recErr := r.store.RecordNotificationEvent(ctx, retry.Transition.Monitor.ID, retry.EndpointID, retry.EventType, &now, ""); recErr != nil {
-			r.logger.Error("record retry success event failed", "retry_id", retry.ID, "error", recErr)
-		}
-		r.logger.Info("notification retry succeeded", "retry_id", retry.ID, "endpoint_id", retry.EndpointID, "attempt", retry.AttemptCount+1)
-	} else if abandoned {
-		r.logger.Warn("notification retry abandoned after max attempts", "retry_id", retry.ID, "endpoint_id", retry.EndpointID, "attempts", retry.AttemptCount+1)
-	} else {
-		r.logger.Warn("notification retry failed, will retry", "retry_id", retry.ID, "endpoint_id", retry.EndpointID, "attempt", retry.AttemptCount+1, "error", err)
-	}
-}
-
-func buildTransition(snapshot Snapshot, result Result) (Transition, bool) {
-	if snapshot.LastResult == nil {
-		return Transition{}, false
-	}
-	previous := snapshot.LastResult.Status
-	if previous == result.Status {
-		return Transition{}, false
-	}
-	if result.Status == StatusUp && !snapshot.Monitor.NotifyOnRecovery {
-		return Transition{}, false
-	}
-
-	return Transition{
-		Monitor:      snapshot.Monitor,
-		Previous:     previous,
-		Current:      result.Status,
-		CheckedAt:    result.CheckedAt,
-		ResultDetail: result.Message,
-	}, true
 }

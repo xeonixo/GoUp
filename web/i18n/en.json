@@ -183,6 +183,8 @@
   "dashboard.modal.save_button": "Save",
   "dashboard.modal.cancel_button": "Cancel",
   "dashboard.modal.advanced": "Advanced: timeout, retries, notifications",
+  "dashboard.modal.confirm_after_label": "Alert after N failures",
+  "dashboard.modal.confirm_after_hint": "Down or degraded alerts are only sent after this many consecutive failed checks (1 = immediately). Recovery is always reported immediately.",
   "dashboard.modal.cert_warning_days_label": "Certificate warning (days before expiry)",
   "dashboard.modal.cert_warning_days_hint": "For HTTPS and TLS: the monitor turns degraded once the certificate expires within this many days.",
   "dashboard.group_icon.search_placeholder": "e.g. mailcow, nextcloud, postgres",
@@ -1006,5 +1008,16 @@
   "admin.provider_form.policy_note": "New users signing in via this provider get the selected role; existing members keep theirs. If domains are set, only users with a verified email in one of these domains may sign in. If groups are set, the 'groups' claim must contain one of them.",
   "settings.users.blocked_title": "Removed users",
   "settings.users.blocked_hint": "These users were removed and cannot sign in again until they are re-added.",
-  "settings.users.readd_button": "Re-add"
+  "settings.users.readd_button": "Re-add",
+  "layout.refresh_title": "Refresh",
+  "layout.refresh_aria": "Refresh page",
+  "layout.back_dashboard": "Back to dashboard",
+  "layout.back_admin": "Back to admin overview",
+  "layout.back_tenants": "Back to tenants",
+  "layout.back_up": "Back",
+  "offline.title": "No connection",
+  "offline.message": "GoUp cannot reach the server right now. Check your internet connection and try again.",
+  "offline.retry": "Try again",
+  "pwa.shortcut_dashboard": "Dashboard",
+  "pwa.shortcut_history": "History"
 }

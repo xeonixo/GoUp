@@ -341,6 +341,7 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 			return time.Duration(v) * time.Second
 		}(),
 		CertWarningDays: func() int { v, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("cert_warning_days"))); return v }(),
+		ConfirmAfter:    func() int { v, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("confirm_after"))); return v }(),
 	}
 
 	if monitorID > 0 {
