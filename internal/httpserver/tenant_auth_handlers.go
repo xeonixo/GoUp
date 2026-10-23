@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"errors"
 	"fmt"
 	"goup/internal/auth"
 	"goup/internal/config"
@@ -128,7 +129,7 @@ func (s *Server) handleTenantAuthLogin(w http.ResponseWriter, r *http.Request) {
 		RedirectURL: s.cfg.BaseURL + "/" + tenantSlug + "/auth/callback",
 	}
 
-	redirectURL, err := s.dynamicOIDC.BeginAuthForTenant(w, r, cfg, s.cfg.SecureCookies())
+	redirectURL, err := s.dynamicOIDC.BeginAuthForTenant(w, r, cfg, s.requestIsHTTPS(r))
 	if err != nil {
 		s.logger.Error("begin tenant oidc auth", "tenant_id", tenant.ID, "error", err)
 		http.Error(w, "unable to start authentication", http.StatusInternalServerError)
@@ -149,7 +150,7 @@ func (s *Server) handleTenantAuthCallback(w http.ResponseWriter, r *http.Request
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	defer s.dynamicOIDC.ClearEphemeralCookiesForTenant(w, tenantSlug, s.cfg.SecureCookies())
+	defer s.dynamicOIDC.ClearEphemeralCookiesForTenant(w, tenantSlug, s.requestIsHTTPS(r))
 
 	tenant, err := s.controlStore.GetTenantBySlug(r.Context(), tenantSlug)
 	if err != nil {
@@ -211,8 +212,20 @@ func (s *Server) handleTenantAuthCallback(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	resolvedUser, err := s.controlStore.UpsertOIDCUserIdentity(r.Context(), provider.ProviderKey, identity.Subject, identity.Email, identity.Name, tenant.ID)
+	if err := provider.CheckOIDCAccess(store.OIDCClaims{Email: identity.Email, EmailVerified: identity.EmailVerified, Groups: identity.Groups}); err != nil {
+		s.logger.Warn("tenant oidc login rejected by provider policy", "tenant_id", tenant.ID, "provider_key", provider.ProviderKey, "error", err)
+		s.writeAudit(r, "tenant_user.login.denied", "tenant", tenant.ID, "oidc policy denied")
+		http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Anmeldung nicht erlaubt"), http.StatusSeeOther)
+		return
+	}
+
+	resolvedUser, err := s.controlStore.UpsertOIDCUserIdentity(r.Context(), provider.ProviderKey, identity.Subject, identity.Email, identity.Name, tenant.ID, provider.DefaultRole)
 	if err != nil {
+		if errors.Is(err, store.ErrMembershipBlocked) {
+			s.writeAudit(r, "tenant_user.login.denied", "tenant", tenant.ID, "oidc user blocked")
+			http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Anmeldung nicht erlaubt"), http.StatusSeeOther)
+			return
+		}
 		s.logger.Error("persist tenant oidc user", "tenant_id", tenant.ID, "error", err)
 		http.Error(w, "unable to persist user", http.StatusInternalServerError)
 		return
@@ -237,9 +250,9 @@ func (s *Server) handleTenantAuthCallback(w http.ResponseWriter, r *http.Request
 		Role:              resolvedUser.Role,
 		AuthProvider:      provider.ProviderKey,
 		SessionVersion:    resolvedUser.SessionVersion,
-		ExpiresAt:         time.Now().Add(12 * time.Hour),
+		ExpiresAt:         time.Now().Add(auth.DefaultSessionLifetime),
 	}
-	if err := s.sessions.Set(w, session); err != nil {
+	if err := s.sessions.SetSecure(w, session, s.requestIsHTTPS(r)); err != nil {
 		http.Error(w, "unable to create session", http.StatusInternalServerError)
 		return
 	}
@@ -330,6 +343,10 @@ func (s *Server) handleTenantLocalLogin(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	sessionLifetime := auth.DefaultSessionLifetime
+	if r.FormValue("remember") != "" {
+		sessionLifetime = auth.RememberedSessionLifetime
+	}
 	session := auth.UserSession{
 		UserID:            resolvedUser.UserID,
 		Subject:           "local:" + strings.ToLower(loginName),
@@ -342,9 +359,9 @@ func (s *Server) handleTenantLocalLogin(w http.ResponseWriter, r *http.Request) 
 		Role:              resolvedUser.Role,
 		AuthProvider:      "local",
 		SessionVersion:    resolvedUser.SessionVersion,
-		ExpiresAt:         time.Now().Add(12 * time.Hour),
+		ExpiresAt:         time.Now().Add(sessionLifetime),
 	}
-	if err := s.sessions.Set(w, session); err != nil {
+	if err := s.sessions.SetSecure(w, session, s.requestIsHTTPS(r)); err != nil {
 		http.Error(w, "unable to create session", http.StatusInternalServerError)
 		return
 	}

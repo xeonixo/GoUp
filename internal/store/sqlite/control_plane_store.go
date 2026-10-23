@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -25,6 +26,72 @@ import (
 )
 
 var tenantSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)
+
+// reservedTenantSlugs are top-level URL paths used by the application itself.
+// A tenant with one of these slugs would shadow (or be shadowed by) a route.
+var reservedTenantSlugs = map[string]struct{}{
+	"node": {}, "admin": {}, "static": {}, "auth": {}, "healthz": {}, "assets": {},
+	"api": {}, "metrics": {}, "status": {}, "sw.js": {}, "manifest": {}, "manifest.json": {},
+	"offline": {}, "favicon": {}, "favicon.ico": {}, "robots.txt": {}, "login": {}, "logout": {},
+	"icons": {}, "health": {}, "ready": {}, "readyz": {}, "livez": {}, "setup": {}, "settings": {},
+}
+
+// IsReservedTenantSlug reports whether slug collides with an application route.
+func IsReservedTenantSlug(slug string) bool {
+	_, ok := reservedTenantSlugs[strings.ToLower(strings.TrimSpace(slug))]
+	return ok
+}
+
+// MinLocalPasswordLength is the minimum length for new or changed local passwords.
+const MinLocalPasswordLength = 12
+
+// ErrPasswordTooShort is returned when a new local password is too short.
+var ErrPasswordTooShort = fmt.Errorf("password must be at least %d characters", MinLocalPasswordLength)
+
+// ErrMembershipBlocked is returned when a removed (blocked) user tries to sign in again.
+var ErrMembershipBlocked = errors.New("tenant membership is blocked")
+
+// ErrOIDCAccessDenied is returned when the identity does not satisfy the provider access policy.
+var ErrOIDCAccessDenied = errors.New("oidc identity not allowed by provider policy")
+
+func validateNewPassword(password string) error {
+	if len([]rune(password)) < MinLocalPasswordLength {
+		return ErrPasswordTooShort
+	}
+	return nil
+}
+
+var (
+	dummyHashOnce sync.Once
+	dummyHash     []byte
+)
+
+// burnPasswordCompare spends the same CPU time as a real password check so
+// that unknown users cannot be distinguished by timing.
+func burnPasswordCompare(password string) {
+	dummyHashOnce.Do(func() {
+		dummyHash, _ = bcrypt.GenerateFromPassword([]byte("goup-dummy-password"), bcrypt.DefaultCost)
+	})
+	_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
+}
+
+// NormalizeTenantRole returns "admin" or "viewer"; anything else yields "viewer".
+func NormalizeTenantRole(role string) string {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "admin":
+		return "admin"
+	default:
+		return "viewer"
+	}
+}
+
+func isValidTenantRole(role string) bool {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "admin", "viewer":
+		return true
+	}
+	return false
+}
 
 type ControlPlaneStore struct {
 	db                 *sql.DB
@@ -67,6 +134,11 @@ type AuthProvider struct {
 	Enabled     bool
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+
+	// OIDC access policy.
+	DefaultRole         string // role granted to newly provisioned members ("viewer" or "admin")
+	AllowedEmailDomains string // comma/newline separated; empty = any
+	AllowedGroups       string // comma/newline separated; empty = any (matched against the "groups" claim)
 }
 
 type LocalUser struct {
@@ -91,6 +163,7 @@ type TenantUser struct {
 	LastLoginAt         *time.Time
 	HasLocalCredentials bool
 	HasOIDCIdentity     bool
+	Blocked             bool
 }
 
 func normalizePreferredLanguage(language string) string {
@@ -168,6 +241,7 @@ type AuditEvent struct {
 }
 
 func OpenControlPlane(ctx context.Context, path string) (*ControlPlaneStore, error) {
+	defer SecureDBFiles(path)
 	dsn := sqliteDSN(path)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -328,22 +402,30 @@ func (s *ControlPlaneStore) getTenant(ctx context.Context, query string, args ..
 	return tenant, nil
 }
 
-func (s *ControlPlaneStore) UpsertOIDCUserIdentity(ctx context.Context, providerKey, subject, email, displayName string, defaultTenantID int64) (ResolvedUser, error) {
+func (s *ControlPlaneStore) UpsertOIDCUserIdentity(ctx context.Context, providerKey, subject, email, displayName string, defaultTenantID int64, defaultRole string) (ResolvedUser, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return ResolvedUser{}, fmt.Errorf("begin control-plane user transaction: %w", err)
 	}
 	defer tx.Rollback()
 
+	defaultRole = NormalizeTenantRole(defaultRole)
 	now := time.Now().UTC()
 	var userID int64
 	err = tx.QueryRowContext(ctx, `
 SELECT user_id
 FROM user_identities
-WHERE provider_key = ? AND provider_subject = ?
-`, providerKey, subject).Scan(&userID)
+WHERE tenant_id = ? AND provider_key = ? AND provider_subject = ?
+`, defaultTenantID, providerKey, subject).Scan(&userID)
 	switch err {
 	case nil:
+		if defaultTenantID > 0 {
+			var blocked int
+			berr := tx.QueryRowContext(ctx, `SELECT blocked FROM tenant_memberships WHERE tenant_id = ? AND user_id = ?`, defaultTenantID, userID).Scan(&blocked)
+			if berr == nil && blocked == 1 {
+				return ResolvedUser{}, ErrMembershipBlocked
+			}
+		}
 		if _, err := tx.ExecContext(ctx, `
 UPDATE users
 SET email = ?, display_name = ?, updated_at = ?, last_login_at = ?
@@ -354,8 +436,8 @@ WHERE id = ?
 		if _, err := tx.ExecContext(ctx, `
 UPDATE user_identities
 SET email = ?, updated_at = ?
-WHERE provider_key = ? AND provider_subject = ?
-`, email, now, providerKey, subject); err != nil {
+WHERE tenant_id = ? AND provider_key = ? AND provider_subject = ?
+`, email, now, defaultTenantID, providerKey, subject); err != nil {
 			return ResolvedUser{}, fmt.Errorf("update oidc identity: %w", err)
 		}
 	case sql.ErrNoRows:
@@ -371,9 +453,9 @@ VALUES (?, ?, '', ?, ?, ?)
 			return ResolvedUser{}, fmt.Errorf("last user id from oidc identity: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `
-INSERT INTO user_identities (user_id, provider_key, provider_subject, email, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?)
-`, userID, providerKey, subject, email, now, now); err != nil {
+INSERT INTO user_identities (user_id, provider_key, provider_subject, email, tenant_id, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+`, userID, providerKey, subject, email, defaultTenantID, now, now); err != nil {
 			return ResolvedUser{}, fmt.Errorf("insert oidc identity: %w", err)
 		}
 	default:
@@ -381,13 +463,22 @@ VALUES (?, ?, ?, ?, ?, ?)
 	}
 
 	if defaultTenantID > 0 {
+		// New members get the provider's default role (viewer unless configured
+		// otherwise). Existing memberships keep their role.
 		if _, err := tx.ExecContext(ctx, `
 INSERT INTO tenant_memberships (tenant_id, user_id, role, created_at, updated_at)
-VALUES (?, ?, 'admin', ?, ?)
+VALUES (?, ?, ?, ?, ?)
 ON CONFLICT(tenant_id, user_id) DO UPDATE SET
 	updated_at = excluded.updated_at
-`, defaultTenantID, userID, now, now); err != nil {
+`, defaultTenantID, userID, defaultRole, now, now); err != nil {
 			return ResolvedUser{}, fmt.Errorf("ensure default tenant membership: %w", err)
+		}
+		var blocked int
+		if err := tx.QueryRowContext(ctx, `SELECT blocked FROM tenant_memberships WHERE tenant_id = ? AND user_id = ?`, defaultTenantID, userID).Scan(&blocked); err != nil {
+			return ResolvedUser{}, fmt.Errorf("check tenant membership state: %w", err)
+		}
+		if blocked == 1 {
+			return ResolvedUser{}, ErrMembershipBlocked
 		}
 	}
 
@@ -421,7 +512,7 @@ FROM local_credentials lc
 JOIN users u ON u.id = lc.user_id
 JOIN tenant_memberships tm ON tm.user_id = u.id
 JOIN tenants t ON t.id = tm.tenant_id
-WHERE tm.tenant_id = ?
+WHERE tm.blocked = 0 AND tm.tenant_id = ?
 	AND lc.tenant_id = ?
 	AND t.active = 1
 	AND lower(lc.login_name) = lower(?)
@@ -429,6 +520,7 @@ LIMIT 1
 `, tenantID, tenantID, loginName).Scan(&userID, &passwordHash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			burnPasswordCompare(password)
 			return ResolvedUser{}, sql.ErrNoRows
 		}
 		return ResolvedUser{}, fmt.Errorf("find local user: %w", err)
@@ -496,7 +588,7 @@ SELECT u.id, tm.tenant_id, lc.login_name, u.email, u.display_name, tm.role, u.la
 FROM tenant_memberships tm
 JOIN users u ON u.id = tm.user_id
 JOIN local_credentials lc ON lc.user_id = u.id
-WHERE tm.tenant_id = ?
+WHERE tm.blocked = 0 AND tm.tenant_id = ?
 ORDER BY lc.login_name ASC
 `, tenantID)
 	if err != nil {
@@ -525,7 +617,7 @@ SELECT u.id, tm.tenant_id, lc.login_name, u.email, u.display_name, tm.role, u.la
 FROM tenant_memberships tm
 JOIN users u ON u.id = tm.user_id
 JOIN local_credentials lc ON lc.user_id = u.id
-WHERE tm.tenant_id = ? AND u.id = ?
+WHERE tm.blocked = 0 AND tm.tenant_id = ? AND u.id = ?
 LIMIT 1
 `, tenantID, userID)
 
@@ -553,7 +645,7 @@ SELECT
 FROM tenant_memberships tm
 JOIN users u ON u.id = tm.user_id
 LEFT JOIN local_credentials lc ON lc.user_id = u.id
-WHERE tm.tenant_id = ?
+WHERE tm.blocked = 0 AND tm.tenant_id = ?
 ORDER BY lower(COALESCE(NULLIF(lc.login_name, ''), NULLIF(u.display_name, ''), u.email, '')), u.id ASC
 `, tenantID)
 	if err != nil {
@@ -584,9 +676,16 @@ func (s *ControlPlaneStore) CreateLocalUserForTenant(ctx context.Context, tenant
 	if loginName == "" || password == "" {
 		return LocalUser{}, fmt.Errorf("login name and password are required")
 	}
+	if err := validateNewPassword(password); err != nil {
+		return LocalUser{}, err
+	}
 	if role == "" {
 		role = "viewer"
 	}
+	if !isValidTenantRole(role) {
+		return LocalUser{}, fmt.Errorf("invalid role %q", role)
+	}
+	role = NormalizeTenantRole(role)
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -643,6 +742,15 @@ func (s *ControlPlaneStore) UpdateLocalUserForTenant(ctx context.Context, tenant
 	}
 	if role == "" {
 		role = "viewer"
+	}
+	if !isValidTenantRole(role) {
+		return LocalUser{}, fmt.Errorf("invalid role %q", role)
+	}
+	role = NormalizeTenantRole(role)
+	if strings.TrimSpace(password) != "" {
+		if err := validateNewPassword(password); err != nil {
+			return LocalUser{}, err
+		}
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -751,12 +859,48 @@ WHERE lc.tenant_id = ? AND lc.user_id = ?
 	return s.RemoveUserFromTenant(ctx, tenantID, userID)
 }
 
+// RemoveUserFromTenant removes a user from a tenant. Users that have an OIDC
+// identity for this tenant are kept as blocked memberships so that a later SSO
+// login does not silently re-create the membership. All other users are
+// deleted (and orphaned user records are cleaned up).
 func (s *ControlPlaneStore) RemoveUserFromTenant(ctx context.Context, tenantID, userID int64) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tenant user remove transaction: %w", err)
 	}
 	defer tx.Rollback()
+
+	var tenantIdentityCount int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM user_identities WHERE user_id = ? AND tenant_id = ?`, userID, tenantID).Scan(&tenantIdentityCount); err != nil {
+		return fmt.Errorf("count tenant user identities: %w", err)
+	}
+
+	if tenantIdentityCount > 0 {
+		result, err := tx.ExecContext(ctx, `
+UPDATE tenant_memberships
+SET blocked = 1, session_version = session_version + 1, updated_at = ?
+WHERE tenant_id = ? AND user_id = ?
+`, time.Now().UTC(), tenantID, userID)
+		if err != nil {
+			return fmt.Errorf("block tenant user membership: %w", err)
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("block tenant user membership rows affected: %w", err)
+		}
+		if affected == 0 {
+			return sql.ErrNoRows
+		}
+		// Local credentials of this tenant are removed; the identity row stays
+		// so the block can be enforced.
+		if _, err := tx.ExecContext(ctx, `DELETE FROM local_credentials WHERE user_id = ? AND tenant_id = ?`, userID, tenantID); err != nil {
+			return fmt.Errorf("delete blocked user local credentials: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit tenant user block transaction: %w", err)
+		}
+		return nil
+	}
 
 	result, err := tx.ExecContext(ctx, `
 DELETE FROM tenant_memberships
@@ -817,7 +961,7 @@ SELECT u.id, tm.tenant_id, lc.login_name, u.email, u.display_name, tm.role, u.la
 FROM tenant_memberships tm
 JOIN users u ON u.id = tm.user_id
 JOIN local_credentials lc ON lc.user_id = u.id
-WHERE tm.tenant_id = ?
+WHERE tm.blocked = 0 AND tm.tenant_id = ?
 	AND lower(u.email) = lower(?)
 LIMIT 1
 `, tenantID, email)
@@ -837,6 +981,9 @@ func (s *ControlPlaneStore) ResetLocalUserPassword(ctx context.Context, tenantID
 	if newPassword == "" {
 		return fmt.Errorf("password is required")
 	}
+	if err := validateNewPassword(newPassword); err != nil {
+		return err
+	}
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
@@ -851,7 +998,7 @@ WHERE user_id = ?
 		SELECT 1
 		FROM tenant_memberships tm
 		WHERE tm.user_id = local_credentials.user_id
-			AND tm.tenant_id = ?
+			AND tm.blocked = 0 AND tm.tenant_id = ?
 	)
 `, string(passwordHash), time.Now().UTC(), userID, tenantID)
 	if err != nil {
@@ -895,7 +1042,7 @@ func (s *ControlPlaneStore) GetTenantMembershipSessionVersion(ctx context.Contex
 SELECT tm.session_version
 FROM tenant_memberships tm
 JOIN tenants t ON t.id = tm.tenant_id
-WHERE tm.tenant_id = ? AND tm.user_id = ? AND t.active = 1
+WHERE tm.blocked = 0 AND tm.tenant_id = ? AND tm.user_id = ? AND t.active = 1
 LIMIT 1
 `, tenantID, userID).Scan(&version)
 	if err != nil {
@@ -961,7 +1108,7 @@ SELECT EXISTS(
 
 func (s *ControlPlaneStore) GetAuthProvidersByTenant(ctx context.Context, tenantID int64) ([]AuthProvider, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, tenant_id, provider_key, kind, display_name, issuer_url, client_id, enabled, created_at, updated_at
+SELECT id, tenant_id, provider_key, kind, display_name, issuer_url, client_id, enabled, created_at, updated_at, default_role, allowed_email_domains, allowed_groups
 FROM auth_providers
 WHERE tenant_id = ? AND enabled = 1
 ORDER BY created_at ASC
@@ -975,10 +1122,11 @@ ORDER BY created_at ASC
 	for rows.Next() {
 		var p AuthProvider
 		var enabled int
-		if err := rows.Scan(&p.ID, &p.TenantID, &p.ProviderKey, &p.Kind, &p.DisplayName, &p.IssuerURL, &p.ClientID, &enabled, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.TenantID, &p.ProviderKey, &p.Kind, &p.DisplayName, &p.IssuerURL, &p.ClientID, &enabled, &p.CreatedAt, &p.UpdatedAt, &p.DefaultRole, &p.AllowedEmailDomains, &p.AllowedGroups); err != nil {
 			return nil, fmt.Errorf("scan auth provider: %w", err)
 		}
 		p.Enabled = enabled == 1
+		p.DefaultRole = NormalizeTenantRole(p.DefaultRole)
 		providers = append(providers, p)
 	}
 	if err := rows.Err(); err != nil {
@@ -990,7 +1138,7 @@ ORDER BY created_at ASC
 // GetAllAuthProvidersByTenant returns all auth providers (enabled and disabled) for a tenant.
 func (s *ControlPlaneStore) GetAllAuthProvidersByTenant(ctx context.Context, tenantID int64) ([]AuthProvider, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, tenant_id, provider_key, kind, display_name, issuer_url, client_id, enabled, created_at, updated_at
+SELECT id, tenant_id, provider_key, kind, display_name, issuer_url, client_id, enabled, created_at, updated_at, default_role, allowed_email_domains, allowed_groups
 FROM auth_providers
 WHERE tenant_id = ?
 ORDER BY created_at ASC
@@ -1004,10 +1152,11 @@ ORDER BY created_at ASC
 	for rows.Next() {
 		var p AuthProvider
 		var enabled int
-		if err := rows.Scan(&p.ID, &p.TenantID, &p.ProviderKey, &p.Kind, &p.DisplayName, &p.IssuerURL, &p.ClientID, &enabled, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.TenantID, &p.ProviderKey, &p.Kind, &p.DisplayName, &p.IssuerURL, &p.ClientID, &enabled, &p.CreatedAt, &p.UpdatedAt, &p.DefaultRole, &p.AllowedEmailDomains, &p.AllowedGroups); err != nil {
 			return nil, fmt.Errorf("scan auth provider: %w", err)
 		}
 		p.Enabled = enabled == 1
+		p.DefaultRole = NormalizeTenantRole(p.DefaultRole)
 		providers = append(providers, p)
 	}
 	if err := rows.Err(); err != nil {
@@ -1061,14 +1210,15 @@ func (s *ControlPlaneStore) GetAuthProvider(ctx context.Context, tenantID int64,
 	var p AuthProvider
 	var enabled int
 	err := s.db.QueryRowContext(ctx, `
-SELECT id, tenant_id, provider_key, kind, display_name, issuer_url, client_id, enabled, created_at, updated_at
+SELECT id, tenant_id, provider_key, kind, display_name, issuer_url, client_id, enabled, created_at, updated_at, default_role, allowed_email_domains, allowed_groups
 FROM auth_providers
 WHERE tenant_id = ? AND provider_key = ?
-`, tenantID, providerKey).Scan(&p.ID, &p.TenantID, &p.ProviderKey, &p.Kind, &p.DisplayName, &p.IssuerURL, &p.ClientID, &enabled, &p.CreatedAt, &p.UpdatedAt)
+`, tenantID, providerKey).Scan(&p.ID, &p.TenantID, &p.ProviderKey, &p.Kind, &p.DisplayName, &p.IssuerURL, &p.ClientID, &enabled, &p.CreatedAt, &p.UpdatedAt, &p.DefaultRole, &p.AllowedEmailDomains, &p.AllowedGroups)
 	if err != nil {
 		return AuthProvider{}, fmt.Errorf("get auth provider: %w", err)
 	}
 	p.Enabled = enabled == 1
+	p.DefaultRole = NormalizeTenantRole(p.DefaultRole)
 	return p, nil
 }
 
@@ -1076,14 +1226,15 @@ func (s *ControlPlaneStore) getAuthProviderByID(ctx context.Context, id int64) (
 	var p AuthProvider
 	var enabled int
 	err := s.db.QueryRowContext(ctx, `
-SELECT id, tenant_id, provider_key, kind, display_name, issuer_url, client_id, enabled, created_at, updated_at
+SELECT id, tenant_id, provider_key, kind, display_name, issuer_url, client_id, enabled, created_at, updated_at, default_role, allowed_email_domains, allowed_groups
 FROM auth_providers
 WHERE id = ?
-`, id).Scan(&p.ID, &p.TenantID, &p.ProviderKey, &p.Kind, &p.DisplayName, &p.IssuerURL, &p.ClientID, &enabled, &p.CreatedAt, &p.UpdatedAt)
+`, id).Scan(&p.ID, &p.TenantID, &p.ProviderKey, &p.Kind, &p.DisplayName, &p.IssuerURL, &p.ClientID, &enabled, &p.CreatedAt, &p.UpdatedAt, &p.DefaultRole, &p.AllowedEmailDomains, &p.AllowedGroups)
 	if err != nil {
 		return AuthProvider{}, fmt.Errorf("get auth provider by id: %w", err)
 	}
 	p.Enabled = enabled == 1
+	p.DefaultRole = NormalizeTenantRole(p.DefaultRole)
 	return p, nil
 }
 
@@ -1116,7 +1267,7 @@ WHERE id = ?
 SELECT t.id, t.slug, t.name, t.db_path, tm.role, tm.session_version
 FROM tenant_memberships tm
 JOIN tenants t ON t.id = tm.tenant_id
-WHERE tm.user_id = ? AND t.active = 1
+WHERE tm.blocked = 0 AND tm.user_id = ? AND t.active = 1
 ORDER BY tm.created_at ASC, tm.id ASC
 LIMIT 1
 `, userID).Scan(&resolved.TenantID, &resolved.TenantSlug, &resolved.TenantName, &resolved.TenantDBPath, &resolved.Role, &resolved.SessionVersion)
@@ -1146,7 +1297,7 @@ WHERE id = ?
 SELECT t.id, t.slug, t.name, t.db_path, tm.role, tm.session_version
 FROM tenant_memberships tm
 JOIN tenants t ON t.id = tm.tenant_id
-WHERE tm.user_id = ? AND tm.tenant_id = ? AND t.active = 1
+WHERE tm.blocked = 0 AND tm.user_id = ? AND tm.tenant_id = ? AND t.active = 1
 LIMIT 1
 `, userID, tenantID).Scan(&resolved.TenantID, &resolved.TenantSlug, &resolved.TenantName, &resolved.TenantDBPath, &resolved.Role, &resolved.SessionVersion)
 	if err != nil {
@@ -1188,9 +1339,10 @@ CREATE TABLE IF NOT EXISTS user_identities (
 	provider_key TEXT NOT NULL,
 	provider_subject TEXT NOT NULL,
 	email TEXT NOT NULL DEFAULT '',
+	tenant_id INTEGER NOT NULL DEFAULT 0,
 	created_at DATETIME NOT NULL,
 	updated_at DATETIME NOT NULL,
-	UNIQUE(provider_key, provider_subject),
+	UNIQUE(tenant_id, provider_key, provider_subject),
 	FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -1200,6 +1352,7 @@ CREATE TABLE IF NOT EXISTS tenant_memberships (
 	user_id INTEGER NOT NULL,
 	role TEXT NOT NULL DEFAULT 'viewer',
 	session_version INTEGER NOT NULL DEFAULT 1,
+	blocked INTEGER NOT NULL DEFAULT 0,
 	created_at DATETIME NOT NULL,
 	updated_at DATETIME NOT NULL,
 	UNIQUE(tenant_id, user_id),
@@ -1216,6 +1369,9 @@ CREATE TABLE IF NOT EXISTS auth_providers (
 	issuer_url TEXT NOT NULL DEFAULT '',
 	client_id TEXT NOT NULL DEFAULT '',
 	enabled INTEGER NOT NULL DEFAULT 1,
+	default_role TEXT NOT NULL DEFAULT 'viewer',
+	allowed_email_domains TEXT NOT NULL DEFAULT '',
+	allowed_groups TEXT NOT NULL DEFAULT '',
 	created_at DATETIME NOT NULL,
 	updated_at DATETIME NOT NULL,
 	UNIQUE(tenant_id, provider_key),
@@ -1318,11 +1474,129 @@ func (s *ControlPlaneStore) initSchema(ctx context.Context) error {
 	if err := s.ensureUserNotificationChannelsTable(ctx); err != nil {
 		return err
 	}
+	if err := s.ensurePushTables(ctx); err != nil {
+		return err
+	}
 	if err := s.ensureRemoteNodesTable(ctx); err != nil {
+		return err
+	}
+	if err := s.ensureAPITokensTable(ctx); err != nil {
 		return err
 	}
 	if err := s.ensureLocalCredentialsTenantScoped(ctx); err != nil {
 		return err
+	}
+	if err := s.ensureMembershipBlockedColumn(ctx); err != nil {
+		return err
+	}
+	if err := s.ensureAuthProviderPolicyColumns(ctx); err != nil {
+		return err
+	}
+	if err := s.ensureUserIdentitiesTenantScoped(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *ControlPlaneStore) ensureMembershipBlockedColumn(ctx context.Context) error {
+	hasColumn, err := s.tableHasColumn(ctx, "tenant_memberships", "blocked")
+	if err != nil {
+		return fmt.Errorf("inspect tenant_memberships blocked column: %w", err)
+	}
+	if hasColumn {
+		return nil
+	}
+	if _, err := s.db.ExecContext(ctx, `ALTER TABLE tenant_memberships ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return fmt.Errorf("add tenant_memberships blocked column: %w", err)
+	}
+	return nil
+}
+
+func (s *ControlPlaneStore) ensureAuthProviderPolicyColumns(ctx context.Context) error {
+	columns := []struct {
+		name string
+		sql  string
+	}{
+		{"default_role", `ALTER TABLE auth_providers ADD COLUMN default_role TEXT NOT NULL DEFAULT 'viewer'`},
+		{"allowed_email_domains", `ALTER TABLE auth_providers ADD COLUMN allowed_email_domains TEXT NOT NULL DEFAULT ''`},
+		{"allowed_groups", `ALTER TABLE auth_providers ADD COLUMN allowed_groups TEXT NOT NULL DEFAULT ''`},
+	}
+	for _, column := range columns {
+		hasColumn, err := s.tableHasColumn(ctx, "auth_providers", column.name)
+		if err != nil {
+			return fmt.Errorf("inspect auth_providers %s column: %w", column.name, err)
+		}
+		if hasColumn {
+			continue
+		}
+		if _, err := s.db.ExecContext(ctx, column.sql); err != nil {
+			return fmt.Errorf("add auth_providers %s column: %w", column.name, err)
+		}
+	}
+	return nil
+}
+
+// ensureUserIdentitiesTenantScoped rebuilds user_identities so that the unique
+// key is (tenant_id, provider_key, provider_subject). Previously the key was
+// (provider_key, provider_subject); provider keys such as "oidc-primary" are
+// shared by every tenant, so an identity of one tenant's IdP could be resolved
+// to the user of another tenant's IdP. Existing rows are copied once per tenant
+// the user is a member of (rows of users without any membership keep tenant 0).
+func (s *ControlPlaneStore) ensureUserIdentitiesTenantScoped(ctx context.Context) error {
+	hasColumn, err := s.tableHasColumn(ctx, "user_identities", "tenant_id")
+	if err != nil {
+		return fmt.Errorf("inspect user_identities tenant_id column: %w", err)
+	}
+	if hasColumn {
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin user_identities migration transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
+CREATE TABLE user_identities_new (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL,
+	provider_key TEXT NOT NULL,
+	provider_subject TEXT NOT NULL,
+	email TEXT NOT NULL DEFAULT '',
+	tenant_id INTEGER NOT NULL DEFAULT 0,
+	created_at DATETIME NOT NULL,
+	updated_at DATETIME NOT NULL,
+	UNIQUE(tenant_id, provider_key, provider_subject),
+	FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+)
+`); err != nil {
+		return fmt.Errorf("create user_identities_new table: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+INSERT OR IGNORE INTO user_identities_new (user_id, provider_key, provider_subject, email, tenant_id, created_at, updated_at)
+SELECT ui.user_id, ui.provider_key, ui.provider_subject, ui.email, tm.tenant_id, ui.created_at, ui.updated_at
+FROM user_identities ui
+JOIN tenant_memberships tm ON tm.user_id = ui.user_id
+`); err != nil {
+		return fmt.Errorf("copy user_identities data: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+INSERT OR IGNORE INTO user_identities_new (user_id, provider_key, provider_subject, email, tenant_id, created_at, updated_at)
+SELECT ui.user_id, ui.provider_key, ui.provider_subject, ui.email, 0, ui.created_at, ui.updated_at
+FROM user_identities ui
+WHERE NOT EXISTS (SELECT 1 FROM tenant_memberships tm WHERE tm.user_id = ui.user_id)
+`); err != nil {
+		return fmt.Errorf("copy orphan user_identities data: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DROP TABLE user_identities`); err != nil {
+		return fmt.Errorf("drop old user_identities table: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `ALTER TABLE user_identities_new RENAME TO user_identities`); err != nil {
+		return fmt.Errorf("rename user_identities_new table: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit user_identities migration: %w", err)
 	}
 	return nil
 }
@@ -1426,7 +1700,7 @@ func (s *ControlPlaneStore) ensureControlPlaneAdminSessionVersionColumn(ctx cont
 
 func (s *ControlPlaneStore) tableHasColumn(ctx context.Context, tableName, columnName string) (bool, error) {
 	switch tableName {
-	case "tenants", "users", "tenant_memberships", "remote_nodes", "local_credentials", "control_plane_admins":
+	case "tenants", "users", "tenant_memberships", "remote_nodes", "local_credentials", "control_plane_admins", "user_identities", "auth_providers":
 	default:
 		return false, fmt.Errorf("unsupported table inspection: %s", tableName)
 	}
@@ -1588,6 +1862,9 @@ func (s *ControlPlaneStore) CreateTenantWithRetention(ctx context.Context, slug,
 	if !tenantSlugPattern.MatchString(slug) {
 		return Tenant{}, fmt.Errorf("invalid tenant slug %q (allowed: a-z, 0-9, -; length 2-63)", slug)
 	}
+	if IsReservedTenantSlug(slug) {
+		return Tenant{}, fmt.Errorf("tenant slug %q is reserved", slug)
+	}
 	if strings.TrimSpace(name) == "" {
 		return Tenant{}, fmt.Errorf("tenant name is required")
 	}
@@ -1715,7 +1992,7 @@ func ensureTenantDatabaseReady(ctx context.Context, dbPath string) error {
 
 	dir := filepath.Dir(trimmedPath)
 	if dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return fmt.Errorf("create tenant db directory: %w", err)
 		}
 	}
@@ -1766,6 +2043,9 @@ func (s *ControlPlaneStore) PurgeTenant(ctx context.Context, id int64) error {
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM tenant_memberships WHERE tenant_id = ?`, id); err != nil {
 		return fmt.Errorf("purge tenant memberships: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM user_identities WHERE tenant_id = ?`, id); err != nil {
+		return fmt.Errorf("purge tenant user identities: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM tenants WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("purge tenant record: %w", err)
@@ -2240,7 +2520,7 @@ SELECT DISTINCT trim(u.email)
 FROM tenant_memberships tm
 JOIN users u ON u.id = tm.user_id
 JOIN tenants t ON t.id = tm.tenant_id
-WHERE tm.tenant_id = ?
+WHERE tm.blocked = 0 AND tm.tenant_id = ?
 	AND t.active = 1
 	AND tm.notifications_email_enabled = 1
 	AND trim(u.email) <> ''
@@ -2296,7 +2576,7 @@ SELECT DISTINCT trim(u.email), COALESCE(NULLIF(trim(u.preferred_language), ''), 
 FROM tenant_memberships tm
 JOIN users u ON u.id = tm.user_id
 JOIN tenants t ON t.id = tm.tenant_id
-WHERE tm.tenant_id = ?
+WHERE tm.blocked = 0 AND tm.tenant_id = ?
 	AND t.active = 1
 	AND tm.notifications_email_enabled = 1
 	AND trim(u.email) <> ''
@@ -2677,6 +2957,7 @@ WHERE unc.tenant_id = ?
 	AND unc.kind = 'matrix'
 	AND unc.enabled = 1
 	AND t.active = 1
+	AND tm.blocked = 0
 `+roleFilter+`
 ORDER BY unc.user_id ASC
 `, tenantID)
@@ -2796,13 +3077,16 @@ func (s *ControlPlaneStore) ChangeOwnLocalPassword(ctx context.Context, tenantID
 	if currentPassword == "" || newPassword == "" {
 		return fmt.Errorf("current password and new password are required")
 	}
+	if err := validateNewPassword(newPassword); err != nil {
+		return err
+	}
 
 	var passwordHash string
 	err := s.db.QueryRowContext(ctx, `
 SELECT lc.password_hash
 FROM local_credentials lc
 JOIN tenant_memberships tm ON tm.user_id = lc.user_id
-WHERE lc.user_id = ? AND tm.tenant_id = ?
+WHERE tm.blocked = 0 AND lc.user_id = ? AND tm.tenant_id = ?
 LIMIT 1
 `, userID, tenantID).Scan(&passwordHash)
 	if err != nil {
@@ -2848,6 +3132,9 @@ type ControlPlaneAdmin struct {
 	PasswordHash   string
 	TOTPEnabled    bool
 	SessionVersion int64
+	// TOTPUnreadable is set when TOTP is enabled but the stored secret cannot
+	// be decrypted (e.g. wrong GOUP_SSO_SECRET_KEY). Login must fail closed.
+	TOTPUnreadable bool
 	// TOTPSecret is the decrypted TOTP secret; only populated when needed.
 	TOTPSecret string
 }
@@ -2894,9 +3181,11 @@ func (s *ControlPlaneStore) GetControlPlaneAdmin(ctx context.Context) (ControlPl
 	if totpCiphertext != "" {
 		decrypted, err := s.decryptSecret(totpCiphertext)
 		if err != nil {
-			// Graceful recovery path for unrecoverable key mismatch: keep
-			// username/password login possible and require TOTP re-setup.
-			a.TOTPEnabled = false
+			// Fail closed: TOTP stays enabled with an empty secret, which can
+			// never validate. Restore the correct GOUP_SSO_SECRET_KEY (or the
+			// GOUP_SESSION_KEY fallback) to regain access.
+			a.TOTPEnabled = true
+			a.TOTPUnreadable = true
 			a.TOTPSecret = ""
 			return a, nil
 		}

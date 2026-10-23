@@ -33,6 +33,11 @@ type webhookPayload struct {
 		Current      string `json:"current"`
 		CheckedAt    string `json:"checked_at"`
 		ResultDetail string `json:"result_detail"`
+		// Set for event_type "status_reminder_webhook" (repeated alert of an ongoing outage).
+		Reminder      bool  `json:"reminder"`
+		OutageSeconds int64 `json:"outage_seconds"`
+		// Set for the single summary sent after a mute or maintenance window ended.
+		CatchUp bool `json:"catch_up"`
 	} `json:"transition"`
 }
 
@@ -96,7 +101,7 @@ func main() {
 		}
 
 		log.Printf(
-			"webhook ok event=%s tenant=%d endpoint=%d monitor=%q kind=%s target=%q transition=%s->%s detail=%q",
+			"webhook ok event=%s tenant=%d endpoint=%d monitor=%q kind=%s target=%q transition=%s->%s outage_seconds=%d detail=%q",
 			coalesce(payload.EventType, eventHeader),
 			payload.TenantID,
 			payload.EndpointID,
@@ -105,6 +110,7 @@ func main() {
 			payload.Monitor.Target,
 			payload.Transition.Previous,
 			payload.Transition.Current,
+			payload.Transition.OutageSeconds,
 			payload.Transition.ResultDetail,
 		)
 

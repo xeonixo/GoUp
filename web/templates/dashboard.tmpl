@@ -6,7 +6,7 @@
   </div>
   <div class="trend-range-toggle topbar-trend-range" role="tablist" aria-label="{{index $.Translations "dashboard.topbar.trend_range"}}">
   {{range .TrendRanges}}
-  <a href="{{$.AppBase}}?trend={{.Value}}" class="button button-small {{if not .Selected}}button-secondary{{end}}" {{if .Selected}}aria-current="page"{{end}}>{{.Label}}</a>
+  <a href="{{$.AppBase}}?trend={{.Value}}" class="button button-small {{if not .Selected}}button-secondary{{end}}" role="tab" aria-selected="{{if .Selected}}true{{else}}false{{end}}" {{if .Selected}}aria-current="page"{{end}}>{{.Label}}</a>
   {{end}}
   </div>
   {{if .IsAdmin}}
@@ -67,7 +67,7 @@
 </section>
 
 {{if .IsAdmin}}
-<dialog id="monitor-modal" class="monitor-modal">
+<dialog id="monitor-modal" class="monitor-modal" aria-modal="true" aria-labelledby="monitor-modal-title">
   <form method="post" action="{{$.AppBase}}monitors/save" class="stack form-grid" id="monitor-form">
     <input type="hidden" name="id" id="monitor-id">
     <div class="modal-header">
@@ -348,6 +348,25 @@
           </label>
         </div>
         <label>
+          <span>{{index $.Translations "dashboard.modal.confirm_after_label"}}</span>
+          <input type="number" name="confirm_after" id="monitor-confirm-after" min="1" max="10" value="1" inputmode="numeric">
+          <small class="muted compact">{{index $.Translations "dashboard.modal.confirm_after_hint"}}</small>
+        </label>
+        <label>
+          <span>{{index $.Translations "dashboard.modal.remind_every_label"}}</span>
+          <select name="remind_every" id="monitor-remind-every">
+            <option value="0">{{index $.Translations "dashboard.modal.remind_every_off"}}</option>
+            <option value="15">15 min</option>
+            <option value="30">30 min</option>
+            <option value="60">1 h</option>
+            <option value="120">2 h</option>
+            <option value="240">4 h</option>
+            <option value="720">12 h</option>
+            <option value="1440">24 h</option>
+          </select>
+          <small class="muted compact">{{index $.Translations "dashboard.modal.remind_every_hint"}}</small>
+        </label>
+        <label>
           <span>{{index $.Translations "dashboard.modal.cert_warning_days_label"}}</span>
           <input type="number" name="cert_warning_days" id="monitor-cert-warning-days" min="1" max="365" value="7" inputmode="numeric">
           <small class="muted compact">{{index $.Translations "dashboard.modal.cert_warning_days_hint"}}</small>
@@ -368,7 +387,7 @@
 {{end}}
 
 {{if .IsAdmin}}
-<dialog id="group-modal" class="monitor-modal group-modal">
+<dialog id="group-modal" class="monitor-modal group-modal" aria-modal="true" aria-labelledby="group-modal-title">
   <form method="post" action="{{$.AppBase}}groups/save" class="stack" id="group-form" enctype="multipart/form-data">
     <input type="hidden" name="group" id="group-name-field">
     <input type="hidden" name="trend" value="{{.TrendValue}}">
@@ -427,7 +446,7 @@
 </dialog>
 {{end}}
 
-<dialog id="trend-detail-modal" class="monitor-modal trend-detail-modal">
+<dialog id="trend-detail-modal" class="monitor-modal trend-detail-modal" aria-modal="true" aria-labelledby="trend-detail-title">
   <div class="stack">
     <div class="modal-header">
       <div>
@@ -471,13 +490,13 @@
         <div class="trend-detail-latency-chart-head">
           <strong>{{index $.Translations "dashboard.trend_detail.latency"}}</strong>
           <div class="trend-detail-latency-ranges" role="tablist" aria-label="{{index $.Translations "dashboard.trend_detail.latency_range"}}">
-            <button class="button button-small trend-detail-latency-range" type="button" data-range="1h" aria-pressed="true">1h</button>
-            <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="6h" aria-pressed="false">6h</button>
-            <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="24h" aria-pressed="false">24h</button>
-            <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="7d" aria-pressed="false">7d</button>
-            <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="30d" aria-pressed="false">30d</button>
-            <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="90d" aria-pressed="false">90d</button>
-            <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="365d" aria-pressed="false">365d</button>
+            <button class="button button-small trend-detail-latency-range" type="button" data-range="1h" role="tab" aria-selected="true">1h</button>
+            <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="6h" role="tab" aria-selected="false">6h</button>
+            <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="24h" role="tab" aria-selected="false">24h</button>
+            <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="7d" role="tab" aria-selected="false">7d</button>
+            <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="30d" role="tab" aria-selected="false">30d</button>
+            <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="90d" role="tab" aria-selected="false">90d</button>
+            <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="365d" role="tab" aria-selected="false">365d</button>
           </div>
         </div>
         <div class="trend-detail-latency-layout">
@@ -507,8 +526,8 @@
         <table class="trend-detail-history-table">
           <thead>
             <tr>
-              <th>{{index $.Translations "dashboard.trend_detail.period"}}</th>
-              <th>{{index $.Translations "dashboard.trend_detail.result"}}</th>
+              <th scope="col">{{index $.Translations "dashboard.trend_detail.period"}}</th>
+              <th scope="col">{{index $.Translations "dashboard.trend_detail.result"}}</th>
             </tr>
           </thead>
           <tbody id="trend-detail-history"></tbody>
@@ -555,7 +574,7 @@
                 </div>
                 <div class="service-summary-right">
                   <span class="service-count" aria-label="{{printf (index $.Translations "dashboard.group.monitor_count_aria") (len .Monitors)}}">{{len .Monitors}}</span>
-                  <span class="status-pill {{.StatusClass}}">{{.StatusLabel}}</span>
+                  <span class="status-pill {{.StatusClass}}">{{if eq .StatusLabel "MAINTENANCE"}}{{index $.Translations "status.maintenance"}}{{else}}{{.StatusLabel}}{{end}}</span>
                   {{if $.IsAdmin}}
                   <details class="action-menu">
                   <summary class="action-menu-trigger" aria-label="{{printf (index $.Translations "dashboard.group.actions_aria") .Title}}">⋯</summary>
@@ -620,7 +639,7 @@
             {{else}}
             <span class="monitor-cycle-indicator" aria-hidden="true"></span>
             {{end}}
-            <span class="status-pill {{.StatusClass}}">{{.StatusLabel}}</span>
+            <span class="status-pill {{.StatusClass}}"{{if .InMaintenance}} title="{{.MaintenanceTitle}}"{{end}}>{{if .InMaintenance}}{{index $.Translations "status.maintenance"}}{{else}}{{.StatusLabel}}{{end}}</span>
             {{if $.IsAdmin}}
             <details class="action-menu">
               <summary class="action-menu-trigger" aria-label="{{printf (index $.Translations "dashboard.monitor.actions_aria") .Name}}">⋯</summary>
@@ -643,6 +662,8 @@
                   data-retry-interval="{{.RetryIntervalSeconds}}"
                   data-expected-status="{{.ExpectedStatus}}"
                   data-expected-text="{{.ExpectedText}}"
+                  data-confirm-after="{{.ConfirmAfter}}"
+                  data-remind-every="{{.RemindEveryMinutes}}"
                   data-cert-warning-days="{{.CertWarningDays}}">
                   {{index $.Translations "common.edit"}}
                 </button>
@@ -676,6 +697,10 @@
                   <button class="action-menu-chip" type="submit" name="action" value="mute_24h">24h</button>
                 </form>
                 {{end}}
+                <form method="post" action="{{$.AppBase}}monitors/bulk" class="action-menu-form js-async-action">
+                  <input type="hidden" name="id" value="{{.ID}}">
+                  <button class="action-menu-item" type="submit" name="action" value="maintenance_1h">{{index $.Translations "dashboard.monitor.maintenance_1h"}}</button>
+                </form>
                 <a href="{{$.AppBase}}monitors/export?id={{.ID}}" class="action-menu-item">{{index $.Translations "dashboard.monitor.export"}}</a>
                 <form method="post" action="{{$.AppBase}}monitors/enabled" class="action-menu-form js-async-action">
                   <input type="hidden" name="id" value="{{.ID}}">
@@ -737,7 +762,7 @@
             </div>
             <div class="monitor-metric">
               <span class="muted">{{index $.Translations "dashboard.monitor.result"}}</span>
-              <strong>{{if eq .KindValue "https"}}{{if .HTTPStatusCode}}HTTP {{.HTTPStatusCode}}{{else}}{{.StatusLabel}}{{end}}{{else}}{{.StatusLabel}}{{end}}</strong>
+              <strong>{{if eq .KindValue "https"}}{{if .HTTPStatusCode}}HTTP {{.HTTPStatusCode}}{{else}}{{if .InMaintenance}}{{index $.Translations "status.maintenance"}}{{else}}{{.StatusLabel}}{{end}}{{end}}{{else}}{{if .InMaintenance}}{{index $.Translations "status.maintenance"}}{{else}}{{.StatusLabel}}{{end}}{{end}}</strong>
             </div>
             <div class="monitor-metric">
               <span class="muted">{{index $.Translations "dashboard.trend_detail.last_check"}}</span>
@@ -826,12 +851,12 @@
     <table>
       <thead>
         <tr>
-          <th>{{index $.Translations "dashboard.state_events.time"}}</th>
-          <th>{{index $.Translations "dashboard.state_events.group"}}</th>
-          <th>{{index $.Translations "dashboard.state_events.monitor"}}</th>
-          <th>{{index $.Translations "dashboard.state_events.from"}}</th>
-          <th>{{index $.Translations "dashboard.state_events.to"}}</th>
-          <th>{{index $.Translations "dashboard.state_events.details"}}</th>
+          <th scope="col">{{index $.Translations "dashboard.state_events.time"}}</th>
+          <th scope="col">{{index $.Translations "dashboard.state_events.group"}}</th>
+          <th scope="col">{{index $.Translations "dashboard.state_events.monitor"}}</th>
+          <th scope="col">{{index $.Translations "dashboard.state_events.from"}}</th>
+          <th scope="col">{{index $.Translations "dashboard.state_events.to"}}</th>
+          <th scope="col">{{index $.Translations "dashboard.state_events.details"}}</th>
         </tr>
       </thead>
       <tbody id="state-events-body">
@@ -873,13 +898,13 @@
     <table>
       <thead>
         <tr>
-          <th>{{index $.Translations "dashboard.notification_events.time"}}</th>
-          <th>{{index $.Translations "dashboard.notification_events.monitor"}}</th>
-          <th>{{index $.Translations "dashboard.notification_events.event"}}</th>
-          <th>{{index $.Translations "dashboard.notification_events.endpoint"}}</th>
-          <th>{{index $.Translations "dashboard.notification_events.result"}}</th>
-          <th>{{index $.Translations "dashboard.notification_events.error"}}</th>
-          <th>{{index $.Translations "dashboard.notification_events.delivered"}}</th>
+          <th scope="col">{{index $.Translations "dashboard.notification_events.time"}}</th>
+          <th scope="col">{{index $.Translations "dashboard.notification_events.monitor"}}</th>
+          <th scope="col">{{index $.Translations "dashboard.notification_events.event"}}</th>
+          <th scope="col">{{index $.Translations "dashboard.notification_events.endpoint"}}</th>
+          <th scope="col">{{index $.Translations "dashboard.notification_events.result"}}</th>
+          <th scope="col">{{index $.Translations "dashboard.notification_events.error"}}</th>
+          <th scope="col">{{index $.Translations "dashboard.notification_events.delivered"}}</th>
         </tr>
       </thead>
       <tbody id="notification-events-body">
@@ -969,6 +994,6 @@
     "bulkSelected": {{index $.Translations "dashboard.bulk.selected"}}
   }
 </script>
-<script src="/static/dashboard.js" defer></script>
-<script src="/static/dashboard-board.js" defer></script>
+<script src="/static/dashboard.js?v={{$.AssetVersion}}" defer></script>
+<script src="/static/dashboard-board.js?v={{$.AssetVersion}}" defer></script>
 {{end}}

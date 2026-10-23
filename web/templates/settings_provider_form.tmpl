@@ -8,6 +8,8 @@
     <a href="{{$.AppBase}}settings/webhooks" class="admin-nav-link">{{index $.Translations "settings.nav.webhooks"}}</a>
     <a href="{{$.AppBase}}settings/providers" class="admin-nav-link is-active">{{index $.Translations "settings.nav.oidc_providers"}}</a>
     <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link">{{index $.Translations "settings.nav.remote_nodes"}}</a>
+    <a href="{{$.AppBase}}settings/status-page" class="admin-nav-link">{{index $.Translations "settings.nav.status_page"}}</a>
+    <a href="{{$.AppBase}}settings/maintenance" class="admin-nav-link">{{index $.Translations "settings.nav.maintenance"}}</a>
     {{end}}
   </nav>
 
@@ -19,7 +21,6 @@
       <p class="eyebrow">{{index $.Translations "settings.providers.title"}}</p>
       <h1>{{if .IsEdit}}{{index $.Translations "admin.provider_form.title_edit"}}{{else}}{{index $.Translations "admin.provider_form.title_new"}}{{end}}</h1>
     </div>
-    <a href="{{$.AppBase}}settings/providers" class="button button-secondary">{{index $.Translations "settings.providers.back_button"}}</a>
   </div>
 
   <form method="POST" action="{{.FormAction}}" class="admin-form card stack settings-panel">
@@ -46,6 +47,28 @@
     <div class="form-group">
       <label for="client_secret">{{index $.Translations "admin.provider_form.client_secret_label"}} {{if .IsEdit}}({{index $.Translations "admin.settings.leave_empty"}}){{else}}*{{end}}</label>
       <input type="password" id="client_secret" name="client_secret" value="" {{if not .IsEdit}}required{{end}} placeholder="{{index $.Translations "admin.provider_form.client_secret_placeholder"}}">
+    </div>
+
+    <div class="form-group">
+      <label for="default_role">{{index $.Translations "admin.provider_form.default_role_label"}}</label>
+      <select id="default_role" name="default_role">
+        <option value="viewer" {{if ne .AdminProvider.DefaultRole "admin"}}selected{{end}}>viewer</option>
+        <option value="admin" {{if eq .AdminProvider.DefaultRole "admin"}}selected{{end}}>admin</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="allowed_email_domains">{{index $.Translations "admin.provider_form.allowed_domains_label"}}</label>
+      <input type="text" id="allowed_email_domains" name="allowed_email_domains" value="{{.AdminProvider.AllowedEmailDomains}}" placeholder="example.com, corp.example.org" autocomplete="off">
+    </div>
+
+    <div class="form-group">
+      <label for="allowed_groups">{{index $.Translations "admin.provider_form.allowed_groups_label"}}</label>
+      <input type="text" id="allowed_groups" name="allowed_groups" value="{{.AdminProvider.AllowedGroups}}" placeholder="goup-users" autocomplete="off">
+    </div>
+
+    <div class="form-note">
+      {{index $.Translations "admin.provider_form.policy_note"}}
     </div>
 
     <div class="form-note">

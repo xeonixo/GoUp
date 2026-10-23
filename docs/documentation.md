@@ -124,6 +124,11 @@ Key startup logic is in `internal/app/app.go`.
 4. State transition is evaluated.
 5. Notifications are sent and notification events are persisted.
 
+Dispatcher details (`internal/monitor/dispatch.go`, shared by the local runner and the remote-node report path):
+
+- **Maintenance windows:** `Store.ActiveMaintenance` (30 s cache, dropped on changes) marks the result `in_maintenance`; no transition is announced, downtime creates no incident/state event, and the status before the window is kept in `monitors.mute_start_status` so that one catch-up summary follows after the window (shared with the mute catch-up).
+- **Outage reminders:** `monitors.remind_every_minutes` / `monitors.last_alert_at`. A down alert (or catch-up to down) stores `last_alert_at`; while the monitor stays down, a `Transition{Reminder: true, OutageDuration}` is sent once the interval has elapsed since `last_alert_at` (stored before sending). Recovery or any non-down result clears it. Muted monitors and monitors in maintenance get none. Reminder retries are stored in `notification_retries` (`reminder`, `outage_seconds`), kept unique per monitor and endpoint, and superseded when stale.
+
 ## 5.3 Remote node flow
 
 1. Agent bootstraps with node ID + bootstrap key.
@@ -140,7 +145,7 @@ Key startup logic is in `internal/app/app.go`.
 ## 6.1 Database topology
 
 - `controlplane.db`: tenants, auth providers, local credentials, remote nodes, global settings, audit artifacts.
-- `<tenant>.db`: monitors, monitor results, incidents/state, notification endpoints/events, aggregation rollups.
+- `<tenant>.db`: monitors, monitor results, incidents/state, notification endpoints/events, aggregation rollups, maintenance windows (`maintenance_windows`, `maintenance_window_targets`).
 
 ## 6.2 SQLite strategy
 
@@ -152,7 +157,7 @@ Key startup logic is in `internal/app/app.go`.
 
 Maintenance includes:
 
-- hourly rollup backfill,
+- hourly rollup backfill (respects `monitor_results.in_maintenance`),
 - raw result retention,
 - rollup retention,
 - monthly `PRAGMA optimize`.
@@ -195,7 +200,17 @@ Implemented middleware controls include:
 - `X-Frame-Options: DENY`,
 - `X-Content-Type-Options: nosniff`,
 - HSTS when HTTPS mode is active,
-- lockout windows for local login, admin access, and bootstrap attempts.
+- lockout windows for local login, admin access, and bootstrap attempts,
+- client IP resolution only trusts `X-Forwarded-For` / `X-Real-IP` / `X-Forwarded-Proto` from `GOUP_TRUSTED_PROXIES` (IPv6 rate-limit keys use the /64),
+- global request body limit (1 MiB; larger only for import and icon upload),
+- `Cache-Control: no-store` on all non-static responses,
+- logout is POST-only and invalidates all sessions of the member,
+- SSRF protection (`internal/netguard`): webhooks, Matrix homeserver and OIDC issuer require https and public addresses (`GOUP_ALLOW_PRIVATE_INTEGRATIONS` opts in to private ones); monitors always refuse cloud metadata addresses (`GOUP_MONITOR_ALLOW_PRIVATE`),
+- initial admin setup requires a setup token (`GOUP_SETUP_TOKEN` or the token logged at startup),
+- OIDC provider policy (default role `viewer`, allowed email domains/groups, `email_verified`), blocked memberships for removed users,
+- reserved tenant slugs (`node`, `admin`, `static`, `auth`, `healthz`, `assets`, `api`, ...),
+- local passwords: minimum 12 characters for new/changed passwords, constant-time handling of unknown users, password-reset links are bound to the current password hash,
+- data directory `0700`, SQLite files `0600` (best effort at startup).
 
 ---
 
@@ -239,7 +254,11 @@ Current runner iteration is sequential per due monitor. This is simple and deter
 - Tenant user-level targets
 - Per-target delivery attempts with error aggregation
 
-## 9.3 Event recording
+## 9.3 Reminders and webhook events
+
+Reminder transitions are rendered by every notifier: email subject `[STILL DOWN] <monitor>: down for <duration>`, Matrix headline "still DOWN for <duration>", Web Push category `reminder`, webhook event `status_reminder_webhook` (payload `transition.reminder = true`, `transition.outage_seconds`). The summary after a mute/maintenance window carries `catch_up = true` in webhook payloads.
+
+## 9.4 Event recording
 
 Notification success/failure is persisted for observability and postmortem analysis.
 

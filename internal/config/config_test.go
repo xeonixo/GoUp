@@ -6,9 +6,9 @@ func validConfig() Config {
 	return Config{
 		Addr:                 ":8080",
 		BaseURL:              "https://example.com",
-		SessionKey:           "session-key-1234567890",
-		SSOSecretKey:         "sso-secret-key-123456",
-		ControlPlaneAdminKey: "admin-cookie-key-123456",
+		SessionKey:           "session-key-1234567890-abcdefghijkl",
+		SSOSecretKey:         "sso-secret-key-123456-abcdefghijklmn",
+		ControlPlaneAdminKey: "admin-cookie-key-123456-abcdefghijklm",
 	}
 }
 
@@ -103,5 +103,52 @@ func TestValidateRequiresLongSecurityKeys(t *testing.T) {
 				t.Fatalf("expected validation error")
 			}
 		})
+	}
+}
+
+func TestValidateRejectsPlaceholderKeys(t *testing.T) {
+	cfg := validConfig()
+	cfg.SessionKey = "replace-with-64-hex-characters-aaaaaaaaaaaaaaaa"
+	if err := validate(cfg); err == nil {
+		t.Fatalf("expected placeholder key to be rejected")
+	}
+}
+
+func TestValidateRejectsIdenticalKeys(t *testing.T) {
+	cfg := validConfig()
+	cfg.SSOSecretKey = cfg.SessionKey
+	if err := validate(cfg); err == nil {
+		t.Fatalf("expected identical keys to be rejected")
+	}
+	cfg = validConfig()
+	cfg.ControlPlaneAdminKey = cfg.SessionKey
+	if err := validate(cfg); err == nil {
+		t.Fatalf("expected identical keys to be rejected")
+	}
+}
+
+func TestValidateRejects31CharKey(t *testing.T) {
+	cfg := validConfig()
+	cfg.SessionKey = "0123456789012345678901234567890"
+	if err := validate(cfg); err == nil {
+		t.Fatalf("expected 31 char key to be rejected")
+	}
+	cfg.SessionKey = "01234567890123456789012345678901"
+	cfg.Auth.Mode = AuthModeLocal
+	if err := validate(cfg); err != nil {
+		t.Fatalf("32 char key must pass: %v", err)
+	}
+}
+
+func TestParseTrustedProxies(t *testing.T) {
+	got, err := ParseTrustedProxies("10.0.0.0/8, 192.168.1.5 ,::1")
+	if err != nil || len(got) != 3 {
+		t.Fatalf("got %v err %v", got, err)
+	}
+	if _, err := ParseTrustedProxies("nonsense"); err == nil {
+		t.Fatalf("expected error")
+	}
+	if got, err := ParseTrustedProxies(""); err != nil || len(got) != 0 {
+		t.Fatalf("empty must be ok")
 	}
 }

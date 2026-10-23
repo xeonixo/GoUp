@@ -39,7 +39,9 @@ Example flow:
 The receiver returns `204 No Content` and logs entries like:
 
 ```text
-webhook ok event=status_transition_webhook tenant=7 endpoint=3 monitor="Public API" kind=https target="https://api.example.com/health" transition=down->up detail="HTTP 200 in 143ms"
+webhook ok event=status_transition_webhook tenant=7 endpoint=3 monitor="Public API" kind=https target="https://api.example.com/health" transition=down->up outage_seconds=0 detail="HTTP 200 in 143ms"
 ```
 
 For manual tests from the UI, event type is `test_notification_webhook`.
+
+While a monitor with a reminder interval stays down, GoUp repeats the alert with event type `status_reminder_webhook` (also in the `X-GoUp-Event` header). Its `transition` has `previous` and `current` both `down`, `"reminder": true` and `"outage_seconds"` with the outage duration. The single summary sent after a mute or maintenance window carries `"catch_up": true`.

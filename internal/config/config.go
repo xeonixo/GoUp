@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -28,6 +29,20 @@ type Config struct {
 	ControlPlaneAdminKey string
 	MonitorWorkers       int
 	Auth                 AuthConfig
+
+	// TrustedProxies lists networks whose X-Forwarded-For / X-Real-IP /
+	// X-Forwarded-Proto headers are honored (GOUP_TRUSTED_PROXIES).
+	TrustedProxies []netip.Prefix
+	// SetupToken is the optional operator supplied admin setup token
+	// (GOUP_SETUP_TOKEN). When empty a random one is generated at startup.
+	SetupToken string
+	// MonitorAllowPrivate lets HTTP(S) monitors target private networks
+	// (GOUP_MONITOR_ALLOW_PRIVATE, default true). Cloud metadata addresses are
+	// always blocked.
+	MonitorAllowPrivate bool
+	// AllowPrivateIntegrations permits private destinations for the Matrix
+	// homeserver and OIDC issuer URLs (GOUP_ALLOW_PRIVATE_INTEGRATIONS).
+	AllowPrivateIntegrations bool
 }
 
 type AuthConfig struct {
@@ -53,6 +68,10 @@ func Load() (Config, error) {
 		SSOSecretKey:         strings.TrimSpace(os.Getenv("GOUP_SSO_SECRET_KEY")),
 		ControlPlaneAdminKey: strings.TrimSpace(os.Getenv("GOUP_CONTROL_PLANE_ADMIN_KEY")),
 		MonitorWorkers:       envIntOrDefault("GOUP_MONITOR_WORKERS", 4),
+		SetupToken:           strings.TrimSpace(os.Getenv("GOUP_SETUP_TOKEN")),
+
+		MonitorAllowPrivate:      envBoolOrDefault("GOUP_MONITOR_ALLOW_PRIVATE", true),
+		AllowPrivateIntegrations: envBoolOrDefault("GOUP_ALLOW_PRIVATE_INTEGRATIONS", false),
 		Auth: AuthConfig{
 			Mode: AuthMode(envOrDefault("GOUP_AUTH_MODE", string(AuthModeDisabled))),
 			OIDC: OIDCConfig{
@@ -63,6 +82,12 @@ func Load() (Config, error) {
 			},
 		},
 	}
+
+	proxies, err := ParseTrustedProxies(os.Getenv("GOUP_TRUSTED_PROXIES"))
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.TrustedProxies = proxies
 
 	if cfg.ControlPlaneDBPath == "" {
 		cfg.ControlPlaneDBPath = filepath.Join(cfg.DataDir, "controlplane.db")
@@ -97,6 +122,18 @@ func validate(cfg Config) error {
 	if err := validateRequiredKey("GOUP_CONTROL_PLANE_ADMIN_KEY", cfg.ControlPlaneAdminKey); err != nil {
 		return err
 	}
+	keys := []struct{ name, value string }{
+		{"GOUP_SESSION_KEY", cfg.SessionKey},
+		{"GOUP_SSO_SECRET_KEY", cfg.SSOSecretKey},
+		{"GOUP_CONTROL_PLANE_ADMIN_KEY", cfg.ControlPlaneAdminKey},
+	}
+	for i := 0; i < len(keys); i++ {
+		for j := i + 1; j < len(keys); j++ {
+			if strings.TrimSpace(keys[i].value) == strings.TrimSpace(keys[j].value) {
+				return fmt.Errorf("%s and %s must not be identical; generate each key independently with: openssl rand -hex 32", keys[i].name, keys[j].name)
+			}
+		}
+	}
 	if cfg.MonitorWorkers < 0 {
 		return errors.New("GOUP_MONITOR_WORKERS must not be negative")
 	}
@@ -130,10 +167,52 @@ func validateRequiredKey(name, value string) error {
 	if value == "" {
 		return fmt.Errorf("%s must not be empty", name)
 	}
-	if len(value) < 16 {
-		return fmt.Errorf("%s must be at least 16 characters", name)
+	if strings.HasPrefix(strings.ToLower(value), "replace-with") {
+		return fmt.Errorf("%s still contains the example placeholder; generate a real key with: openssl rand -hex 32", name)
+	}
+	if len(value) < MinKeyLength {
+		return fmt.Errorf("%s must be at least %d characters (generate one with: openssl rand -hex 32)", name, MinKeyLength)
 	}
 	return nil
+}
+
+// MinKeyLength is the minimum length of the three security keys.
+const MinKeyLength = 32
+
+// ParseTrustedProxies parses a comma separated list of CIDRs or single IPs.
+func ParseTrustedProxies(raw string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if strings.Contains(part, "/") {
+			prefix, err := netip.ParsePrefix(part)
+			if err != nil {
+				return nil, fmt.Errorf("GOUP_TRUSTED_PROXIES: invalid CIDR %q", part)
+			}
+			out = append(out, prefix.Masked())
+			continue
+		}
+		addr, err := netip.ParseAddr(part)
+		if err != nil {
+			return nil, fmt.Errorf("GOUP_TRUSTED_PROXIES: invalid address %q", part)
+		}
+		addr = addr.Unmap()
+		out = append(out, netip.PrefixFrom(addr, addr.BitLen()))
+	}
+	return out, nil
+}
+
+func envBoolOrDefault(key string, fallback bool) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	}
+	return fallback
 }
 
 func envOrDefault(key, fallback string) string {

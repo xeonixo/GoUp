@@ -15,18 +15,17 @@
     <div>
       <h1>{{index $.Translations "admin.nav.providers"}} · {{.AdminTenant.Name}}</h1>
     </div>
-    <a href="/admin/tenants" class="button button-secondary">{{index $.Translations "admin.providers.back_to_tenants"}}</a>
   </div>
 
   <div class="card table-card admin-table-card">
   <table class="admin-table">
     <thead>
       <tr>
-        <th>{{index $.Translations "admin.providers.provider_key"}}</th>
-        <th>{{index $.Translations "common.type"}}</th>
-        <th>{{index $.Translations "common.name"}}</th>
-        <th>{{index $.Translations "common.status"}}</th>
-        <th>{{index $.Translations "common.actions"}}</th>
+        <th scope="col">{{index $.Translations "admin.providers.provider_key"}}</th>
+        <th scope="col">{{index $.Translations "common.type"}}</th>
+        <th scope="col">{{index $.Translations "common.name"}}</th>
+        <th scope="col">{{index $.Translations "common.status"}}</th>
+        <th scope="col">{{index $.Translations "common.actions"}}</th>
       </tr>
     </thead>
     <tbody>

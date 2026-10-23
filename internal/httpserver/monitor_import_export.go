@@ -28,6 +28,8 @@ type monitorExportRecord struct {
 	NotifyOnRecovery     bool   `json:"notify_on_recovery"`
 	RetryCount           int    `json:"retry_count"`
 	RetryIntervalSeconds int    `json:"retry_interval_seconds"`
+	ConfirmAfter         int    `json:"confirm_after,omitempty"`
+	RemindEveryMinutes   int    `json:"remind_every_minutes,omitempty"`
 	ExecutorKind         string `json:"executor_kind"`
 	ExecutorRef          string `json:"executor_ref"`
 }
@@ -54,6 +56,8 @@ type importPreviewRow struct {
 	NotifyOnRecovery     bool
 	RetryCount           int
 	RetryIntervalSeconds int
+	ConfirmAfter         int
+	RemindEveryMinutes   int
 	ExecutorKind         string
 	ExecutorRef          string
 }
@@ -111,6 +115,8 @@ func (s *Server) handleMonitorExport(w http.ResponseWriter, r *http.Request) {
 			NotifyOnRecovery:     m.NotifyOnRecovery,
 			RetryCount:           m.RetryCount,
 			RetryIntervalSeconds: int(m.RetryInterval.Seconds()),
+			ConfirmAfter:         max(m.ConfirmAfter, 1),
+			RemindEveryMinutes:   m.RemindEveryMinutes,
 			ExecutorKind:         executorKind,
 			ExecutorRef:          m.ExecutorRef,
 		})
@@ -244,6 +250,8 @@ func (s *Server) handleMonitorImportPreview(w http.ResponseWriter, r *http.Reque
 			NotifyOnRecovery:     rec.NotifyOnRecovery,
 			RetryCount:           rec.RetryCount,
 			RetryIntervalSeconds: rec.RetryIntervalSeconds,
+			ConfirmAfter:         max(rec.ConfirmAfter, 1),
+			RemindEveryMinutes:   sanitizeRemindEvery(rec.RemindEveryMinutes),
 			ExecutorKind:         executorKind,
 			ExecutorRef:          rec.ExecutorRef,
 		})
@@ -298,6 +306,8 @@ func (s *Server) handleMonitorImportConfirm(w http.ResponseWriter, r *http.Reque
 		}
 		retrySec, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("retry_interval_seconds_" + idx)))
 		retryCount, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("retry_count_" + idx)))
+		confirmAfter, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("confirm_after_" + idx)))
+		remindEvery, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("remind_every_" + idx)))
 
 		var expectedStatusCode *int
 		if raw := strings.TrimSpace(r.FormValue("expected_status_code_" + idx)); raw != "" {
@@ -326,6 +336,8 @@ func (s *Server) handleMonitorImportConfirm(w http.ResponseWriter, r *http.Reque
 			NotifyOnRecovery:   r.FormValue("notify_on_recovery_"+idx) == "on",
 			RetryCount:         retryCount,
 			RetryInterval:      time.Duration(retrySec) * time.Second,
+			ConfirmAfter:       confirmAfter,
+			RemindEveryMinutes: sanitizeRemindEvery(remindEvery),
 			ExecutorKind:       executorKind,
 			ExecutorRef:        strings.TrimSpace(r.FormValue("executor_ref_" + idx)),
 		}
@@ -346,4 +358,13 @@ func (s *Server) handleMonitorImportConfirm(w http.ResponseWriter, r *http.Reque
 
 	notice := fmt.Sprintf("%d Monitor(e) importiert", created)
 	http.Redirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape(notice), http.StatusSeeOther)
+}
+
+// sanitizeRemindEvery maps values that are not an offered reminder interval to "off", so one
+// odd value in an import file does not reject the whole monitor.
+func sanitizeRemindEvery(minutes int) int {
+	if monitor.ValidRemindEvery(minutes) {
+		return minutes
+	}
+	return 0
 }

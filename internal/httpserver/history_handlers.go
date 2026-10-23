@@ -119,10 +119,13 @@ type aggregatedLatencyPoint struct {
 	UpChecks       int    `json:"up_checks"`
 	DownChecks     int    `json:"down_checks"`
 	DegradedChecks int    `json:"degraded_checks"`
-	LatencyChecks  int    `json:"latency_checks"`
-	LatencySumMS   int    `json:"latency_sum_ms"`
-	LatencyMinMS   int    `json:"latency_min_ms"`
-	LatencyMaxMS   int    `json:"latency_max_ms"`
+	// UnknownChecks and MaintenanceChecks are part of TotalChecks but not of the uptime denominator.
+	UnknownChecks     int `json:"unknown_checks"`
+	MaintenanceChecks int `json:"maintenance_checks"`
+	LatencyChecks     int `json:"latency_checks"`
+	LatencySumMS      int `json:"latency_sum_ms"`
+	LatencyMinMS      int `json:"latency_min_ms"`
+	LatencyMaxMS      int `json:"latency_max_ms"`
 }
 
 func (s *Server) writeAggregatedLatencyHistory(w http.ResponseWriter, r *http.Request, appStore *store.Store, monitorID int64, rangeValue string, days int) {
@@ -180,6 +183,8 @@ func aggregateDailyLatency(rollups []store.MonitorHourlyRollup) []aggregatedLate
 		current.UpChecks += rollup.UpChecks
 		current.DownChecks += rollup.DownChecks
 		current.DegradedChecks += rollup.DegradedChecks
+		current.UnknownChecks += rollup.UnknownChecks
+		current.MaintenanceChecks += rollup.MaintenanceChecks
 		latencyChecks := rollup.UpChecks + rollup.DegradedChecks
 		if latencyChecks == 0 {
 			continue

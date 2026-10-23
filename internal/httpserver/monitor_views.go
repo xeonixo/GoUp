@@ -82,9 +82,15 @@ type monitorView struct {
 	MutedUntilRaw        string
 	MutedUntilLabel      string
 	CertWarningDays      int
+	ConfirmAfter         int
+	RemindEveryMinutes   int
+	// InMaintenance is true while a maintenance window covers the (enabled) monitor; the status
+	// then reads MAINTENANCE instead of the real result.
+	InMaintenance    bool
+	MaintenanceTitle string
 }
 
-func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRollup, now time.Time, selectedTrend trendRange, remoteNodeNames map[string]string) []monitorView {
+func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRollup, now time.Time, selectedTrend trendRange, remoteNodeNames map[string]string, maintenance monitor.MaintenanceSet) []monitorView {
 	rollupsByMonitor := groupRollupsByMonitor(rollups)
 	views := make([]monitorView, 0, len(items))
 	for _, item := range items {
@@ -120,6 +126,8 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 			TrendPoints:          buildTrendPoints(rollupsByMonitor[item.Monitor.ID], now, selectedTrend),
 			Muted:                item.Monitor.IsMuted(now),
 			CertWarningDays:      item.Monitor.EffectiveCertWarningDays(),
+			ConfirmAfter:         max(item.Monitor.ConfirmAfter, 1),
+			RemindEveryMinutes:   item.Monitor.RemindEveryMinutes,
 		}
 		if view.Muted {
 			view.MutedUntilRaw = item.Monitor.MutedUntil.UTC().Format(time.RFC3339)
@@ -182,6 +190,12 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 			view.StatusLabel = "PAUSED"
 			view.StatusClass = "status-PAUSED"
 			view.StatusSummary = "Monitor is paused"
+		} else if window, ok := maintenance.Active(item.Monitor.ID, item.Monitor.Group, now); ok {
+			view.InMaintenance = true
+			view.MaintenanceTitle = window.Title
+			view.StatusLabel = "MAINTENANCE"
+			view.StatusClass = "status-MAINTENANCE"
+			view.StatusSummary = window.Title
 		}
 		views = append(views, view)
 	}

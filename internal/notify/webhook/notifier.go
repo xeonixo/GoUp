@@ -5,12 +5,10 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
-	"crypto/tls"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -18,39 +16,18 @@ import (
 	"time"
 
 	"goup/internal/monitor"
+	"goup/internal/netguard"
 	store "goup/internal/store/sqlite"
 )
 
 const (
 	NotificationKind = "webhook"
 	EventType        = "status_transition_webhook"
+	ReminderEvent    = "status_reminder_webhook"
 	TestEventType    = "test_notification_webhook"
 	defaultTimeout   = 10 * time.Second
 	maxTimeout       = 30 * time.Second
 )
-
-var blockedWebhookPrefixes = []netip.Prefix{
-	netip.MustParsePrefix("0.0.0.0/8"),
-	netip.MustParsePrefix("10.0.0.0/8"),
-	netip.MustParsePrefix("100.64.0.0/10"),
-	netip.MustParsePrefix("127.0.0.0/8"),
-	netip.MustParsePrefix("169.254.0.0/16"),
-	netip.MustParsePrefix("172.16.0.0/12"),
-	netip.MustParsePrefix("192.0.0.0/24"),
-	netip.MustParsePrefix("192.0.2.0/24"),
-	netip.MustParsePrefix("192.168.0.0/16"),
-	netip.MustParsePrefix("198.18.0.0/15"),
-	netip.MustParsePrefix("198.51.100.0/24"),
-	netip.MustParsePrefix("203.0.113.0/24"),
-	netip.MustParsePrefix("224.0.0.0/4"),
-	netip.MustParsePrefix("240.0.0.0/4"),
-	netip.MustParsePrefix("::/128"),
-	netip.MustParsePrefix("::1/128"),
-	netip.MustParsePrefix("fc00::/7"),
-	netip.MustParsePrefix("fe80::/10"),
-	netip.MustParsePrefix("ff00::/8"),
-	netip.MustParsePrefix("2001:db8::/32"),
-}
 
 type tenantWebhookStore interface {
 	ListWebhookEndpoints(ctx context.Context) ([]store.WebhookEndpoint, error)
@@ -123,7 +100,7 @@ func (n *Notifier) NotifyAll(ctx context.Context, transition monitor.Transition)
 		activeCount++
 		results = append(results, monitor.FanoutDeliveryResult{
 			EndpointID: endpoint.ID,
-			Error:      n.deliverToEndpoint(ctx, endpoint, transition, EventType),
+			Error:      n.deliverToEndpoint(ctx, endpoint, transition, eventTypeFor(transition)),
 		})
 	}
 	if activeCount == 0 {
@@ -142,10 +119,18 @@ func (n *Notifier) NotifyEndpoint(ctx context.Context, endpointID int64, transit
 	}
 	for _, endpoint := range endpoints {
 		if endpoint.ID == endpointID && endpoint.Enabled {
-			return n.deliverToEndpoint(ctx, endpoint, transition, EventType)
+			return n.deliverToEndpoint(ctx, endpoint, transition, eventTypeFor(transition))
 		}
 	}
 	return fmt.Errorf("webhook endpoint %d not found", endpointID)
+}
+
+// eventTypeFor names the delivery: reminders for ongoing outages are a distinct event.
+func eventTypeFor(transition monitor.Transition) string {
+	if transition.Reminder {
+		return ReminderEvent
+	}
+	return EventType
 }
 
 func (n *Notifier) SendTest(ctx context.Context, endpointID int64, tenantSlug string) error {
@@ -227,6 +212,12 @@ type payloadStatus struct {
 	Current      string    `json:"current"`
 	CheckedAt    time.Time `json:"checked_at"`
 	ResultDetail string    `json:"result_detail,omitempty"`
+	// Reminder is true for repeated alerts of an ongoing outage (event_type
+	// status_reminder_webhook); OutageSeconds is how long the monitor has been down.
+	Reminder      bool  `json:"reminder,omitempty"`
+	OutageSeconds int64 `json:"outage_seconds,omitempty"`
+	// CatchUp is true for the single summary sent after a mute or maintenance window ended.
+	CatchUp bool `json:"catch_up,omitempty"`
 }
 
 func buildPayload(eventType string, tenantID, endpointID int64, transition monitor.Transition, occurredAt time.Time) payload {
@@ -246,10 +237,13 @@ func buildPayload(eventType string, tenantID, endpointID int64, transition monit
 			Group:  strings.TrimSpace(transition.Monitor.Group),
 		},
 		Transition: payloadStatus{
-			Previous:     string(transition.Previous),
-			Current:      string(transition.Current),
-			CheckedAt:    transition.CheckedAt.UTC(),
-			ResultDetail: strings.TrimSpace(transition.ResultDetail),
+			Previous:      string(transition.Previous),
+			Current:       string(transition.Current),
+			CheckedAt:     transition.CheckedAt.UTC(),
+			ResultDetail:  strings.TrimSpace(transition.ResultDetail),
+			Reminder:      transition.Reminder,
+			OutageSeconds: int64(transition.OutageDuration.Seconds()),
+			CatchUp:       transition.CatchUp,
 		},
 	}
 }
@@ -309,65 +303,15 @@ func ValidateTargetURL(raw string) (*url.URL, error) {
 	if strings.TrimSpace(parsed.Hostname()) == "" {
 		return nil, fmt.Errorf("webhook url host is required")
 	}
-	if addr, err := netip.ParseAddr(parsed.Hostname()); err == nil && !isAllowedIPAddress(addr) {
+	if addr, err := netip.ParseAddr(parsed.Hostname()); err == nil && !netguard.IsPublicIP(addr) {
 		return nil, fmt.Errorf("webhook target address is blocked")
 	}
 	return parsed, nil
 }
 
 func newSecureHTTPClient(timeout time.Duration) *http.Client {
-	dialer := &net.Dialer{Timeout: timeout}
-	transport := &http.Transport{
-		Proxy:               http.ProxyFromEnvironment,
-		DisableKeepAlives:   true,
-		ForceAttemptHTTP2:   true,
-		TLSHandshakeTimeout: timeout,
-		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
-		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
-			host, _, err := net.SplitHostPort(address)
-			if err != nil {
-				return nil, err
-			}
-			ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
-			if err != nil {
-				return nil, err
-			}
-			for _, ip := range ips {
-				if !isAllowedIPAddress(ip) {
-					return nil, fmt.Errorf("webhook target address is blocked")
-				}
-			}
-			conn, err := dialer.DialContext(ctx, network, address)
-			if err != nil {
-				return nil, err
-			}
-			if tcpAddr, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
-				if addr, ok := netip.AddrFromSlice(tcpAddr.IP); ok && !isAllowedIPAddress(addr.Unmap()) {
-					_ = conn.Close()
-					return nil, fmt.Errorf("webhook target address is blocked")
-				}
-			}
-			return conn, nil
-		},
-	}
-	return &http.Client{
-		Timeout:   timeout,
-		Transport: transport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return fmt.Errorf("webhook redirects are not allowed")
-		},
-	}
-}
-
-func isAllowedIPAddress(addr netip.Addr) bool {
-	addr = addr.Unmap()
-	if !addr.IsValid() || addr.IsLoopback() || addr.IsMulticast() || addr.IsUnspecified() || addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() || addr.IsPrivate() {
-		return false
-	}
-	for _, prefix := range blockedWebhookPrefixes {
-		if prefix.Contains(addr) {
-			return false
-		}
-	}
-	return true
+	return netguard.NewHTTPClient(netguard.Options{
+		Timeout:     timeout,
+		UseEnvProxy: true,
+	})
 }

@@ -65,7 +65,7 @@ func (s *Server) hasControlPlaneAdminCookie(r *http.Request) bool {
 	return admin.SessionVersion == version
 }
 
-func (s *Server) setControlPlaneAdminCookie(w http.ResponseWriter, sessionVersion int64) {
+func (s *Server) setControlPlaneAdminCookie(w http.ResponseWriter, r *http.Request, sessionVersion int64) {
 	if sessionVersion <= 0 {
 		sessionVersion = 1
 	}
@@ -79,7 +79,7 @@ func (s *Server) setControlPlaneAdminCookie(w http.ResponseWriter, sessionVersio
 		Value:    token,
 		Path:     "/admin",
 		HttpOnly: true,
-		Secure:   s.cfg.SecureCookies(),
+		Secure:   s.requestIsHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 		Expires:  expiresAt,
 		MaxAge:   int(controlPlaneAdminTTL.Seconds()),
@@ -122,7 +122,7 @@ func (s *Server) hasControlPlaneTOTPCookie(r *http.Request, username string) boo
 	return strings.EqualFold(strings.TrimSpace(payloadParts[1]), strings.TrimSpace(username))
 }
 
-func (s *Server) setControlPlaneTOTPCookie(w http.ResponseWriter, username string) {
+func (s *Server) setControlPlaneTOTPCookie(w http.ResponseWriter, r *http.Request, username string) {
 	expiresAt := time.Now().UTC().Add(controlPlaneTOTPStageTTL)
 	payload := []byte(strconv.FormatInt(expiresAt.Unix(), 10) + "|" + strings.TrimSpace(username))
 	h := hmac.New(sha256.New, []byte(s.adminCookieKey))
@@ -133,33 +133,33 @@ func (s *Server) setControlPlaneTOTPCookie(w http.ResponseWriter, username strin
 		Value:    token,
 		Path:     "/admin/access",
 		HttpOnly: true,
-		Secure:   s.cfg.SecureCookies(),
+		Secure:   s.requestIsHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 		Expires:  expiresAt,
 		MaxAge:   int(controlPlaneTOTPStageTTL.Seconds()),
 	})
 }
 
-func (s *Server) clearControlPlaneTOTPCookie(w http.ResponseWriter) {
+func (s *Server) clearControlPlaneTOTPCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     controlPlaneTOTPCookie,
 		Value:    "",
 		Path:     "/admin/access",
 		HttpOnly: true,
-		Secure:   s.cfg.SecureCookies(),
+		Secure:   s.requestIsHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
 	})
 }
 
-func (s *Server) clearControlPlaneAdminCookie(w http.ResponseWriter) {
+func (s *Server) clearControlPlaneAdminCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     controlPlaneCookie,
 		Value:    "",
 		Path:     "/admin",
 		HttpOnly: true,
-		Secure:   s.cfg.SecureCookies(),
+		Secure:   s.requestIsHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),

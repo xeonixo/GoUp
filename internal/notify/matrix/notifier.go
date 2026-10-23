@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -135,7 +134,7 @@ func (n *Notifier) Notify(ctx context.Context, transition monitor.Transition) er
 				homeserverURL: strings.TrimSpace(target.HomeserverURL),
 				accessToken:   strings.TrimSpace(target.AccessToken),
 				roomID:        strings.TrimSpace(target.RoomID),
-				httpClient:    &http.Client{Timeout: 10 * time.Second},
+				httpClient:    newGuardedHTTPClient(),
 			}
 			if !client.Enabled() {
 				continue
@@ -165,6 +164,15 @@ func formatTransitionMessage(transition monitor.Transition, language string) str
 		strings.ToUpper(string(transition.Previous)),
 		strings.ToUpper(string(transition.Current)),
 	)
+	if transition.Reminder {
+		headline = strings.NewReplacer(
+			"{emoji}", "🔁",
+			"{name}", transition.Monitor.Name,
+			"{duration}", monitor.FormatOutageDuration(transition.OutageDuration),
+		).Replace(matrixText(tr, "matrix.reminder.headline", "{emoji} {name}: still DOWN for {duration}"))
+	} else if transition.CatchUp {
+		headline += "\n" + matrixText(tr, "matrix.catchup", "Summary after mute or maintenance")
+	}
 	var lines []string
 	if grp := strings.TrimSpace(transition.Monitor.Group); grp != "" {
 		lines = append(lines, matrixText(tr, "matrix.group", "Group")+": "+grp)

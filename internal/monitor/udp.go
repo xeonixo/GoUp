@@ -106,7 +106,7 @@ func (c UDPChecker) checkTarget(ctx context.Context, item Monitor, checkedAt tim
 		timeout = 10 * time.Second
 	}
 
-	conn, err := (&net.Dialer{Timeout: timeout}).DialContext(ctx, network, target)
+	conn, err := (newMonitorDialer(timeout)).DialContext(ctx, network, target)
 	latency := time.Since(start)
 	if err != nil {
 		return Result{
@@ -332,7 +332,7 @@ func runWireGuardTunnelProbe(ctx context.Context, rawProbe string, timeout time.
 		if target == "" {
 			return "", fmt.Errorf("invalid tcp tunnel probe target")
 		}
-		conn, err := (&net.Dialer{Timeout: timeout}).DialContext(ctx, "tcp", target)
+		conn, err := (newMonitorDialer(timeout)).DialContext(ctx, "tcp", target)
 		if err != nil {
 			return "", err
 		}

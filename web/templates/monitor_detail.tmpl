@@ -12,7 +12,7 @@
     </div>
     <div class="monitor-detail-status">
       {{if .Monitor.Muted}}<span class="muted-badge" title="{{index $.Translations "dashboard.monitor.muted_until"}} {{.Monitor.MutedUntilLabel}}">🔕 {{index $.Translations "dashboard.monitor.muted_until"}} {{.Monitor.MutedUntilLabel}}</span>{{end}}
-      <span class="status-pill {{.Monitor.StatusClass}}">{{.Monitor.StatusLabel}}</span>
+      <span class="status-pill {{.Monitor.StatusClass}}"{{if .Monitor.InMaintenance}} title="{{.Monitor.MaintenanceTitle}}"{{end}}>{{if .Monitor.InMaintenance}}{{index $.Translations "status.maintenance"}}{{else}}{{.Monitor.StatusLabel}}{{end}}</span>
     </div>
   </div>
 
@@ -21,7 +21,7 @@
     <article class="card stat-card uptime-tile {{.Class}}">
       <h2>{{index $.Translations "monitor_detail.uptime"}} · {{.Label}}</h2>
       <div class="metric">{{.Percent}}</div>
-      <p class="muted compact">Ø {{.AvgLatency}} · {{.Checks}} Checks</p>
+      <p class="muted compact">Ø {{.AvgLatency}}{{if .P95Latency}} · P95 {{.P95Latency}}{{end}} · {{.Checks}} Checks</p>
     </article>
     {{end}}
   </section>
@@ -65,10 +65,10 @@
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>{{index $.Translations "monitor_detail.incident_start"}}</th>
-          <th>{{index $.Translations "monitor_detail.incident_end"}}</th>
-          <th>{{index $.Translations "monitor_detail.incident_duration"}}</th>
-          <th>{{index $.Translations "monitor_detail.incident_cause"}}</th>
+          <th scope="col">{{index $.Translations "monitor_detail.incident_start"}}</th>
+          <th scope="col">{{index $.Translations "monitor_detail.incident_end"}}</th>
+          <th scope="col">{{index $.Translations "monitor_detail.incident_duration"}}</th>
+          <th scope="col">{{index $.Translations "monitor_detail.incident_cause"}}</th>
         </tr></thead>
         <tbody>
           {{range .Incidents}}

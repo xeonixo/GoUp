@@ -1,7 +1,10 @@
 package httpserver
 
 import (
+	"context"
+	"crypto/subtle"
 	"fmt"
+	store "goup/internal/store/sqlite"
 	"net/http"
 	"net/url"
 	"strings"
@@ -76,6 +79,15 @@ func (s *Server) handleTenantPasswordResetRequest(w http.ResponseWriter, r *http
 	}
 	s.writeAudit(r, "tenant_user.password_reset.request", "tenant", tenant.ID, "password reset requested")
 
+	// Rate limit per client IP and per mailbox; throttled requests get the same
+	// neutral answer so nothing leaks.
+	now := time.Now()
+	if !s.allowResetRequest("ip|"+s.rateLimitIP(r), passwordResetIPLimit, passwordResetRateWindow, now) ||
+		!s.allowResetRequest(fmt.Sprintf("login|%d|%s", tenant.ID, strings.ToLower(email)), passwordResetLoginLimit, passwordResetRateWindow, now) {
+		http.Redirect(w, r, noticeURL, http.StatusSeeOther)
+		return
+	}
+
 	localUser, err := s.controlStore.FindLocalUserByEmail(r.Context(), tenant.ID, email)
 	if err != nil {
 		http.Redirect(w, r, noticeURL, http.StatusSeeOther)
@@ -90,7 +102,12 @@ func (s *Server) handleTenantPasswordResetRequest(w http.ResponseWriter, r *http
 	}
 
 	expiresAt := time.Now().UTC().Add(passwordResetTTL)
-	token, err := s.signPasswordResetToken(tenant.ID, localUser.UserID, expiresAt)
+	passwordHash, err := s.controlStore.LocalPasswordHash(r.Context(), tenant.ID, localUser.UserID)
+	if err != nil {
+		http.Redirect(w, r, noticeURL, http.StatusSeeOther)
+		return
+	}
+	token, err := s.signPasswordResetToken(tenant.ID, localUser.UserID, expiresAt, s.passwordFingerprint(passwordHash))
 	if err != nil {
 		s.logger.Error("create password reset token", "error", err)
 		http.Redirect(w, r, noticeURL, http.StatusSeeOther)
@@ -114,15 +131,19 @@ func (s *Server) handleTenantPasswordResetRequest(w http.ResponseWriter, r *http
 		translateFlashMessage(translations, "email.password_reset.requested", "A password reset has been requested for your account.", nil),
 		translateFlashMessage(translations, "email.password_reset.link_line", "Link: {reset_link}", map[string]string{"reset_link": resetLink}),
 		"",
-		translateFlashMessage(translations, "email.password_reset.valid_for", "This link is valid for 30 minutes.", nil),
+		translateFlashMessage(translations, "email.password_reset.valid_for", "This link is valid for 15 minutes.", nil),
 		translateFlashMessage(translations, "email.password_reset.ignore", "If you did not request this, you can ignore this email.", nil),
 	}
 	body := strings.Join(bodyLines, "\n")
 	subject := translateFlashMessage(translations, "email.password_reset.subject", "GoUp reset password", nil)
 
-	if err := sendSMTPMail(deliveryCfg, localUser.Email, subject, body); err != nil {
-		s.logger.Error("send password reset mail failed", "tenant_id", tenant.ID, "user_id", localUser.UserID, "error", err)
-	}
+	// Send asynchronously so the response time does not reveal whether the
+	// account exists.
+	go func(tenantID, userID int64, recipient string) {
+		if err := sendSMTPMail(deliveryCfg, recipient, subject, body); err != nil {
+			s.logger.Error("send password reset mail failed", "tenant_id", tenantID, "user_id", userID, "error", err)
+		}
+	}(tenant.ID, localUser.UserID, localUser.Email)
 
 	http.Redirect(w, r, noticeURL, http.StatusSeeOther)
 }
@@ -148,8 +169,8 @@ func (s *Server) handleTenantPasswordResetConfirm(w http.ResponseWriter, r *http
 		token = strings.TrimSpace(r.FormValue("token"))
 		newPassword := r.FormValue("password")
 		confirmPassword := r.FormValue("password_confirm")
-		if len(strings.TrimSpace(newPassword)) < 8 {
-			http.Redirect(w, r, "/"+tenantSlug+"/password-reset/confirm?token="+url.QueryEscape(token)+"&error="+url.QueryEscape("Passwort muss mindestens 8 Zeichen haben"), http.StatusSeeOther)
+		if len([]rune(newPassword)) < store.MinLocalPasswordLength {
+			http.Redirect(w, r, "/"+tenantSlug+"/password-reset/confirm?token="+url.QueryEscape(token)+"&error="+url.QueryEscape(fmt.Sprintf("Passwort muss mindestens %d Zeichen haben", store.MinLocalPasswordLength)), http.StatusSeeOther)
 			return
 		}
 		if newPassword != confirmPassword {
@@ -157,9 +178,13 @@ func (s *Server) handleTenantPasswordResetConfirm(w http.ResponseWriter, r *http
 			return
 		}
 
-		tokenTenantID, userID, tokenExpiresAt, err := s.parsePasswordResetToken(token)
+		tokenTenantID, userID, tokenExpiresAt, tokenFingerprint, err := s.parsePasswordResetToken(token)
 		if err != nil || tokenTenantID != tenant.ID {
 			http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Reset-Link ist ungültig oder abgelaufen"), http.StatusSeeOther)
+			return
+		}
+		if !s.resetTokenMatchesPassword(r.Context(), tenant.ID, userID, tokenFingerprint) {
+			http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Reset-Link wurde bereits verwendet oder ist ungültig"), http.StatusSeeOther)
 			return
 		}
 		if s.passwordResetTokenUsed(token) {
@@ -189,9 +214,13 @@ func (s *Server) handleTenantPasswordResetConfirm(w http.ResponseWriter, r *http
 		return
 	}
 
-	tokenTenantID, _, _, err := s.parsePasswordResetToken(token)
+	tokenTenantID, tokenUserID, _, tokenFingerprint, err := s.parsePasswordResetToken(token)
 	if err != nil || tokenTenantID != tenant.ID {
 		http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Reset-Link ist ungültig oder abgelaufen"), http.StatusSeeOther)
+		return
+	}
+	if !s.resetTokenMatchesPassword(r.Context(), tenant.ID, tokenUserID, tokenFingerprint) {
+		http.Redirect(w, r, "/"+tenantSlug+"/login?error="+url.QueryEscape("Reset-Link wurde bereits verwendet oder ist ungültig"), http.StatusSeeOther)
 		return
 	}
 	if s.passwordResetTokenUsed(token) {
@@ -207,4 +236,49 @@ func (s *Server) handleTenantPasswordResetConfirm(w http.ResponseWriter, r *http
 		Error:      strings.TrimSpace(r.URL.Query().Get("error")),
 		Notice:     strings.TrimSpace(r.URL.Query().Get("notice")),
 	})
+}
+
+const (
+	passwordResetIPLimit    = 5
+	passwordResetLoginLimit = 3
+	passwordResetRateWindow = 15 * time.Minute
+)
+
+// allowResetRequest is a sliding-window limiter for password reset requests.
+func (s *Server) allowResetRequest(key string, limit int, window time.Duration, now time.Time) bool {
+	s.resetLimitMu.Lock()
+	defer s.resetLimitMu.Unlock()
+	if s.resetAttempts == nil {
+		s.resetAttempts = make(map[string][]time.Time)
+	}
+	recent := s.resetAttempts[key][:0]
+	for _, ts := range s.resetAttempts[key] {
+		if now.Sub(ts) < window {
+			recent = append(recent, ts)
+		}
+	}
+	if len(recent) >= limit {
+		s.resetAttempts[key] = recent
+		return false
+	}
+	s.resetAttempts[key] = append(recent, now)
+	if len(s.resetAttempts) > 10000 {
+		for k, list := range s.resetAttempts {
+			if len(list) == 0 || now.Sub(list[len(list)-1]) >= window {
+				delete(s.resetAttempts, k)
+			}
+		}
+	}
+	return true
+}
+
+// resetTokenMatchesPassword verifies that the token was issued for the user's
+// current password (i.e. the password has not been changed since).
+func (s *Server) resetTokenMatchesPassword(ctx context.Context, tenantID, userID int64, fingerprint string) bool {
+	hash, err := s.controlStore.LocalPasswordHash(ctx, tenantID, userID)
+	if err != nil {
+		return false
+	}
+	expected := s.passwordFingerprint(hash)
+	return subtle.ConstantTimeCompare([]byte(expected), []byte(fingerprint)) == 1
 }

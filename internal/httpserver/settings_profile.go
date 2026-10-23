@@ -2,8 +2,10 @@ package httpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	matrixnotify "goup/internal/notify/matrix"
+	store "goup/internal/store/sqlite"
 	"net/http"
 	"net/url"
 	"strings"
@@ -43,7 +45,13 @@ func (s *Server) handleSettingsProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	pushDevices, err := s.controlStore.ListUserPushSubscriptions(r.Context(), user.TenantID, user.UserID)
+	if err != nil {
+		s.logger.Warn("settings profile load push devices failed", "tenant_id", user.TenantID, "user_id", user.UserID, "error", err)
+	}
+
 	s.render(w, "settings_profile", pageData{
+		PushDevices:     pushDeviceViews(pushDevices),
 		Title:           "Einstellungen · Profil · GoUp",
 		UILanguage:      normalizeUILanguage(profileUser.PreferredLanguage),
 		User:            user,
@@ -82,6 +90,13 @@ func (s *Server) handleSettingsProfileSave(w http.ResponseWriter, r *http.Reques
 	matrixRoomID := strings.TrimSpace(r.FormValue("matrix_room_id"))
 	matrixAccessToken := strings.TrimSpace(r.FormValue("matrix_access_token"))
 
+	if matrixHomeserver != "" {
+		if err := s.validateIntegrationURL(matrixHomeserver); err != nil {
+			http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?error="+url.QueryEscape("Ungültige Matrix-Homeserver-URL: "+err.Error()), http.StatusSeeOther)
+			return
+		}
+	}
+
 	if err := s.controlStore.UpdateUserProfileForTenant(r.Context(), user.TenantID, user.UserID, email, displayName, preferredLanguage); err != nil {
 		s.logger.Error("settings profile update user failed", "tenant_id", user.TenantID, "user_id", user.UserID, "error", err)
 		http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?error="+url.QueryEscape("Profil konnte nicht gespeichert werden"), http.StatusSeeOther)
@@ -98,7 +113,7 @@ func (s *Server) handleSettingsProfileSave(w http.ResponseWriter, r *http.Reques
 		session.Email = email
 		session.Name = displayName
 		session.PreferredLanguage = preferredLanguage
-		_ = s.sessions.Set(w, *session)
+		_ = s.sessions.SetSecure(w, *session, s.requestIsHTTPS(r))
 	}
 
 	http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?notice="+url.QueryEscape("Profil gespeichert"), http.StatusSeeOther)
@@ -152,6 +167,10 @@ func (s *Server) handleSettingsProfileNotifierTest(w http.ResponseWriter, r *htt
 	}
 
 	kind := strings.ToLower(strings.TrimSpace(r.PathValue("kind")))
+	if !s.allowNotifierTest(user.TenantID, user.UserID, time.Now()) {
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?error="+url.QueryEscape("Bitte kurz warten, bevor ein weiterer Test gesendet wird"), http.StatusSeeOther)
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
@@ -167,7 +186,8 @@ func (s *Server) handleSettingsProfileNotifierTest(w http.ResponseWriter, r *htt
 	}
 	if err != nil {
 		s.logger.Warn("settings profile notification test failed", "tenant_id", user.TenantID, "user_id", user.UserID, "kind", kind, "error", err)
-		http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?error="+url.QueryEscape("Testversand fehlgeschlagen: "+err.Error()), http.StatusSeeOther)
+		// Details are only logged; upstream errors may reveal internal hosts.
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?error="+url.QueryEscape("Testversand fehlgeschlagen. Details stehen im Server-Log."), http.StatusSeeOther)
 		return
 	}
 
@@ -176,14 +196,14 @@ func (s *Server) handleSettingsProfileNotifierTest(w http.ResponseWriter, r *htt
 }
 
 func (s *Server) sendProfileEmailTest(ctx context.Context, r *http.Request, tenantID, userID int64) error {
-	recipient := strings.TrimSpace(r.FormValue("email"))
-	if recipient == "" {
-		profileUser, err := s.controlStore.GetTenantUser(ctx, tenantID, userID)
-		if err != nil {
-			return fmt.Errorf("Profil konnte nicht geladen werden")
-		}
-		recipient = strings.TrimSpace(profileUser.Email)
+	// Test mails only go to the stored profile address of the signed-in user,
+	// never to an arbitrary address from the request (prevents using the
+	// global SMTP relay to mail third parties).
+	profileUser, err := s.controlStore.GetTenantUser(ctx, tenantID, userID)
+	if err != nil {
+		return fmt.Errorf("Profil konnte nicht geladen werden")
 	}
+	recipient := strings.TrimSpace(profileUser.Email)
 	if recipient == "" {
 		return fmt.Errorf("E-Mail-Adresse fehlt")
 	}
@@ -221,6 +241,9 @@ func (s *Server) sendProfileMatrixTest(ctx context.Context, r *http.Request, ten
 	if homeserverURL == "" || roomID == "" || accessToken == "" {
 		return fmt.Errorf("Matrix Homeserver, Room ID und Access Token sind erforderlich")
 	}
+	if err := s.validateIntegrationURL(homeserverURL); err != nil {
+		return fmt.Errorf("Matrix Homeserver URL abgelehnt: %w", err)
+	}
 	client := matrixnotify.New(homeserverURL, accessToken, roomID)
 	return client.SendMessage(ctx, "GoUp Testbenachrichtigung\n\nWenn du diese Nachricht erhalten hast, funktioniert der Matrix-Kanal.")
 }
@@ -255,11 +278,39 @@ func (s *Server) handleSettingsProfilePassword(w http.ResponseWriter, r *http.Re
 
 	if err := s.controlStore.ChangeOwnLocalPassword(r.Context(), user.TenantID, user.UserID, currentPassword, newPassword); err != nil {
 		s.logger.Warn("settings profile password change failed", "tenant_id", user.TenantID, "user_id", user.UserID, "error", err)
-		http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?error="+url.QueryEscape("Passwort konnte nicht geändert werden"), http.StatusSeeOther)
+		msg := "Passwort konnte nicht geändert werden"
+		if errors.Is(err, store.ErrPasswordTooShort) {
+			msg = fmt.Sprintf("Das neue Passwort muss mindestens %d Zeichen haben", store.MinLocalPasswordLength)
+		}
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/profile?error="+url.QueryEscape(msg), http.StatusSeeOther)
 		return
 	}
 	s.writeAudit(r, "tenant_user.password.update", "tenant", user.TenantID, fmt.Sprintf("user_id=%d", user.UserID))
 	s.sessions.ClearForTenant(w, user.TenantSlug)
 
 	http.Redirect(w, r, s.tenantAppBase(r)+"login?notice="+url.QueryEscape("Passwort geändert. Bitte erneut anmelden."), http.StatusSeeOther)
+}
+
+const notifierTestCooldown = 15 * time.Second
+
+// allowNotifierTest rate-limits notification test sends per user.
+func (s *Server) allowNotifierTest(tenantID, userID int64, now time.Time) bool {
+	key := fmt.Sprintf("%d:%d", tenantID, userID)
+	s.notifierTestMu.Lock()
+	defer s.notifierTestMu.Unlock()
+	if s.notifierTestLast == nil {
+		s.notifierTestLast = make(map[string]time.Time)
+	}
+	if last, ok := s.notifierTestLast[key]; ok && now.Sub(last) < notifierTestCooldown {
+		return false
+	}
+	s.notifierTestLast[key] = now
+	if len(s.notifierTestLast) > 4096 {
+		for k, v := range s.notifierTestLast {
+			if now.Sub(v) > notifierTestCooldown {
+				delete(s.notifierTestLast, k)
+			}
+		}
+	}
+	return true
 }

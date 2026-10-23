@@ -130,6 +130,13 @@ func (n *Notifier) Notify(ctx context.Context, transition monitor.Transition) er
 func buildStatusTransitionSubject(transition monitor.Transition, translations map[string]string) string {
 	fromStatus := localizedMonitorStatus(transition.Previous, translations)
 	toStatus := localizedMonitorStatus(transition.Current, translations)
+	if transition.Reminder {
+		return formatEmailTemplate(emailText(translations, "email.reminder.subject", "[STILL {to}] {monitor}: down for {duration}"), map[string]string{
+			"to":       toStatus,
+			"monitor":  strings.TrimSpace(transition.Monitor.Name),
+			"duration": monitor.FormatOutageDuration(transition.OutageDuration),
+		})
+	}
 	return formatEmailTemplate(emailText(translations, "email.status_transition.subject", "[{to}] {monitor}: {from} → {to}"), map[string]string{
 		"from":    fromStatus,
 		"to":      toStatus,
@@ -176,14 +183,24 @@ func buildHTMLEmail(transition monitor.Transition, dashboardURL string, translat
 			htmlpkg.EscapeString(grp) + `</div>`
 	}
 
+	changeLabel := emailText(translations, "email.status_transition.label", "Status change")
+	transitionText := htmlpkg.EscapeString(prevLabel) + " &#8594; " + htmlpkg.EscapeString(statusLabel)
+	if transition.Reminder {
+		changeLabel = emailText(translations, "email.reminder.label", "Outage reminder")
+		transitionText = htmlpkg.EscapeString(formatEmailTemplate(emailText(translations, "email.reminder.text", "Still down for {duration}"), map[string]string{
+			"duration": monitor.FormatOutageDuration(transition.OutageDuration),
+		}))
+	} else if transition.CatchUp {
+		transitionText += " &middot; " + htmlpkg.EscapeString(emailText(translations, "email.catchup", "Summary after mute or maintenance"))
+	}
+
 	return strings.NewReplacer(
 		"{headerBg}", headerBg,
 		"{badgeBg}", badgeBg,
 		"{badgeColor}", badgeColor,
-		"{statusChangeLabel}", htmlpkg.EscapeString(emailText(translations, "email.status_transition.label", "Status change")),
+		"{statusChangeLabel}", htmlpkg.EscapeString(changeLabel),
 		"{statusBadge}", htmlpkg.EscapeString(statusLabel),
-		"{fromStatus}", htmlpkg.EscapeString(prevLabel),
-		"{toStatus}", htmlpkg.EscapeString(statusLabel),
+		"{transitionText}", transitionText,
 		"{monitorName}", htmlpkg.EscapeString(transition.Monitor.Name),
 		"{monitorKind}", strings.ToUpper(string(transition.Monitor.Kind)),
 		"{monitorTarget}", htmlpkg.EscapeString(transition.Monitor.Target),
@@ -209,7 +226,7 @@ const emailHTMLTemplate = `<!DOCTYPE html>
   </td></tr>
   <tr><td style="padding:16px 32px 0;">
     <span style="display:inline-block;padding:3px 10px;border-radius:5px;font-size:12px;font-weight:700;letter-spacing:0.8px;background:{badgeBg};color:{badgeColor};">{statusBadge}</span>
-    <span style="color:#9ca3af;font-size:13px;margin-left:8px;">{fromStatus} &#8594; {toStatus}</span>
+    <span style="color:#9ca3af;font-size:13px;margin-left:8px;">{transitionText}</span>
   </td></tr>
   <tr><td style="padding:8px 32px 0;">
     <div style="font-size:22px;font-weight:700;color:#e8e9ef;">{monitorName}</div>

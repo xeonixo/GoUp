@@ -1,0 +1,133 @@
+{{define "content"}}
+{{$sp := .StatusAdmin}}
+<div class="admin-section settings-section">
+  <nav class="admin-nav settings-nav" aria-label="{{index $.Translations "layout.settings_title"}}">
+    <a href="{{$.AppBase}}" class="admin-nav-link">{{index $.Translations "settings.nav.dashboard"}}</a>
+    <a href="{{$.AppBase}}settings/profile" class="admin-nav-link">{{index $.Translations "settings.nav.profile"}}</a>
+    <a href="{{$.AppBase}}settings/users" class="admin-nav-link">{{index $.Translations "settings.nav.users"}}</a>
+    <a href="{{$.AppBase}}settings/webhooks" class="admin-nav-link">{{index $.Translations "settings.nav.webhooks"}}</a>
+    <a href="{{$.AppBase}}settings/providers" class="admin-nav-link">{{index $.Translations "settings.nav.oidc_providers"}}</a>
+    <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link">{{index $.Translations "settings.nav.remote_nodes"}}</a>
+    <a href="{{$.AppBase}}settings/status-page" class="admin-nav-link is-active">{{index $.Translations "settings.nav.status_page"}}</a>
+    <a href="{{$.AppBase}}settings/maintenance" class="admin-nav-link">{{index $.Translations "settings.nav.maintenance"}}</a>
+  </nav>
+
+  {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
+  {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+
+  <div class="admin-header settings-header">
+    <div>
+      <h1>{{index $.Translations "settings.status_page.title"}}</h1>
+      <p class="muted compact">{{index $.Translations "settings.status_page.subtitle"}}</p>
+    </div>
+  </div>
+
+  <form method="POST" action="{{$.AppBase}}settings/status-page/save" class="admin-form card stack settings-panel">
+    <h2>{{index $.Translations "settings.status_page.page_heading"}}</h2>
+    <label class="checkbox-row">
+      <input type="checkbox" name="enabled" {{if $sp.Enabled}}checked{{end}}>
+      <span>{{index $.Translations "settings.status_page.enabled"}}</span>
+    </label>
+    <p class="muted compact">{{index $.Translations "settings.status_page.enabled_hint"}}</p>
+    <label>
+      <span>{{index $.Translations "settings.status_page.page_title"}}</span>
+      <input type="text" name="title" maxlength="120" value="{{$sp.Title}}">
+    </label>
+    <label>
+      <span>{{index $.Translations "settings.status_page.description"}}</span>
+      <textarea name="description" rows="3" maxlength="500">{{$sp.Description}}</textarea>
+    </label>
+
+    <h3>{{index $.Translations "settings.status_page.monitors"}}</h3>
+    <p class="muted compact">{{index $.Translations "settings.status_page.monitors_hint"}}</p>
+    {{if $sp.Monitors}}
+    <ul class="status-admin-list">
+      {{range $sp.Monitors}}
+      <li class="status-admin-row">
+        <label class="checkbox-row">
+          <input type="checkbox" name="monitor_{{.ID}}" {{if .Selected}}checked{{end}}>
+          <span>{{.Name}}{{if .Group}} <span class="muted">· {{.Group}}</span>{{end}}</span>
+        </label>
+        <input type="text" name="display_{{.ID}}" maxlength="120" value="{{.DisplayName}}" aria-label="{{index $.Translations "settings.status_page.display_name"}}" placeholder="{{index $.Translations "settings.status_page.display_name"}}">
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <p class="muted">{{index $.Translations "settings.status_page.no_monitors"}}</p>
+    {{end}}
+
+    <div class="form-actions">
+      <button type="submit" class="button">{{index $.Translations "common.save"}}</button>
+    </div>
+  </form>
+
+  <section class="card stack settings-panel">
+    <h2>{{index $.Translations "settings.status_page.public_url"}}</h2>
+    <div class="status-url-row">
+      <input type="text" id="status-public-url" readonly value="{{$sp.PublicURL}}">
+      <button type="button" class="button button-secondary" data-action="copy" data-copy-target="status-public-url" data-copied-label="{{index $.Translations "settings.status_page.copied"}}">{{index $.Translations "settings.status_page.copy_url"}}</button>
+      <a class="button button-secondary" href="{{$sp.PublicURL}}" target="_blank" rel="noopener noreferrer">{{index $.Translations "settings.status_page.open"}}</a>
+    </div>
+  </section>
+
+  <section class="card stack settings-panel">
+    <h2>{{index $.Translations "settings.status_page.tokens_title"}}</h2>
+    <p class="muted compact">{{index $.Translations "settings.status_page.tokens_hint"}}</p>
+
+    {{if $sp.NewToken}}
+    <div class="notice warning stack">
+      <strong>{{index $.Translations "settings.status_page.token_once"}}</strong>
+      <div class="status-url-row">
+        <input type="text" id="status-new-token" readonly value="{{$sp.NewToken}}" autocomplete="off">
+        <button type="button" class="button button-secondary" data-action="copy" data-copy-target="status-new-token" data-copied-label="{{index $.Translations "settings.status_page.copied"}}">{{index $.Translations "settings.status_page.copy_token"}}</button>
+      </div>
+    </div>
+    {{end}}
+
+    <form method="POST" action="{{$.AppBase}}settings/status-page/tokens/create" class="inline-grid">
+      <label>
+        <span>{{index $.Translations "settings.status_page.token_name"}}</span>
+        <input type="text" name="name" maxlength="80" required>
+      </label>
+      <div class="form-actions">
+        <button type="submit" class="button">{{index $.Translations "settings.status_page.token_create"}}</button>
+      </div>
+    </form>
+
+    {{if $sp.Tokens}}
+    <div class="table-wrap">
+      <table class="admin-table">
+        <caption class="sr-only">{{index $.Translations "settings.status_page.tokens_title"}}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{{index $.Translations "settings.status_page.token_name"}}</th>
+            <th scope="col">{{index $.Translations "settings.status_page.token_created_at"}}</th>
+            <th scope="col">{{index $.Translations "settings.status_page.token_last_used"}}</th>
+            <th scope="col"><span class="sr-only">{{index $.Translations "common.delete"}}</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $sp.Tokens}}
+          <tr>
+            <td>{{.Name}}</td>
+            <td>{{.CreatedAt}}{{if .CreatedBy}} <span class="muted">· {{.CreatedBy}}</span>{{end}}</td>
+            <td>{{if .LastUsed}}{{.LastUsed}}{{else}}<span class="muted">{{index $.Translations "settings.status_page.token_never"}}</span>{{end}}</td>
+            <td>
+              <form method="POST" action="{{$.AppBase}}settings/status-page/tokens/{{.ID}}/revoke" class="inline-form" data-confirm="{{index $.Translations "settings.status_page.token_revoke_confirm"}}">
+                <button type="submit" class="button button-secondary button-small">{{index $.Translations "settings.status_page.token_revoke"}}</button>
+              </form>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <p class="muted">{{index $.Translations "settings.status_page.token_none"}}</p>
+    {{end}}
+
+    <h3>{{index $.Translations "settings.status_page.scrape_title"}}</h3>
+    <p class="muted compact">{{index $.Translations "settings.status_page.scrape_hint"}} <code>{{$sp.MetricsURL}}</code></p>
+  </section>
+</div>
+{{end}}

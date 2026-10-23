@@ -135,7 +135,17 @@ func (s *Server) handleAdminProviderSave(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if kind == "oidc" {
+		if err := s.validateIntegrationURL(issuerURL); err != nil {
+			http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/providers/new?error=%s", tenantID, url.QueryEscape("Ungültige Issuer URL: "+err.Error())), http.StatusSeeOther)
+			return
+		}
+	}
+
 	_, err = s.controlStore.UpsertAuthProvider(r.Context(), tenantID, providerKey, kind, displayName, issuerURL, clientID)
+	if err == nil && kind == "oidc" {
+		err = s.controlStore.UpdateAuthProviderPolicy(r.Context(), tenantID, providerKey, r.FormValue("default_role"), r.FormValue("allowed_email_domains"), r.FormValue("allowed_groups"))
+	}
 	if err != nil {
 		s.logger.Error("upsert auth provider failed", "error", err)
 		http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/providers/new?error=%s", tenantID, url.QueryEscape("Provider konnte nicht gespeichert werden")), http.StatusSeeOther)
@@ -148,6 +158,9 @@ func (s *Server) handleAdminProviderSave(w http.ResponseWriter, r *http.Request)
 			http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/providers/%s/edit?error=%s", tenantID, providerKey, url.QueryEscape("Provider gespeichert, Secret konnte nicht gespeichert werden")), http.StatusSeeOther)
 			return
 		}
+	}
+	if kind == "oidc" && s.dynamicOIDC != nil {
+		s.dynamicOIDC.ForgetIssuer(issuerURL)
 	}
 	s.writeAudit(r, "auth_provider.upsert", "tenant", tenantID, fmt.Sprintf("provider=%s kind=%s", providerKey, kind))
 

@@ -30,6 +30,10 @@ func TOTPGenerateSecret() (string, error) {
 // TOTPValidate returns true if code matches the current TOTP counter ±1 window.
 func TOTPValidate(secret, code string) bool {
 	code = strings.TrimSpace(code)
+	if strings.TrimSpace(secret) == "" {
+		// An empty secret would yield a predictable HMAC key; never validate.
+		return false
+	}
 	if len(code) != totpDigits {
 		return false
 	}

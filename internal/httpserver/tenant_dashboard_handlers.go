@@ -72,7 +72,7 @@ func (s *Server) loadDashboardPageData(r *http.Request, appStore *store.Store, t
 		s.logger.Warn("load remote nodes failed", "tenant_id", tenantID, "error", err)
 		remoteNodes = nil
 	}
-	monitorViews := buildMonitorViews(snapshots, rollups, now, selectedTrend, buildRemoteNodeNameMap(remoteNodes))
+	monitorViews := buildMonitorViews(snapshots, rollups, now, selectedTrend, buildRemoteNodeNameMap(remoteNodes), appStore.MaintenanceSet(r.Context()))
 	availableGroups := buildAvailableGroups(groupMetadata)
 	availableGroups = mergeAvailableGroups(availableGroups, monitorViews)
 	remoteNodeViews := buildRemoteNodeViews(remoteNodes, now, s.cfg.BaseURL, nil)

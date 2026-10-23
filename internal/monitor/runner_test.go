@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"context"
+	"database/sql"
 	"io"
 	"log/slog"
 	"sync"
@@ -13,6 +14,49 @@ type runnerTestStore struct {
 	mu      sync.Mutex
 	results []Result
 	states  []Result
+
+	notificationEvents []int64 // endpoint ids of delivered/failed events
+	suppressed         []int64 // monitor ids with a suppressed event
+	enqueued           []NotificationRetryParams
+	retryUpdates       []int64
+	superseded         []int64
+	cleared            []int64
+	snapshots          map[int64]Snapshot
+	recentStatuses     []Status // newest first
+
+	markers       map[int64]Status // SetMonitorMuteStartStatus
+	lastAlerts    []*time.Time     // SetMonitorLastAlert calls, in order
+	outageStart   time.Time
+	inMaintenance bool
+}
+
+func (s *runnerTestStore) ActiveMaintenance(context.Context, int64, string, time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.inMaintenance
+}
+
+func (s *runnerTestStore) SetMonitorMuteStartStatus(_ context.Context, monitorID int64, status Status) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.markers == nil {
+		s.markers = map[int64]Status{}
+	}
+	s.markers[monitorID] = status
+	return nil
+}
+
+func (s *runnerTestStore) SetMonitorLastAlert(_ context.Context, _ int64, at *time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastAlerts = append(s.lastAlerts, at)
+	return nil
+}
+
+func (s *runnerTestStore) CurrentOutageStart(context.Context, int64) (time.Time, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.outageStart, !s.outageStart.IsZero(), nil
 }
 
 func (s *runnerTestStore) ListMonitorSnapshots(context.Context) ([]Snapshot, error) {
@@ -33,11 +77,57 @@ func (s *runnerTestStore) RecordMonitorState(_ context.Context, monitorID int64,
 	return nil
 }
 
-func (s *runnerTestStore) RecordNotificationEvent(context.Context, int64, int64, string, *time.Time, string) error {
+func (s *runnerTestStore) RecordNotificationEvent(_ context.Context, _ int64, endpointID int64, _ string, _ *time.Time, _ string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.notificationEvents = append(s.notificationEvents, endpointID)
 	return nil
 }
 
-func (s *runnerTestStore) EnqueueNotificationRetry(context.Context, NotificationRetryParams) error {
+func (s *runnerTestStore) EnqueueNotificationRetry(_ context.Context, params NotificationRetryParams) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.enqueued = append(s.enqueued, params)
+	return nil
+}
+
+func (s *runnerTestStore) RecordSuppressedNotificationEvent(_ context.Context, monitorID int64, _ int64, _ string, _ string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.suppressed = append(s.suppressed, monitorID)
+	return nil
+}
+
+func (s *runnerTestStore) SupersedeNotificationRetry(_ context.Context, id int64, _ string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.superseded = append(s.superseded, id)
+	return nil
+}
+
+func (s *runnerTestStore) GetMonitorSnapshot(_ context.Context, monitorID int64) (Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snapshot, ok := s.snapshots[monitorID]
+	if !ok {
+		return Snapshot{}, sql.ErrNoRows
+	}
+	return snapshot, nil
+}
+
+func (s *runnerTestStore) RecentMonitorStatuses(_ context.Context, _ int64, limit int) ([]Status, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if limit > len(s.recentStatuses) {
+		limit = len(s.recentStatuses)
+	}
+	return append([]Status(nil), s.recentStatuses[:limit]...), nil
+}
+
+func (s *runnerTestStore) ClearMonitorMuteStartStatus(_ context.Context, monitorID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleared = append(s.cleared, monitorID)
 	return nil
 }
 
@@ -45,7 +135,10 @@ func (s *runnerTestStore) ListDueNotificationRetries(context.Context, time.Time,
 	return nil, nil
 }
 
-func (s *runnerTestStore) UpdateNotificationRetry(context.Context, int64, bool, string, time.Time, bool) error {
+func (s *runnerTestStore) UpdateNotificationRetry(_ context.Context, id int64, _ bool, _ string, _ time.Time, _ bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.retryUpdates = append(s.retryUpdates, id)
 	return nil
 }
 

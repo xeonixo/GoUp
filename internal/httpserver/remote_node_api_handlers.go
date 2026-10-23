@@ -6,8 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"goup/internal/monitor"
-	emailnotify "goup/internal/notify/email"
-	matrixnotify "goup/internal/notify/matrix"
+	"goup/internal/notify"
 	store "goup/internal/store/sqlite"
 	"io"
 	"net/http"
@@ -178,6 +177,10 @@ func (s *Server) handleRemoteNodeReport(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	// Remote results go through the same dispatcher as the local runner: identical notifier set
+	// (including webhooks), mute and confirm_after handling, and the persistent retry queue.
+	dispatcher := s.remoteNodeDispatcher(r.Context(), appStore, node.TenantID)
+
 	accepted := 0
 	for _, item := range payload.Results {
 		monitorConfig, ok := assignedByID[item.MonitorID]
@@ -189,14 +192,8 @@ func (s *Server) handleRemoteNodeReport(w http.ResponseWriter, r *http.Request) 
 			continue
 		}
 		result.MonitorID = monitorConfig.ID
-		if err := appStore.SaveMonitorResult(r.Context(), result); err != nil {
+		if !dispatcher.ProcessResult(r.Context(), monitor.Snapshot{Monitor: monitorConfig, LastResult: previousByID[monitorConfig.ID]}, result) {
 			continue
-		}
-		if err := appStore.RecordMonitorState(r.Context(), monitorConfig.ID, result.Status, result.Message, result.CheckedAt); err != nil {
-			continue
-		}
-		if transition, shouldNotify := buildRemoteTransition(monitorConfig, previousByID[monitorConfig.ID], result); shouldNotify && !monitorConfig.IsMuted(time.Now()) {
-			s.notifyRemoteTransition(r.Context(), appStore, node.TenantID, transition)
 		}
 		resultCopy := result
 		previousByID[monitorConfig.ID] = &resultCopy
@@ -305,63 +302,18 @@ func decodeRemoteNodeResult(item remoteNodeResultPayload, now time.Time) (monito
 	return result, nil
 }
 
-func buildRemoteTransition(m monitor.Monitor, previous *monitor.Result, current monitor.Result) (monitor.Transition, bool) {
-	if previous == nil {
-		return monitor.Transition{}, false
-	}
-	if previous.Status == current.Status {
-		return monitor.Transition{}, false
-	}
-	if current.Status == monitor.StatusUp && !m.NotifyOnRecovery {
-		return monitor.Transition{}, false
-	}
-	return monitor.Transition{
-		Monitor:      m,
-		Previous:     previous.Status,
-		Current:      current.Status,
-		CheckedAt:    current.CheckedAt,
-		ResultDetail: current.Message,
-	}, true
-}
-
-func (s *Server) notifyRemoteTransition(ctx context.Context, appStore interface {
-	EnsureSystemNotificationEndpoint(context.Context, string, string, string, bool) (int64, error)
-	RecordNotificationEvent(context.Context, int64, int64, string, *time.Time, string) error
-}, tenantID int64, transition monitor.Transition) {
+func (s *Server) remoteNodeDispatcher(ctx context.Context, appStore *store.Store, tenantID int64) *monitor.Dispatcher {
+	var notifiers []monitor.Notifier
 	tenant, err := s.controlStore.GetTenantByID(ctx, tenantID)
+	if err == nil {
+		notifiers, err = notify.Build(ctx, s.controlStore, appStore, notify.Options{
+			TenantID:   tenantID,
+			TenantSlug: tenant.Slug,
+			BaseURL:    s.cfg.BaseURL,
+		})
+	}
 	if err != nil {
-		return
+		s.logger.Warn("build notifiers for remote node report failed", "tenant_id", tenantID, "error", err)
 	}
-	matrixEndpointID, err := appStore.EnsureSystemNotificationEndpoint(ctx, "matrix", "user-matrix", `{}`, true)
-	if err != nil {
-		return
-	}
-	emailEndpointID, err := appStore.EnsureSystemNotificationEndpoint(ctx, "email", "user-email", `{}`, true)
-	if err != nil {
-		return
-	}
-	notifiers := []monitor.Notifier{
-		matrixnotify.NewTenantNotifier(s.controlStore, matrixEndpointID, tenantID),
-		emailnotify.NewNotifier(s.controlStore, emailEndpointID, tenantID, s.cfg.BaseURL, tenant.Slug),
-	}
-	for _, notifier := range notifiers {
-		if notifier == nil || !notifier.Enabled() {
-			continue
-		}
-		notifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		err := notifier.Notify(notifyCtx, transition)
-		cancel()
-		if err == monitor.ErrNoRecipients {
-			continue
-		}
-		var deliveredAt *time.Time
-		errorMessage := ""
-		if err == nil {
-			now := time.Now().UTC()
-			deliveredAt = &now
-		} else {
-			errorMessage = err.Error()
-		}
-		_ = appStore.RecordNotificationEvent(ctx, transition.Monitor.ID, notifier.EndpointID(), notifier.EventType(), deliveredAt, errorMessage)
-	}
+	return monitor.NewDispatcher(s.logger, appStore, notifiers...)
 }

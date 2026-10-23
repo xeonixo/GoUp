@@ -57,7 +57,7 @@ func (c IMAPChecker) checkPlain(ctx context.Context, item Monitor, family TCPAdd
 		return result
 	}
 
-	conn, err := (&net.Dialer{Timeout: item.Timeout}).DialContext(ctx, network, item.Target)
+	conn, err := newMonitorDialer(item.Timeout).DialContext(ctx, network, item.Target)
 	result.Latency = time.Since(startedAt)
 	if err != nil {
 		result.Message = fmt.Sprintf("imap connect failed: %v", err)
@@ -96,7 +96,7 @@ func (c IMAPChecker) checkTLS(ctx context.Context, item Monitor, family TCPAddre
 	}
 
 	dialer := &tls.Dialer{
-		NetDialer: &net.Dialer{Timeout: item.Timeout},
+		NetDialer: newMonitorDialer(item.Timeout),
 		Config: &tls.Config{
 			MinVersion:         tls.VersionTLS12,
 			ServerName:         host,
@@ -159,7 +159,7 @@ func (c IMAPChecker) checkSTARTTLS(ctx context.Context, item Monitor, family TCP
 		return result
 	}
 
-	conn, err := (&net.Dialer{Timeout: item.Timeout}).DialContext(ctx, network, item.Target)
+	conn, err := newMonitorDialer(item.Timeout).DialContext(ctx, network, item.Target)
 	result.Latency = time.Since(startedAt)
 	if err != nil {
 		result.Message = fmt.Sprintf("imap connect failed: %v", err)

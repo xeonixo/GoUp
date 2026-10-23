@@ -34,14 +34,20 @@ func (s *Server) handleSettingsUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	blockedUsers, err := s.controlStore.ListBlockedTenantUsers(r.Context(), user.TenantID)
+	if err != nil {
+		s.logger.Warn("settings users list blocked users failed", "tenant_id", user.TenantID, "error", err)
+	}
+
 	s.render(w, "settings_users", pageData{
-		Title:            "Einstellungen · Benutzer · GoUp",
-		User:             user,
-		AdminTenant:      tenant,
-		AdminTenantUsers: tenantUsers,
-		AppBase:          s.tenantAppBase(r),
-		Notice:           strings.TrimSpace(r.URL.Query().Get("notice")),
-		Error:            strings.TrimSpace(r.URL.Query().Get("error")),
+		Title:              "Einstellungen · Benutzer · GoUp",
+		User:               user,
+		AdminTenant:        tenant,
+		AdminTenantUsers:   tenantUsers,
+		BlockedTenantUsers: blockedUsers,
+		AppBase:            s.tenantAppBase(r),
+		Notice:             strings.TrimSpace(r.URL.Query().Get("notice")),
+		Error:              strings.TrimSpace(r.URL.Query().Get("error")),
 	})
 }
 
@@ -77,7 +83,7 @@ func (s *Server) handleSettingsUserRoleSave(w http.ResponseWriter, r *http.Reque
 	if userID == user.UserID {
 		user.Role = strings.ToLower(strings.TrimSpace(role))
 		user.SessionVersion++
-		_ = s.sessions.Set(w, *user)
+		_ = s.sessions.SetSecure(w, *user, s.requestIsHTTPS(r))
 	}
 
 	s.writeAudit(r, "tenant_user.role_update", "tenant", user.TenantID, fmt.Sprintf("user_id=%d role=%s", userID, role))
@@ -206,7 +212,7 @@ func (s *Server) handleSettingsLocalUserSave(w http.ResponseWriter, r *http.Requ
 		_, err := s.controlStore.CreateLocalUserForTenant(r.Context(), user.TenantID, loginName, password, email, displayName, role)
 		if err != nil {
 			s.logger.Error("settings create local user failed", "tenant_id", user.TenantID, "error", err)
-			http.Redirect(w, r, s.tenantAppBase(r)+"settings/local-users/new?error="+url.QueryEscape("Lokaler Benutzer konnte nicht erstellt werden"), http.StatusSeeOther)
+			http.Redirect(w, r, s.tenantAppBase(r)+"settings/local-users/new?error="+url.QueryEscape(localUserSaveErrorMessage(err, "Lokaler Benutzer konnte nicht erstellt werden")), http.StatusSeeOther)
 			return
 		}
 		s.writeAudit(r, "local_user.create", "tenant", user.TenantID, fmt.Sprintf("login=%s email=%s source=settings", loginName, email))
@@ -222,14 +228,14 @@ func (s *Server) handleSettingsLocalUserSave(w http.ResponseWriter, r *http.Requ
 	_, err = s.controlStore.UpdateLocalUserForTenant(r.Context(), user.TenantID, userID, loginName, password, email, displayName, role)
 	if err != nil {
 		s.logger.Error("settings update local user failed", "tenant_id", user.TenantID, "user_id", userID, "error", err)
-		http.Redirect(w, r, s.tenantAppBase(r)+"settings/local-users/"+strconv.FormatInt(userID, 10)+"/edit?error="+url.QueryEscape("Lokaler Benutzer konnte nicht gespeichert werden"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/local-users/"+strconv.FormatInt(userID, 10)+"/edit?error="+url.QueryEscape(localUserSaveErrorMessage(err, "Lokaler Benutzer konnte nicht gespeichert werden")), http.StatusSeeOther)
 		return
 	}
 
 	if userID == user.UserID {
 		if session, err := s.sessionForRequest(r); err == nil {
 			session.Role = role
-			_ = s.sessions.Set(w, *session)
+			_ = s.sessions.SetSecure(w, *session, s.requestIsHTTPS(r))
 		}
 	}
 
@@ -268,4 +274,32 @@ func (s *Server) handleSettingsLocalUserDelete(w http.ResponseWriter, r *http.Re
 
 	s.writeAudit(r, "local_user.delete", "tenant", user.TenantID, fmt.Sprintf("user_id=%d source=settings", userID))
 	http.Redirect(w, r, s.tenantAppBase(r)+"settings/users?notice="+url.QueryEscape("Lokaler Benutzer entfernt"), http.StatusSeeOther)
+}
+
+func (s *Server) handleSettingsUserUnblock(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	user := s.currentUser(r)
+	if user == nil || user.TenantID <= 0 {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	userID, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("userID")), 10, 64)
+	if err != nil || userID <= 0 {
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/users?error="+url.QueryEscape("Ungültige Benutzer-ID"), http.StatusSeeOther)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+	if err := s.controlStore.UnblockTenantUser(r.Context(), user.TenantID, userID, r.FormValue("role")); err != nil {
+		s.logger.Error("settings users unblock failed", "tenant_id", user.TenantID, "user_id", userID, "error", err)
+		http.Redirect(w, r, s.tenantAppBase(r)+"settings/users?error="+url.QueryEscape("Benutzer konnte nicht wieder hinzugefügt werden"), http.StatusSeeOther)
+		return
+	}
+	s.writeAudit(r, "tenant_user.unblock", "tenant", user.TenantID, fmt.Sprintf("user_id=%d", userID))
+	http.Redirect(w, r, s.tenantAppBase(r)+"settings/users?notice="+url.QueryEscape("Benutzer wieder hinzugefügt"), http.StatusSeeOther)
 }

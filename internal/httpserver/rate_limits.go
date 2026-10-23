@@ -2,28 +2,13 @@ package httpserver
 
 import (
 	"fmt"
-	"net"
 	"net/http"
 	"strings"
 	"time"
 )
 
-func (s *Server) clientIP(r *http.Request) string {
-	// Only use RemoteAddr. X-Forwarded-For is trivially spoofable by clients
-	// and must not be trusted for security decisions unless the server is behind
-	// a trusted reverse proxy that strips/overwrites the header.
-	clientIP := strings.TrimSpace(r.RemoteAddr)
-	if host, _, err := net.SplitHostPort(clientIP); err == nil && host != "" {
-		clientIP = host
-	}
-	if clientIP == "" {
-		clientIP = "unknown"
-	}
-	return clientIP
-}
-
 func (s *Server) localLoginKey(r *http.Request, tenantID int64, loginName string) string {
-	return fmt.Sprintf("%d|%s|%s", tenantID, strings.ToLower(strings.TrimSpace(loginName)), s.clientIP(r))
+	return fmt.Sprintf("%d|%s|%s", tenantID, strings.ToLower(strings.TrimSpace(loginName)), s.rateLimitIP(r))
 }
 
 func (s *Server) localLoginAllowed(key string, now time.Time) (bool, time.Duration) {
@@ -70,7 +55,7 @@ func (s *Server) clearLocalLoginAttempts(key string) {
 }
 
 func (s *Server) adminAccessKey(r *http.Request) string {
-	return "admin|" + s.clientIP(r)
+	return "admin|" + s.rateLimitIP(r)
 }
 
 func (s *Server) adminAccessAllowed(key string, now time.Time) (bool, time.Duration) {
@@ -114,7 +99,7 @@ func (s *Server) clearAdminAccessAttempts(key string) {
 }
 
 func (s *Server) bootstrapAttemptKey(r *http.Request, nodeID string) string {
-	return "node-bootstrap|" + strings.ToLower(strings.TrimSpace(nodeID)) + "|" + s.clientIP(r)
+	return "node-bootstrap|" + strings.ToLower(strings.TrimSpace(nodeID)) + "|" + s.rateLimitIP(r)
 }
 
 func (s *Server) bootstrapAllowed(key string, now time.Time) (bool, time.Duration) {

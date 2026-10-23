@@ -31,7 +31,9 @@ It is a good fit if you want:
 |---|---|
 | Monitor types | HTTPS, HTTP, TCP, ICMP (ping), SMTP, IMAP, DNS, UDP, WHOIS |
 | TLS inspection | Certificate validity, expiry date, remaining lifetime |
-| Notifications | Email via SMTP, Matrix, and signed Webhooks |
+| Notifications | Email via SMTP, Matrix, signed Webhooks, and Web Push |
+| Outage reminders | Optional per-monitor reminder (15 min to 24 h) while a monitor stays down; see [Outage reminders](#outage-reminders) |
+| Maintenance windows | Planned, optionally recurring windows (all monitors, groups, or selected monitors): no alerts, excluded from uptime, shown as "Maintenance"; see [Maintenance windows](#maintenance-windows) |
 | Authentication | Separate control-plane admin login, plus tenant-level local auth and OIDC |
 | Multi-tenancy | Isolated tenants with their own monitor data and auth configuration |
 | Admin UI | Manage tenants, auth providers, users, SMTP settings, webhooks, remote nodes, and security settings |
@@ -105,10 +107,10 @@ GOUP_ADDR=:8080
 GOUP_BASE_URL=http://localhost:8080
 GOUP_DATA_DIR=/data
 GOUP_LOG_LEVEL=info
-GOUP_SESSION_KEY=replace-with-64-hex-characters
-GOUP_SSO_SECRET_KEY=replace-with-another-64-hex-key
-GOUP_CONTROL_PLANE_ADMIN_KEY=replace-with-a-third-64-hex-key
-
+# Generate each key independently: openssl rand -hex 32
+GOUP_SESSION_KEY=<output of openssl rand -hex 32>
+GOUP_SSO_SECRET_KEY=<another, different openssl rand -hex 32>
+GOUP_CONTROL_PLANE_ADMIN_KEY=<a third, different openssl rand -hex 32>
 ```
 
 ### 2. Review the Docker volume mapping
@@ -197,6 +199,11 @@ Configuration is provided through environment variables, typically via `.env` an
 | `GOUP_DATA_DIR` | `/data` | Directory containing all SQLite database files |
 | `GOUP_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 | `GOUP_MONITOR_WORKERS` | `4` | Maximum number of local monitor checks running concurrently |
+| `GOUP_TRUSTED_PROXIES` | _(empty)_ | Comma separated CIDRs/IPs of reverse proxies whose `X-Forwarded-For`, `X-Real-IP` and `X-Forwarded-Proto` headers are trusted. See [Running behind a reverse proxy](#running-behind-a-reverse-proxy). |
+| `GOUP_SETUP_TOKEN` | _(random)_ | Token required for the initial `/admin/setup` form. If unset, a random token is generated at startup and written to the server log while setup is pending. |
+| `GOUP_MONITOR_ALLOW_PRIVATE` | `true` | Allow monitors to reach private/loopback networks. Cloud metadata addresses (`169.254.169.254`, `fd00:ec2::254`, `100.100.100.200`) are always blocked. |
+| `GOUP_ALLOW_PRIVATE_INTEGRATIONS` | `false` | Allow the Matrix homeserver URL and OIDC issuer URLs to point at private/loopback addresses. Default is public https only (SSRF protection). **Set to `true` if your Keycloak/Matrix runs on your LAN.** |
+| `GOUP_REMOTE_NODE_ALLOW_INSECURE` | `false` | Remote-node agent only: permit a plain `http://` control-plane URL (otherwise https is required, except `localhost`/`127.0.0.1`). |
 
 ### Security-related settings
 
@@ -205,6 +212,10 @@ Configuration is provided through environment variables, typically via `.env` an
 | `GOUP_SESSION_KEY` | Required HMAC key for tenant session cookies and password-reset tokens. |
 | `GOUP_SSO_SECRET_KEY` | Required encryption key for stored secrets, including OIDC client secrets, TOTP secrets, notification secrets, and remote-node secrets. |
 | `GOUP_CONTROL_PLANE_ADMIN_KEY` | Required HMAC key for control-plane admin cookies under `/admin/*`. |
+
+All three keys must be at least 32 characters, must be different from each
+other and must not be the `replace-with-...` placeholders from the example
+file. GoUp refuses to start otherwise and prints which key is invalid.
 
 Generate each key independently with 32 random bytes encoded as hex:
 
@@ -408,6 +419,8 @@ GoUp sends JSON payloads like this for monitor state changes:
 }
 ```
 
+While a monitor stays down and a reminder interval is configured, GoUp repeats the alert with `event_type = "status_reminder_webhook"`: `transition.previous` and `transition.current` are both `down`, `transition.reminder` is `true` and `transition.outage_seconds` holds the outage duration. The summary sent after a mute or maintenance window has `transition.catch_up = true`.
+
 Manual test sends use the same shape but with `event_type = "test_notification_webhook"` and a synthetic monitor like `GoUp Webhook Test`.
 
 #### Headers and signature
@@ -443,6 +456,76 @@ valid := hmac.Equal([]byte(signature), []byte(expected))
 
 ---
 
+## Outage reminders
+
+Each monitor has an **Repeat outage alert** setting (advanced section of the monitor dialog; also part of monitor export/import as `remind_every_minutes`): off (default), 15, 30 min, 1, 2, 4, 12 or 24 h.
+
+- Applies only while the monitor is **down** (not degraded) and its down alert was actually announced (respecting "alert after N failures").
+- The interval is measured from the last announcement (the down alert or the previous reminder). The timestamp is stored in the database (`monitors.last_alert_at`), so a restart neither loses nor duplicates reminders. It is cleared as soon as the monitor is no longer down.
+- No reminders while the monitor is muted or inside a maintenance window. When a mute or window ends and the outage continues, the next reminder follows as soon as it is due.
+- All channels receive it: email ("[STILL DOWN] name: down for 2 h 15 min"), Matrix, Web Push (own "Reminders" preference per device) and webhooks (`event_type: status_reminder_webhook`, see above).
+- A failed delivery is queued for retry at most once per reminder and channel; an older queued reminder is dropped when a newer one is queued, and a queued reminder is dropped when the monitor recovered, was muted, entered maintenance, or reminders were switched off.
+
+## Maintenance windows
+
+Tenant admins manage windows under **Settings → Maintenance windows** (`/{slug}/settings/maintenance`).
+
+- A window has a title, optional internal description, start and end, a repetition (**one time**, **daily**, **weekly**) and a scope: all monitors, selected groups, or selected monitors.
+- Recurring windows repeat the same span every 24 hours / 7 days. Occurrences are computed in plain UTC, so across a daylight-saving change the local wall-clock time shifts by one hour. A recurring window must not be longer than its period.
+- **Time zone:** start and end are entered in the browser's time zone; a small script converts them to UTC instants before submitting (hidden `starts_at`/`ends_at`), and times are displayed in the browser time zone as well. Without JavaScript the entered values are interpreted as UTC. Windows are stored in UTC.
+- While a window covers a monitor, checks keep running and are stored with `in_maintenance = 1`. They count towards `total_checks` and `maintenance_checks` of the hourly rollup but not towards up/down/degraded, so they do not lower uptime. No notifications are sent, no incident or state-change event is created for downtime inside the window, and no reminders are sent.
+- When the window ends, one summary notification is sent if the monitor's status differs from its status before the window (same mechanism as the mute catch-up; the marker is `monitors.mute_start_status`).
+- The dashboard card, group header and detail page show a "Maintenance" status; the monitor menu has a quick action **Start maintenance (1 h)**.
+- The public status page lists running and upcoming (next 7 days) windows that affect at least one shown monitor (title and time range only) and shows "Maintenance" for covered monitors.
+- Prometheus: `goup_monitor_in_maintenance` is 1 while a window covers the monitor.
+- The server caches the windows for up to 30 seconds; changes made through the UI take effect immediately.
+
+## Public status page
+
+Each tenant can publish an opt-in status page at `/{slug}/status`. It needs no login and is disabled by default.
+
+1. Sign in as a tenant admin and open **Settings → Status & metrics**.
+2. Enable the page, set a title and optional description, tick the monitors to show and give each a public display name (defaults to the monitor name). Use **Copy public URL** to share the link.
+
+The page shows an overall banner, each monitor's current status, 90-day daily uptime bars with the percentage (computed from the hourly rollups, so unknown and maintenance checks do not count) and the time of the last update. It never exposes targets, hosts, URLs, error messages or latencies. If a selected monitor belongs to a monitor group, the group name is shown as a heading. The response is cached on the server for 30 seconds and sent with `Cache-Control: public, max-age=30`, so changes appear after at most about 30 seconds. A disabled page or an inactive tenant returns 404.
+
+## Prometheus metrics
+
+`GET /{slug}/metrics` serves tenant metrics in the Prometheus text exposition format (0.0.4). The endpoint requires a bearer token:
+
+1. In **Settings → Status & metrics → API tokens for metrics** a tenant admin creates a token. It is shown once; only its SHA-256 hash is stored. Tokens can be revoked at any time.
+2. Add a scrape job:
+
+```yaml
+scrape_configs:
+  - job_name: goup-acme
+    scheme: https
+    metrics_path: /acme/metrics
+    authorization:
+      type: Bearer
+      credentials: goup_xxxxxxxxxxxxxxxx   # or credentials_file: /etc/prometheus/goup.token
+    static_configs:
+      - targets: ["goup.example.com"]
+```
+
+(Older Prometheus versions use `bearer_token` / `bearer_token_file` instead of `authorization`.)
+
+Exposed series, labelled with `monitor`, `monitor_id`, `kind` and `group`:
+
+| Metric | Meaning |
+| --- | --- |
+| `goup_monitor_up` | 1 for up/degraded, 0 for down (absent without a verdict) |
+| `goup_monitor_status{status=...}` | one-hot: `up`, `degraded`, `down`, `unknown`, `paused` |
+| `goup_monitor_latency_milliseconds` | latency of the last up/degraded check |
+| `goup_monitor_cert_expiry_timestamp_seconds` | certificate expiry (Unix time), if known |
+| `goup_monitor_uptime_ratio{window="24h\|7d\|30d"}` | uptime ratio 0-1 from the hourly rollups |
+| `goup_monitor_paused`, `goup_monitor_muted` | 1 if the monitor is paused / muted |
+| `goup_monitor_in_maintenance` | 1 while a maintenance window covers the monitor |
+| `goup_monitor_last_check_timestamp_seconds` | time of the last check |
+| `goup_build_info{version=...}` | build information |
+
+Repeated requests with an invalid token are rate limited per client IP (HTTP 429). Monitor targets and hosts are never part of the output.
+
 ## Running behind a reverse proxy
 
 GoUp validates `Origin` and `Referer` on state-changing requests against `GOUP_BASE_URL`.
@@ -460,8 +543,39 @@ location / {
   proxy_pass http://127.0.0.1:8080;
   proxy_set_header Host $host;
   proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
 }
 ```
+
+Set `GOUP_TRUSTED_PROXIES` to the address(es) of the proxy as seen by GoUp
+(for example `GOUP_TRUSTED_PROXIES=172.19.27.1/32` or the Docker network CIDR).
+Only then are forwarded headers used for the client IP (rate limits, login
+lockouts, audit log, remote-node events) and for deciding that the connection
+is HTTPS (`Secure` admin cookies, HSTS). The rightmost untrusted
+`X-Forwarded-For` hop is used; IPv6 clients are rate-limited per `/64`.
+Without `GOUP_TRUSTED_PROXIES` every client appears with the proxy's IP, so
+a single attacker can lock out all users of a tenant; configure it.
+
+Session cookies are marked `Secure` based on `GOUP_BASE_URL` (use an `https://`
+base URL behind a TLS-terminating proxy).
+
+### Initial setup token
+
+While no control-plane admin exists, `/admin/setup` requires a setup token:
+either `GOUP_SETUP_TOKEN` or the random token printed to the log at startup
+(`CONTROL-PLANE SETUP PENDING`). This prevents anyone who can reach a fresh
+instance from claiming the admin account.
+
+### OIDC access policy
+
+Each OIDC provider has a *role for new users* (default `viewer`), optional
+*allowed email domains* and optional *allowed groups* (matched against the
+`groups` claim). Users whose `email_verified` claim is `false` are rejected; if
+domains are configured a verified email is required. Existing members keep
+their role on later logins. Users removed from a tenant are blocked (not
+deleted) so they cannot silently rejoin via SSO; use "Re-add" in the user
+list to allow them again.
 
 ---
 

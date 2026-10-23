@@ -169,3 +169,38 @@ func TestSendTestUsesTestEventType(t *testing.T) {
 		t.Fatalf("expected one request, got %d", requests)
 	}
 }
+
+func TestReminderUsesReminderEventAndOutageFields(t *testing.T) {
+	var gotEvent string
+	var got payload
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotEvent = r.Header.Get("X-GoUp-Event")
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+
+	notifier := NewNotifier(stubStore{endpoints: []store.WebhookEndpoint{{ID: 7, Enabled: true, URL: server.URL}}}, stubSecrets{secret: "s"}, 3)
+	notifier.validateURL = func(raw string) (*url.URL, error) { return url.Parse(raw) }
+	notifier.newHTTPClient = func(time.Duration) *http.Client { return server.Client() }
+
+	transition := monitor.Transition{
+		Monitor:  monitor.Monitor{ID: 11, Name: "API"},
+		Previous: monitor.StatusDown, Current: monitor.StatusDown,
+		CheckedAt: time.Now(), Reminder: true, OutageDuration: 135 * time.Minute,
+	}
+	if _, err := notifier.NotifyAll(context.Background(), transition); err != nil {
+		t.Fatal(err)
+	}
+	if gotEvent != ReminderEvent || got.EventType != ReminderEvent {
+		t.Fatalf("event header/body = %q/%q, want %q", gotEvent, got.EventType, ReminderEvent)
+	}
+	if !got.Transition.Reminder || got.Transition.OutageSeconds != 135*60 {
+		t.Fatalf("reminder fields = %+v", got.Transition)
+	}
+	// A queued retry goes through NotifyEndpoint and must keep the reminder event type.
+	gotEvent = ""
+	if err := notifier.NotifyEndpoint(context.Background(), 7, transition); err != nil || gotEvent != ReminderEvent {
+		t.Fatalf("retry event = %q err=%v", gotEvent, err)
+	}
+}

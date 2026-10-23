@@ -62,7 +62,7 @@ var monitorMuteDurations = map[string]time.Duration{
 	"mute_24h": 24 * time.Hour,
 }
 
-// handleBulkMonitorAction applies one action (enable, pause, mute_*, unmute, delete) to one or
+// handleBulkMonitorAction applies one action (enable, pause, mute_*, unmute, maintenance_1h, delete) to one or
 // more monitors. The single-monitor menu uses it as well, with a single id.
 func (s *Server) handleBulkMonitorAction(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -111,6 +111,26 @@ func (s *Server) handleBulkMonitorAction(w http.ResponseWriter, r *http.Request)
 		}
 	case "unmute":
 		updated, err = appStore.SetMonitorsMutedUntil(r.Context(), ids, nil)
+	case "maintenance_1h":
+		// Quick action: one-hour maintenance window for the selected monitors, starting now.
+		var createdBy int64
+		if user := s.currentUser(r); user != nil {
+			createdBy = user.UserID
+		}
+		now := time.Now().UTC()
+		_, err = appStore.CreateMaintenanceWindow(r.Context(), monitor.MaintenanceWindow{
+			Title:      s.settingsFlash(r, "settings.maintenance.quick_title", "Quick maintenance (1 h)"),
+			StartsAt:   now.Add(-time.Second),
+			EndsAt:     now.Add(time.Hour),
+			Recurrence: monitor.RecurrenceNone,
+			Scope:      monitor.MaintenanceScopeMonitors,
+			MonitorIDs: ids,
+			CreatedBy:  createdBy,
+		})
+		if err == nil {
+			updated = int64(len(ids))
+			s.statusCache.invalidate()
+		}
 	default:
 		duration, ok := monitorMuteDurations[action]
 		if !ok {

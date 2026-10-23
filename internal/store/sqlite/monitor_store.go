@@ -30,6 +30,11 @@ type CreateMonitorParams struct {
 	RetryCount         int
 	RetryInterval      time.Duration
 	CertWarningDays    int
+	// ConfirmAfter is the number of consecutive failed checks required before a down/degraded
+	// transition is announced (flapping protection). 1 announces immediately.
+	ConfirmAfter int
+	// RemindEveryMinutes repeats the down alert while the outage lasts (0 = off).
+	RemindEveryMinutes int
 }
 
 type UpdateMonitorParams struct {
@@ -44,11 +49,26 @@ type MonitorHourlyRollup struct {
 	UpChecks       int
 	DownChecks     int
 	DegradedChecks int
-	LatencySumMS   int
-	LatencyMinMS   int
-	LatencyMaxMS   int
-	FirstCheckedAt time.Time
-	LastCheckedAt  time.Time
+	// UnknownChecks are checks without a verdict (e.g. remote node offline); they are
+	// excluded from uptime.
+	UnknownChecks int
+	// MaintenanceChecks are checks inside a maintenance window (filled by Phase 6); they are
+	// counted in TotalChecks only and excluded from uptime.
+	MaintenanceChecks int
+	LatencySumMS      int
+	LatencyMinMS      int
+	LatencyMaxMS      int
+	FirstCheckedAt    time.Time
+	LastCheckedAt     time.Time
+}
+
+// EffectiveChecks is the uptime denominator: checks that produced a verdict outside maintenance.
+func (r MonitorHourlyRollup) EffectiveChecks() int {
+	effective := r.TotalChecks - r.UnknownChecks - r.MaintenanceChecks
+	if effective < 0 {
+		return 0
+	}
+	return effective
 }
 
 type GroupOrder struct {
@@ -80,10 +100,10 @@ func (s *Store) CreateMonitor(ctx context.Context, params CreateMonitorParams) (
 INSERT INTO monitors (
 	name, group_name, sort_order, executor_kind, executor_ref, kind, target, interval_seconds, timeout_seconds, enabled,
     tls_mode, expected_status_code, expected_text, notify_on_recovery,
-    retry_count, retry_interval_seconds, cert_warning_days,
+    retry_count, retry_interval_seconds, cert_warning_days, confirm_after, remind_every_minutes,
     created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, params.Name, strings.TrimSpace(params.Group), nextSortOrder, executorKind, executorRef, string(params.Kind), params.Target, int(params.Interval.Seconds()), int(params.Timeout.Seconds()), boolToInt(params.Enabled), string(params.TLSMode), params.ExpectedStatusCode, strings.TrimSpace(params.ExpectedText), boolToInt(params.NotifyOnRecovery), params.RetryCount, int(params.RetryInterval.Seconds()), normalizeCertWarningDays(params.CertWarningDays), now, now)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, params.Name, strings.TrimSpace(params.Group), nextSortOrder, executorKind, executorRef, string(params.Kind), params.Target, int(params.Interval.Seconds()), int(params.Timeout.Seconds()), boolToInt(params.Enabled), string(params.TLSMode), params.ExpectedStatusCode, strings.TrimSpace(params.ExpectedText), boolToInt(params.NotifyOnRecovery), params.RetryCount, int(params.RetryInterval.Seconds()), normalizeCertWarningDays(params.CertWarningDays), normalizeConfirmAfter(params.ConfirmAfter), params.RemindEveryMinutes, now, now)
 	if err != nil {
 		return 0, fmt.Errorf("create monitor: %w", err)
 	}
@@ -129,6 +149,8 @@ SET
     retry_count = ?,
     retry_interval_seconds = ?,
     cert_warning_days = ?,
+    confirm_after = ?,
+    remind_every_minutes = ?,
     updated_at = ?
 WHERE id = ?
 `,
@@ -148,6 +170,8 @@ WHERE id = ?
 		params.RetryCount,
 		int(params.RetryInterval.Seconds()),
 		normalizeCertWarningDays(params.CertWarningDays),
+		normalizeConfirmAfter(params.ConfirmAfter),
+		params.RemindEveryMinutes,
 		now,
 		params.ID,
 	)
@@ -258,15 +282,42 @@ func (s *Store) SetMonitorsMutedUntil(ctx context.Context, ids []int64, until *t
 	for _, id := range ids {
 		args = append(args, id)
 	}
+	// mute_start_status remembers the status when the mute began so a catch-up notification can
+	// be sent afterwards. Extending a running mute keeps the original value; unmuting keeps it
+	// as a pending catch-up marker until the runner has processed it.
+	now := time.Now().UTC()
+	args = append([]any{value, now, value, now}, args[2:]...)
 	result, err := s.db.ExecContext(ctx, `
 UPDATE monitors
-SET muted_until = ?, updated_at = ?
+SET mute_start_status = CASE
+        WHEN ? IS NULL THEN mute_start_status
+        WHEN muted_until IS NOT NULL AND muted_until > ? THEN mute_start_status
+        ELSE COALESCE((
+            SELECT r.status FROM monitor_results r
+            WHERE r.monitor_id = monitors.id
+            ORDER BY r.checked_at DESC, r.id DESC LIMIT 1
+        ), '')
+    END,
+    muted_until = ?, updated_at = ?
 WHERE id IN (`+placeholders+`)
 `, args...)
 	if err != nil {
 		return 0, fmt.Errorf("set monitor muted_until: %w", err)
 	}
 	return result.RowsAffected()
+}
+
+// MaxConfirmAfter bounds the flapping-protection setting.
+const MaxConfirmAfter = 10
+
+func normalizeConfirmAfter(value int) int {
+	if value < 1 {
+		return 1
+	}
+	if value > MaxConfirmAfter {
+		return MaxConfirmAfter
+	}
+	return value
 }
 
 func normalizeCertWarningDays(days int) int {
@@ -378,6 +429,8 @@ SELECT
 	notify_on_recovery,
 	muted_until,
 	cert_warning_days,
+	confirm_after,
+	mute_start_status,
 	created_at,
 	updated_at
 FROM monitors
@@ -402,6 +455,7 @@ ORDER BY sort_order ASC, id ASC
 		var tlsModeRaw string
 		var expectedStatusCode sql.NullInt64
 		var mutedUntil sql.NullTime
+		var muteStartStatus string
 		if err := rows.Scan(
 			&item.ID,
 			&item.Name,
@@ -420,12 +474,16 @@ ORDER BY sort_order ASC, id ASC
 			&notifyOnRecovery,
 			&mutedUntil,
 			&item.CertWarningDays,
+			&item.ConfirmAfter,
+			&muteStartStatus,
 			&item.CreatedAt,
 			&item.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan monitor by executor: %w", err)
 		}
 		item.MutedUntil = nullableTime(mutedUntil)
+		item.MuteStartStatus = monitor.Status(strings.TrimSpace(muteStartStatus))
+		item.ConfirmAfter = normalizeConfirmAfter(item.ConfirmAfter)
 		item.Kind = monitor.Kind(strings.TrimSpace(kindRaw))
 		item.TLSMode = monitor.TLSMode(strings.TrimSpace(tlsModeRaw))
 		item.Interval = time.Duration(intervalSeconds) * time.Second
@@ -448,8 +506,7 @@ ORDER BY sort_order ASC, id ASC
 	return items, nil
 }
 
-func (s *Store) listMonitorSnapshotsWithResults(ctx context.Context) ([]monitor.Snapshot, error) {
-	rows, err := s.db.QueryContext(ctx, `
+const monitorSnapshotSelect = `
 SELECT
     m.id,
     m.name,
@@ -470,6 +527,10 @@ SELECT
     m.retry_interval_seconds,
     m.muted_until,
     m.cert_warning_days,
+    m.confirm_after,
+    m.mute_start_status,
+    m.remind_every_minutes,
+    m.last_alert_at,
     m.created_at,
     m.updated_at,
     r.id,
@@ -489,8 +550,10 @@ LEFT JOIN monitor_results r ON r.id = (
     ORDER BY mr.checked_at DESC, mr.id DESC
     LIMIT 1
 )
-ORDER BY m.sort_order ASC, m.id ASC
-`)
+`
+
+func (s *Store) listMonitorSnapshotsWithResults(ctx context.Context) ([]monitor.Snapshot, error) {
+	rows, err := s.db.QueryContext(ctx, monitorSnapshotSelect+"ORDER BY m.sort_order ASC, m.id ASC")
 	if err != nil {
 		return nil, fmt.Errorf("list monitors: %w", err)
 	}
@@ -533,6 +596,10 @@ SELECT
     retry_interval_seconds,
     muted_until,
     cert_warning_days,
+    confirm_after,
+    mute_start_status,
+    remind_every_minutes,
+    last_alert_at,
     created_at,
     updated_at
 FROM monitors
@@ -546,17 +613,19 @@ ORDER BY sort_order ASC, id ASC
 	snapshots := make([]monitor.Snapshot, 0)
 	for rows.Next() {
 		var (
-			item                  monitor.Snapshot
-			kindRaw               string
-			tlsModeRaw            string
-			intervalSeconds       int
-			timeoutSeconds        int
-			enabledRaw            int
-			notifyOnRecovery      int
-			retryCount            int
-			retryIntervalSeconds  int
-			expectedStatusCode    sql.NullInt64
-			mutedUntil            sql.NullTime
+			item                 monitor.Snapshot
+			kindRaw              string
+			tlsModeRaw           string
+			intervalSeconds      int
+			timeoutSeconds       int
+			enabledRaw           int
+			notifyOnRecovery     int
+			retryCount           int
+			retryIntervalSeconds int
+			expectedStatusCode   sql.NullInt64
+			mutedUntil           sql.NullTime
+			muteStartStatus      string
+			lastAlertAt          sql.NullTime
 		)
 
 		if err := rows.Scan(
@@ -579,12 +648,19 @@ ORDER BY sort_order ASC, id ASC
 			&retryIntervalSeconds,
 			&mutedUntil,
 			&item.Monitor.CertWarningDays,
+			&item.Monitor.ConfirmAfter,
+			&muteStartStatus,
+			&item.Monitor.RemindEveryMinutes,
+			&lastAlertAt,
 			&item.Monitor.CreatedAt,
 			&item.Monitor.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan monitor fallback: %w", err)
 		}
 		item.Monitor.MutedUntil = nullableTime(mutedUntil)
+		item.Monitor.MuteStartStatus = monitor.Status(strings.TrimSpace(muteStartStatus))
+		item.Monitor.ConfirmAfter = normalizeConfirmAfter(item.Monitor.ConfirmAfter)
+		item.Monitor.LastAlertAt = nullableTime(lastAlertAt)
 
 		item.Monitor.Kind = monitor.Kind(kindRaw)
 		if strings.TrimSpace(item.Monitor.ExecutorKind) == "" {
@@ -611,6 +687,89 @@ ORDER BY sort_order ASC, id ASC
 	return snapshots, nil
 }
 
+// GetMonitorSnapshot loads one monitor with its latest result; it returns sql.ErrNoRows when
+// the monitor no longer exists.
+func (s *Store) GetMonitorSnapshot(ctx context.Context, monitorID int64) (monitor.Snapshot, error) {
+	row := s.db.QueryRowContext(ctx, monitorSnapshotSelect+"WHERE m.id = ?", monitorID)
+	snapshot, err := scanMonitorSnapshot(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return monitor.Snapshot{}, sql.ErrNoRows
+		}
+		return monitor.Snapshot{}, err
+	}
+	return snapshot, nil
+}
+
+// RecentMonitorStatuses returns the latest result statuses of a monitor, newest first.
+func (s *Store) RecentMonitorStatuses(ctx context.Context, monitorID int64, limit int) ([]monitor.Status, error) {
+	if limit <= 0 {
+		limit = 1
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT status
+FROM monitor_results
+WHERE monitor_id = ?
+ORDER BY checked_at DESC, id DESC
+LIMIT ?
+`, monitorID, limit)
+	if err != nil {
+		if isMalformedSQLiteError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("list recent monitor statuses: %w", err)
+	}
+	defer rows.Close()
+	statuses := make([]monitor.Status, 0, limit)
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan recent monitor status: %w", err)
+		}
+		statuses = append(statuses, monitor.Status(strings.ToLower(strings.TrimSpace(raw))))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate recent monitor statuses: %w", err)
+	}
+	return statuses, nil
+}
+
+// ClearMonitorMuteStartStatus drops the pending mute catch-up marker once it was handled.
+func (s *Store) ClearMonitorMuteStartStatus(ctx context.Context, monitorID int64) error {
+	if _, err := s.db.ExecContext(ctx, `UPDATE monitors SET mute_start_status = '' WHERE id = ?`, monitorID); err != nil {
+		return fmt.Errorf("clear monitor mute_start_status: %w", err)
+	}
+	return nil
+}
+
+// ListLatenciesSince returns up/degraded latencies (ms) of raw results since the given time.
+func (s *Store) ListLatenciesSince(ctx context.Context, monitorID int64, since time.Time) ([]int, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT latency_ms
+FROM monitor_results
+WHERE monitor_id = ? AND checked_at >= ? AND status IN ('up', 'degraded')
+`, monitorID, since.UTC())
+	if err != nil {
+		if isMalformedSQLiteError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("list latencies: %w", err)
+	}
+	defer rows.Close()
+	values := make([]int, 0, 256)
+	for rows.Next() {
+		var value int
+		if err := rows.Scan(&value); err != nil {
+			return nil, fmt.Errorf("scan latency: %w", err)
+		}
+		values = append(values, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate latencies: %w", err)
+	}
+	return values, nil
+}
+
 func isMalformedSQLiteError(err error) bool {
 	if err == nil {
 		return false
@@ -628,6 +787,8 @@ SELECT
     up_checks,
     down_checks,
     degraded_checks,
+    unknown_checks,
+    maintenance_checks,
     latency_sum_ms,
     latency_min_ms,
     latency_max_ms,
@@ -649,6 +810,8 @@ SELECT
     up_checks,
     down_checks,
     degraded_checks,
+    unknown_checks,
+    maintenance_checks,
     latency_sum_ms,
     latency_min_ms,
     latency_max_ms,
@@ -680,6 +843,8 @@ func (s *Store) listHourlyRollups(ctx context.Context, query string, args ...any
 			&item.UpChecks,
 			&item.DownChecks,
 			&item.DegradedChecks,
+			&item.UnknownChecks,
+			&item.MaintenanceChecks,
 			&item.LatencySumMS,
 			&item.LatencyMinMS,
 			&item.LatencyMaxMS,
@@ -1185,14 +1350,14 @@ func (s *Store) SaveMonitorResult(ctx context.Context, result monitor.Result) er
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO monitor_results (
     monitor_id, checked_at, status, latency_ms, message,
-    http_status_code, tls_valid, tls_not_after, tls_days_remaining
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, result.MonitorID, checkedAt, string(result.Status), int(result.Latency.Milliseconds()), strings.TrimSpace(result.Message), result.HTTPStatusCode, nullableBoolInt(result.TLSValid), result.TLSNotAfter, result.TLSDaysRemaining)
+    http_status_code, tls_valid, tls_not_after, tls_days_remaining, in_maintenance
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, result.MonitorID, checkedAt, string(result.Status), int(result.Latency.Milliseconds()), strings.TrimSpace(result.Message), result.HTTPStatusCode, nullableBoolInt(result.TLSValid), result.TLSNotAfter, result.TLSDaysRemaining, boolToInt(result.InMaintenance))
 	if err != nil {
 		return fmt.Errorf("save monitor result: %w", err)
 	}
 
-	if err := upsertHourlyRollup(ctx, tx, result.MonitorID, checkedAt, result.Status, int(result.Latency.Milliseconds())); err != nil {
+	if err := upsertHourlyRollup(ctx, tx, result.MonitorID, checkedAt, result.Status, int(result.Latency.Milliseconds()), result.InMaintenance); err != nil {
 		return err
 	}
 
@@ -1382,6 +1547,9 @@ func validateCreateMonitorParams(params CreateMonitorParams) error {
 	if params.CertWarningDays < 0 || params.CertWarningDays > 365 {
 		return errors.New("certificate warning days must be between 1 and 365")
 	}
+	if !monitor.ValidRemindEvery(params.RemindEveryMinutes) {
+		return errors.New("reminder interval must be one of 0, 15, 30, 60, 120, 240, 720 or 1440 minutes")
+	}
 	expectedText := strings.TrimSpace(params.ExpectedText)
 	if expectedText != "" && params.Kind != monitor.KindHTTPS && params.Kind != monitor.KindDNS && params.Kind != monitor.KindUDP {
 		return errors.New("expected value is only valid for HTTPS, DNS and UDP monitors")
@@ -1529,6 +1697,8 @@ func scanMonitorSnapshot(scanner interface{ Scan(dest ...any) error }) (monitor.
 	var expectedStatusCode sql.NullInt64
 	var expectedText string
 	var mutedUntil sql.NullTime
+	var muteStartStatus string
+	var lastAlertAt sql.NullTime
 	var resultID sql.NullInt64
 	var checkedAt sql.NullTime
 	var status sql.NullString
@@ -1559,6 +1729,10 @@ func scanMonitorSnapshot(scanner interface{ Scan(dest ...any) error }) (monitor.
 		&retryIntervalSeconds,
 		&mutedUntil,
 		&item.Monitor.CertWarningDays,
+		&item.Monitor.ConfirmAfter,
+		&muteStartStatus,
+		&item.Monitor.RemindEveryMinutes,
+		&lastAlertAt,
 		&item.Monitor.CreatedAt,
 		&item.Monitor.UpdatedAt,
 		&resultID,
@@ -1590,6 +1764,9 @@ func scanMonitorSnapshot(scanner interface{ Scan(dest ...any) error }) (monitor.
 	item.Monitor.RetryCount = retryCount
 	item.Monitor.RetryInterval = time.Duration(retryIntervalSeconds) * time.Second
 	item.Monitor.MutedUntil = nullableTime(mutedUntil)
+	item.Monitor.MuteStartStatus = monitor.Status(strings.TrimSpace(muteStartStatus))
+	item.Monitor.ConfirmAfter = normalizeConfirmAfter(item.Monitor.ConfirmAfter)
+	item.Monitor.LastAlertAt = nullableTime(lastAlertAt)
 	if expectedStatusCode.Valid {
 		value := int(expectedStatusCode.Int64)
 		item.Monitor.ExpectedStatusCode = &value

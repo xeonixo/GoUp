@@ -269,8 +269,20 @@
       if (certField) {
         certField.value = String(certDays);
       }
+      const confirmAfter = isEdit ? Number(data.confirmAfter || 1) : 1;
+      const confirmField = document.getElementById('monitor-confirm-after');
+      if (confirmField) {
+        confirmField.value = String(confirmAfter);
+      }
+      const remindEvery = isEdit ? Number(data.remindEvery || 0) : 0;
+      const remindField = document.getElementById('monitor-remind-every');
+      if (remindField) {
+        remindField.value = String(remindEvery);
+      }
       advanced.open = isEdit && (
         Number(data.retryCount || 0) > 0 ||
+        confirmAfter > 1 ||
+        remindEvery > 0 ||
         Number(data.timeout || 10) !== 10 ||
         data.notifyOnRecovery === '0' ||
         certDays !== 7

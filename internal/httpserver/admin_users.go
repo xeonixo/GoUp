@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"errors"
 	"fmt"
 	store "goup/internal/store/sqlite"
 	"net/http"
@@ -31,14 +32,20 @@ func (s *Server) handleAdminLocalUsersList(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	blockedUsers, err := s.controlStore.ListBlockedTenantUsers(r.Context(), tenantID)
+	if err != nil {
+		s.logger.Warn("list blocked tenant users failed", "tenant_id", tenantID, "error", err)
+	}
+
 	s.render(w, "admin_local_users", pageData{
-		Title:             fmt.Sprintf("Benutzer für %s · GoUp", tenant.Name),
-		User:              user,
-		ControlPlaneAdmin: true,
-		AdminTenant:       tenant,
-		AdminTenantUsers:  tenantUsers,
-		Notice:            strings.TrimSpace(r.URL.Query().Get("notice")),
-		Error:             strings.TrimSpace(r.URL.Query().Get("error")),
+		Title:              fmt.Sprintf("Benutzer für %s · GoUp", tenant.Name),
+		User:               user,
+		ControlPlaneAdmin:  true,
+		AdminTenant:        tenant,
+		AdminTenantUsers:   tenantUsers,
+		BlockedTenantUsers: blockedUsers,
+		Notice:             strings.TrimSpace(r.URL.Query().Get("notice")),
+		Error:              strings.TrimSpace(r.URL.Query().Get("error")),
 	})
 }
 
@@ -134,7 +141,7 @@ func (s *Server) handleAdminLocalUserSave(w http.ResponseWriter, r *http.Request
 		_, err := s.controlStore.CreateLocalUserForTenant(r.Context(), tenantID, loginName, password, email, displayName, role)
 		if err != nil {
 			s.logger.Error("create local user failed", "tenant_id", tenantID, "error", err)
-			http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/local-users/new?error=%s", tenantID, url.QueryEscape("Lokaler Benutzer konnte nicht erstellt werden")), http.StatusSeeOther)
+			http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/local-users/new?error=%s", tenantID, url.QueryEscape(localUserSaveErrorMessage(err, "Lokaler Benutzer konnte nicht erstellt werden"))), http.StatusSeeOther)
 			return
 		}
 		s.writeAudit(r, "local_user.create", "tenant", tenantID, fmt.Sprintf("login=%s email=%s", loginName, email))
@@ -151,7 +158,7 @@ func (s *Server) handleAdminLocalUserSave(w http.ResponseWriter, r *http.Request
 	_, err = s.controlStore.UpdateLocalUserForTenant(r.Context(), tenantID, userID, loginName, password, email, displayName, role)
 	if err != nil {
 		s.logger.Error("update local user failed", "tenant_id", tenantID, "user_id", userID, "error", err)
-		http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/local-users/%d/edit?error=%s", tenantID, userID, url.QueryEscape("Lokaler Benutzer konnte nicht gespeichert werden")), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/local-users/%d/edit?error=%s", tenantID, userID, url.QueryEscape(localUserSaveErrorMessage(err, "Lokaler Benutzer konnte nicht gespeichert werden"))), http.StatusSeeOther)
 		return
 	}
 	s.writeAudit(r, "local_user.update", "tenant", tenantID, fmt.Sprintf("user_id=%d login=%s", userID, loginName))
@@ -215,4 +222,41 @@ func (s *Server) handleAdminTenantUserRemove(w http.ResponseWriter, r *http.Requ
 	s.writeAudit(r, "tenant_user.remove", "tenant", tenantID, fmt.Sprintf("user_id=%d", userID))
 
 	http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/local-users?notice=%s", tenantID, url.QueryEscape("Benutzer entfernt")), http.StatusSeeOther)
+}
+
+// localUserSaveErrorMessage maps validation errors to user-facing messages;
+// everything else stays generic (details are logged).
+func localUserSaveErrorMessage(err error, fallback string) string {
+	if errors.Is(err, store.ErrPasswordTooShort) {
+		return fmt.Sprintf("Das Passwort muss mindestens %d Zeichen haben", store.MinLocalPasswordLength)
+	}
+	return fallback
+}
+
+func (s *Server) handleAdminTenantUserUnblock(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	tenantID, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("id")), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid tenant id", http.StatusBadRequest)
+		return
+	}
+	userID, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("userID")), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid user id", http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+	if err := s.controlStore.UnblockTenantUser(r.Context(), tenantID, userID, r.FormValue("role")); err != nil {
+		s.logger.Error("unblock tenant user failed", "tenant_id", tenantID, "user_id", userID, "error", err)
+		http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/local-users?error=%s", tenantID, url.QueryEscape("Benutzer konnte nicht wieder hinzugefügt werden")), http.StatusSeeOther)
+		return
+	}
+	s.writeAudit(r, "tenant_user.unblock", "tenant", tenantID, fmt.Sprintf("user_id=%d", userID))
+	http.Redirect(w, r, fmt.Sprintf("/admin/tenants/%d/local-users?notice=%s", tenantID, url.QueryEscape("Benutzer wieder hinzugefügt")), http.StatusSeeOther)
 }

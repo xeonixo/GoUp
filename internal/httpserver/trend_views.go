@@ -1,10 +1,26 @@
 package httpserver
 
 import (
+	"fmt"
 	store "goup/internal/store/sqlite"
 	"strconv"
 	"time"
 )
+
+// uptimeBasisPoints returns up/effective in hundredths of a percent, rounded down so a monitor
+// that missed a single check never displays as 100.00%.
+func uptimeBasisPoints(up, effective int) int {
+	if effective <= 0 {
+		return 0
+	}
+	return int(int64(up) * 10000 / int64(effective))
+}
+
+// formatUptimePercent renders an uptime ratio with two decimals, e.g. "99.95%".
+func formatUptimePercent(up, effective int) string {
+	value := uptimeBasisPoints(up, effective)
+	return fmt.Sprintf("%d.%02d%%", value/100, value%100)
+}
 
 type trendRangeOptionView struct {
 	Value    string
@@ -13,16 +29,22 @@ type trendRangeOptionView struct {
 }
 
 type trendPointView struct {
-	BucketRaw     string
-	Percent       int
-	Class         string
-	Label         string
-	Format        string
-	Checks        int
-	LatencyChecks int
-	AvgMS         int
-	MinMS         int
-	MaxMS         int
+	BucketRaw string
+	// Percent is the uptime in percent (two decimals of precision), see UpChecks/EffectiveChecks.
+	Percent float64
+	Class   string
+	Label   string
+	Format  string
+	// Checks is the number of checks in the bucket; EffectiveChecks excludes unknown and
+	// maintenance checks and is the uptime denominator.
+	Checks          int
+	UpChecks        int
+	EffectiveChecks int
+	LatencyChecks   int
+	LatencySumMS    int
+	AvgMS           int
+	MinMS           int
+	MaxMS           int
 }
 
 type trendRange struct {
@@ -50,15 +72,16 @@ func groupRollupsByMonitor(items []store.MonitorHourlyRollup) map[int64][]store.
 
 func buildTrendPoints(items []store.MonitorHourlyRollup, now time.Time, selectedTrend trendRange) []trendPointView {
 	type aggregate struct {
-		totalChecks    int
-		upChecks       int
-		downChecks     int
-		degradedChecks int
-		latencyChecks  int
-		latencySumMS   int
-		hasLatencyMin  bool
-		latencyMinMS   int
-		latencyMaxMS   int
+		totalChecks     int
+		effectiveChecks int
+		upChecks        int
+		downChecks      int
+		degradedChecks  int
+		latencyChecks   int
+		latencySumMS    int
+		hasLatencyMin   bool
+		latencyMinMS    int
+		latencyMaxMS    int
 	}
 
 	start := trendRangeStart(now, selectedTrend)
@@ -78,6 +101,7 @@ func buildTrendPoints(items []store.MonitorHourlyRollup, now time.Time, selected
 			continue
 		}
 		entry.totalChecks += item.TotalChecks
+		entry.effectiveChecks += item.EffectiveChecks()
 		entry.upChecks += item.UpChecks
 		entry.downChecks += item.DownChecks
 		entry.degradedChecks += item.DegradedChecks
@@ -104,21 +128,24 @@ func buildTrendPoints(items []store.MonitorHourlyRollup, now time.Time, selected
 			Label:     "Keine Daten",
 			Format:    trendPointFormat(selectedTrend),
 		}
-		if agg != nil && agg.totalChecks > 0 {
-			percent := int(float64(agg.upChecks) / float64(agg.totalChecks) * 100)
-			point.Percent = percent
+		if agg != nil && agg.effectiveChecks > 0 {
+			basisPoints := uptimeBasisPoints(agg.upChecks, agg.effectiveChecks)
+			point.Percent = float64(basisPoints) / 100
 			point.Checks = agg.totalChecks
+			point.UpChecks = agg.upChecks
+			point.EffectiveChecks = agg.effectiveChecks
 			point.LatencyChecks = agg.latencyChecks
+			point.LatencySumMS = agg.latencySumMS
 			if agg.latencyChecks > 0 {
 				point.AvgMS = agg.latencySumMS / agg.latencyChecks
 			}
 			point.MinMS = agg.latencyMinMS
 			point.MaxMS = agg.latencyMaxMS
-			point.Label = strconv.Itoa(percent) + "% Uptime · " + strconv.Itoa(agg.totalChecks) + " Checks"
+			point.Label = formatUptimePercent(agg.upChecks, agg.effectiveChecks) + " Uptime · " + strconv.Itoa(agg.effectiveChecks) + " Checks"
 			switch {
 			case agg.downChecks > 0 && agg.upChecks == 0 && agg.degradedChecks == 0:
 				point.Class = "trend-down"
-			case agg.downChecks > 0 || agg.degradedChecks > 0 || percent < 100:
+			case agg.downChecks > 0 || agg.degradedChecks > 0 || agg.upChecks < agg.effectiveChecks:
 				point.Class = "trend-degraded"
 			default:
 				point.Class = "trend-up"
@@ -143,19 +170,18 @@ func summarizeTrend(points []trendPointView, selectedTrend trendRange) string {
 	if len(points) == 0 {
 		return "Keine Daten"
 	}
-	counted := 0
-	total := 0
+	up, effective := 0, 0
 	for _, point := range points {
 		if point.Class == "trend-none" {
 			continue
 		}
-		counted++
-		total += point.Percent
+		up += point.UpChecks
+		effective += point.EffectiveChecks
 	}
-	if counted == 0 {
+	if effective == 0 {
 		return "Keine Daten"
 	}
-	return strconv.Itoa(total/counted) + "% Uptime / " + selectedTrend.Label
+	return formatUptimePercent(up, effective) + " Uptime / " + selectedTrend.Label
 }
 
 func parseTrendRange(value string) trendRange {

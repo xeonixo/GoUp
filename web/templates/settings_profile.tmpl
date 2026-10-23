@@ -9,6 +9,8 @@
     <a href="{{$.AppBase}}settings/webhooks" class="admin-nav-link">{{index $.Translations "settings.nav.webhooks"}}</a>
     <a href="{{$.AppBase}}settings/providers" class="admin-nav-link">{{index $.Translations "settings.nav.oidc_providers"}}</a>
     <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link">{{index $.Translations "settings.nav.remote_nodes"}}</a>
+    <a href="{{$.AppBase}}settings/status-page" class="admin-nav-link">{{index $.Translations "settings.nav.status_page"}}</a>
+    <a href="{{$.AppBase}}settings/maintenance" class="admin-nav-link">{{index $.Translations "settings.nav.maintenance"}}</a>
     {{end}}
   </nav>
 
@@ -44,6 +46,15 @@
           <option value="{{.Code}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
           {{end}}
         </select>
+      </div>
+      <div class="form-group">
+        <label for="theme_preference">{{index $.Translations "settings.profile.theme_label"}}</label>
+        <select id="theme_preference" data-theme-select>
+          <option value="auto">{{index $.Translations "settings.profile.theme_auto"}}</option>
+          <option value="light">{{index $.Translations "settings.profile.theme_light"}}</option>
+          <option value="dark">{{index $.Translations "settings.profile.theme_dark"}}</option>
+        </select>
+        <p class="muted compact">{{index $.Translations "settings.profile.theme_hint"}}</p>
       </div>
     </section>
 
@@ -127,6 +138,71 @@
     </section>
   </form>
 
+  <section class="card stack admin-form settings-card settings-panel push-panel" id="push-panel"
+    data-push-key-url="{{$.AppBase}}settings/push/key"
+    data-push-subscribe-url="{{$.AppBase}}settings/push/subscribe"
+    data-push-unsubscribe-url="{{$.AppBase}}settings/push/unsubscribe"
+    data-push-test-url="{{$.AppBase}}settings/push/test"
+    data-push-prefs-url="{{$.AppBase}}settings/push/prefs"
+    data-msg-checking="{{index $.Translations "settings.push.status.checking"}}"
+    data-msg-unsupported="{{index $.Translations "settings.push.status.unsupported"}}"
+    data-msg-install-ios="{{index $.Translations "settings.push.status.install_ios"}}"
+    data-msg-insecure="{{index $.Translations "settings.push.status.insecure"}}"
+    data-msg-denied="{{index $.Translations "settings.push.status.denied"}}"
+    data-msg-active="{{index $.Translations "settings.push.status.active"}}"
+    data-msg-inactive="{{index $.Translations "settings.push.status.inactive"}}"
+    data-msg-stale="{{index $.Translations "settings.push.status.stale"}}"
+    data-msg-enabled="{{index $.Translations "settings.push.message.enabled"}}"
+    data-msg-disabled="{{index $.Translations "settings.push.message.disabled"}}"
+    data-msg-removed="{{index $.Translations "settings.push.message.removed"}}"
+    data-msg-test-sent="{{index $.Translations "settings.push.message.test_sent"}}"
+    data-msg-test-failed="{{index $.Translations "settings.push.message.test_failed"}}"
+    data-msg-rate-limited="{{index $.Translations "settings.push.message.rate_limited"}}"
+    data-msg-limit="{{index $.Translations "settings.push.message.limit"}}"
+    data-msg-no-devices="{{index $.Translations "settings.push.message.no_devices"}}"
+    data-msg-error="{{index $.Translations "settings.push.message.error"}}">
+    <div class="settings-card-header">
+      <div>
+        <h2>{{index $.Translations "settings.push.title"}}</h2>
+        <p class="muted compact">{{index $.Translations "settings.push.subtitle"}}</p>
+      </div>
+    </div>
+    <p class="push-status" data-push-status role="status" aria-live="polite">{{index $.Translations "settings.push.status.checking"}}</p>
+    <div class="form-actions">
+      <button type="button" class="button button-small" data-push-enable hidden>{{index $.Translations "settings.push.button.enable"}}</button>
+      <button type="button" class="button button-secondary button-small" data-push-disable hidden>{{index $.Translations "settings.push.button.disable"}}</button>
+      <button type="button" class="button button-secondary button-small" data-push-test {{if not .PushDevices}}disabled{{end}}>{{index $.Translations "settings.push.button.test"}}</button>
+    </div>
+
+    <h3>{{index $.Translations "settings.push.devices"}}</h3>
+    {{if .PushDevices}}
+    <ul class="push-device-list">
+      {{range .PushDevices}}
+      <li class="push-device" data-push-device data-id="{{.ID}}" data-endpoint="{{.Endpoint}}">
+        <div class="push-device-head">
+          <strong>{{if .Label}}{{.Label}}{{else}}?{{end}}</strong>
+          <span class="status-badge status-badge-success push-this-device" data-push-this-device hidden>{{index $.Translations "settings.push.this_device"}}</span>
+          <button type="button" class="button button-secondary button-small" data-push-remove>{{index $.Translations "settings.push.button.remove"}}</button>
+        </div>
+        <p class="muted compact">
+          {{index $.Translations "settings.push.registered"}}: {{.Created}} ·
+          {{index $.Translations "settings.push.last_success"}}: {{if .LastSuccess}}{{.LastSuccess}}{{else}}{{index $.Translations "settings.push.never"}}{{end}}
+          {{if .LastError}}<br>{{index $.Translations "settings.push.last_error"}}: {{.LastError}}{{end}}
+        </p>
+        <div class="push-categories">
+          <label class="checkbox-row"><input type="checkbox" data-push-pref="down" {{if .Down}}checked{{end}}><span>{{index $.Translations "settings.push.category.down"}}</span></label>
+          <label class="checkbox-row"><input type="checkbox" data-push-pref="recovery" {{if .Recovery}}checked{{end}}><span>{{index $.Translations "settings.push.category.recovery"}}</span></label>
+          <label class="checkbox-row"><input type="checkbox" data-push-pref="degraded" {{if .Degraded}}checked{{end}}><span>{{index $.Translations "settings.push.category.degraded"}}</span></label>
+          <label class="checkbox-row"><input type="checkbox" data-push-pref="reminder" {{if .Reminder}}checked{{end}}><span>{{index $.Translations "settings.push.category.reminder"}}</span></label>
+        </div>
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <p class="muted compact">{{index $.Translations "settings.push.devices_empty"}}</p>
+    {{end}}
+  </section>
+
   {{if .ProfileNotify.HasLocalCredentials}}
   <form method="POST" action="{{$.AppBase}}settings/profile/password" class="card stack admin-form settings-panel" autocomplete="on">
     <h2>{{index $.Translations "settings.password.title"}}</h2>
@@ -156,5 +232,5 @@
 {{end}}
 
 {{define "page_scripts"}}
-<script src="/static/settings-profile.js" defer></script>
+<script src="/static/settings-profile.js?v={{$.AssetVersion}}" defer></script>
 {{end}}

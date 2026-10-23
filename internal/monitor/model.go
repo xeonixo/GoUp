@@ -56,8 +56,42 @@ type Monitor struct {
 	MutedUntil *time.Time
 	// CertWarningDays marks a monitor degraded when its certificate expires within this many days.
 	CertWarningDays int
+	// ConfirmAfter is the number of consecutive failed checks needed before a down/degraded
+	// transition is announced; 0 or 1 announces immediately. Recovery is always immediate.
+	ConfirmAfter int
+	// RemindEveryMinutes repeats the down alert at this interval while the monitor stays down;
+	// 0 disables reminders. See ValidRemindEveryMinutes for the allowed values.
+	RemindEveryMinutes int
+	// LastAlertAt is when the current outage was last announced (down alert or reminder); it is
+	// cleared as soon as the monitor is no longer down. Reminders are measured from it.
+	LastAlertAt *time.Time
+	// MuteStartStatus is the status the monitor had when its notifications were muted. It is a
+	// pending catch-up marker: once the mute is over the runner compares it with the current
+	// status, sends at most one summary notification and clears it.
+	MuteStartStatus Status
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+}
+
+// ValidRemindEveryMinutes lists the reminder intervals the UI offers (0 = off).
+var ValidRemindEveryMinutes = []int{0, 15, 30, 60, 120, 240, 720, 1440}
+
+// ValidRemindEvery reports whether minutes is an allowed reminder interval.
+func ValidRemindEvery(minutes int) bool {
+	for _, allowed := range ValidRemindEveryMinutes {
+		if minutes == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+// RemindInterval returns the reminder interval, or 0 when reminders are off.
+func (m Monitor) RemindInterval() time.Duration {
+	if m.RemindEveryMinutes <= 0 {
+		return 0
+	}
+	return time.Duration(m.RemindEveryMinutes) * time.Minute
 }
 
 // DefaultCertWarningDays is used when a monitor has no certificate warning threshold of its own.
@@ -87,6 +121,9 @@ type Result struct {
 	TLSValid         *bool
 	TLSNotAfter      *time.Time
 	TLSDaysRemaining *int
+	// InMaintenance marks a result recorded inside a maintenance window; it is excluded from
+	// uptime and never triggers notifications.
+	InMaintenance bool
 }
 
 type Snapshot struct {

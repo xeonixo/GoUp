@@ -25,13 +25,13 @@
   <table class="admin-table">
     <thead>
       <tr>
-        <th>{{index $.Translations "admin.local_users.login_label"}}</th>
-        <th>{{index $.Translations "admin.local_users.type_label"}}</th>
-        <th>{{index $.Translations "admin.local_users.name_label"}}</th>
-        <th>{{index $.Translations "admin.local_users.email_label"}}</th>
-        <th>{{index $.Translations "admin.local_users.role_label"}}</th>
-        <th>{{index $.Translations "field.last_login"}}</th>
-        <th>{{index $.Translations "admin.local_users.actions_label"}}</th>
+        <th scope="col">{{index $.Translations "admin.local_users.login_label"}}</th>
+        <th scope="col">{{index $.Translations "admin.local_users.type_label"}}</th>
+        <th scope="col">{{index $.Translations "admin.local_users.name_label"}}</th>
+        <th scope="col">{{index $.Translations "admin.local_users.email_label"}}</th>
+        <th scope="col">{{index $.Translations "admin.local_users.role_label"}}</th>
+        <th scope="col">{{index $.Translations "field.last_login"}}</th>
+        <th scope="col">{{index $.Translations "admin.local_users.actions_label"}}</th>
       </tr>
     </thead>
     <tbody>
@@ -66,5 +66,38 @@
     </tbody>
   </table>
   </div>
+
+  {{if .BlockedTenantUsers}}
+  <div class="card table-card">
+    <h2>{{index $.Translations "settings.users.blocked_title"}}</h2>
+    <p class="muted">{{index $.Translations "settings.users.blocked_hint"}}</p>
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th scope="col">{{index $.Translations "settings.users.table_name"}}</th>
+          <th scope="col">{{index $.Translations "settings.users.table_email"}}</th>
+          <th scope="col">{{index $.Translations "settings.users.table_actions"}}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .BlockedTenantUsers}}
+        <tr>
+          <td>{{.DisplayName}}</td>
+          <td>{{.Email}}</td>
+          <td class="admin-actions-inline">
+            <form method="POST" action="/admin/tenants/{{$.AdminTenant.ID}}/users/{{.UserID}}/unblock" class="admin-actions-inline">
+              <select name="role">
+                <option value="viewer" selected>viewer</option>
+                <option value="admin">admin</option>
+              </select>
+              <button type="submit" class="button button-secondary button-small">{{index $.Translations "settings.users.readd_button"}}</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
 </div>
 {{end}}

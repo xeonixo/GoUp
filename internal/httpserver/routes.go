@@ -30,7 +30,7 @@ func (s *Server) routes() (http.Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("sub favicon fs: %w", err)
 	}
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
+	mux.Handle("/static/", http.StripPrefix("/static/", staticFileHandler(staticFS)))
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assetsFS))))
 	mux.Handle("/favicon/", http.StripPrefix("/favicon/", http.FileServer(http.FS(faviconFS))))
 	mux.HandleFunc("/favicon.ico", serveEmbeddedFile(faviconFS, "favicon.ico"))
@@ -40,6 +40,8 @@ func (s *Server) routes() (http.Handler, error) {
 	mux.HandleFunc("/android-chrome-192x192.png", serveEmbeddedFile(faviconFS, "android-chrome-192x192.png"))
 	mux.HandleFunc("/android-chrome-512x512.png", serveEmbeddedFile(faviconFS, "android-chrome-512x512.png"))
 	mux.HandleFunc("/site.webmanifest", serveEmbeddedFile(faviconFS, "site.webmanifest"))
+	mux.HandleFunc("/sw.js", s.handleServiceWorker)
+	mux.HandleFunc("/offline", s.handleOffline)
 	mux.HandleFunc("/", s.handleRoot)
 	mux.HandleFunc("/healthz", s.handleHealthz)
 	mux.HandleFunc("/auth/login", s.handleGlobalAuthDisabled)
@@ -81,10 +83,11 @@ func (s *Server) routes() (http.Handler, error) {
 	mux.Handle("/admin/tenants/{id}/remote-nodes/{nodeID}/rotate-bootstrap", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminRotateRemoteNodeBootstrapKey)))
 	mux.Handle("/admin/tenants/{id}/remote-nodes/{nodeID}/delete", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminDeleteRemoteNode)))
 	mux.Handle("/admin/tenants/{id}/users/{userID}/remove", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantUserRemove)))
+	mux.Handle("/admin/tenants/{id}/users/{userID}/unblock", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantUserUnblock)))
 	mux.Handle("/admin/settings/smtp/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSMTPSettingsSave)))
 	mux.Handle("/admin/settings/smtp/test", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSMTPSettingsTest)))
 
-	return s.logging(s.securityHeaders(s.requireSameOrigin(mux))), nil
+	return s.logging(s.securityHeaders(s.limitRequestBody(s.requireSameOrigin(mux)))), nil
 }
 
 func serveEmbeddedFile(fsys fs.FS, fileName string) http.HandlerFunc {
@@ -102,6 +105,9 @@ func serveEmbeddedFile(fsys fs.FS, fileName string) http.HandlerFunc {
 		}
 
 		contentType := mime.TypeByExtension(path.Ext(fileName))
+		if path.Ext(fileName) == ".webmanifest" {
+			contentType = "application/manifest+json; charset=utf-8"
+		}
 		if contentType == "" {
 			contentType = http.DetectContentType(payload)
 		}
@@ -157,7 +163,7 @@ func (s *Server) handlePrettyTenantPath(w http.ResponseWriter, r *http.Request) 
 	slug := strings.TrimSpace(parts[0])
 
 	// Reserve built-in top-level paths for the main mux.
-	if slug == "admin" || slug == "static" || slug == "healthz" || slug == "auth" {
+	if slug == "admin" || slug == "static" || slug == "healthz" || slug == "auth" || slug == "node" || slug == "assets" || slug == "favicon" || slug == "sw.js" || slug == "offline" {
 		return false
 	}
 
@@ -183,6 +189,15 @@ func (s *Server) handlePrettyTenantPath(w http.ResponseWriter, r *http.Request) 
 			// /{slug} — canonical URL is /{slug}/
 			http.Redirect(w, r, "/"+slug+"/", http.StatusMovedPermanently)
 		}
+		return true
+	case len(parts) == 2 && parts[1] == "manifest.webmanifest":
+		s.handleTenantManifest(w, r)
+		return true
+	case len(parts) == 2 && parts[1] == "status":
+		s.handleStatusPage(w, r)
+		return true
+	case len(parts) == 2 && parts[1] == "metrics":
+		s.handleTenantMetrics(w, r)
 		return true
 	case len(parts) == 2 && parts[1] == "login":
 		s.handleTenantLoginPage(w, r)
@@ -265,6 +280,11 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/settings/profile/notifiers/{kind}/test", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileNotifierTest)))
 	mux.Handle("/settings/profile/notifiers/delete", s.requireAuth(http.HandlerFunc(s.handleSettingsProfileNotifierDelete)))
 	mux.Handle("/settings/profile/password", s.requireAuth(http.HandlerFunc(s.handleSettingsProfilePassword)))
+	mux.Handle("/settings/push/key", s.requireAuth(http.HandlerFunc(s.handlePushKey)))
+	mux.Handle("/settings/push/subscribe", s.requireAuth(http.HandlerFunc(s.handlePushSubscribe)))
+	mux.Handle("/settings/push/unsubscribe", s.requireAuth(http.HandlerFunc(s.handlePushUnsubscribe)))
+	mux.Handle("/settings/push/test", s.requireAuth(http.HandlerFunc(s.handlePushTest)))
+	mux.Handle("/settings/push/prefs", s.requireAuth(http.HandlerFunc(s.handlePushPrefs)))
 	mux.Handle("/settings/users", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUsers)))
 	mux.Handle("/settings/webhooks", s.requireUserManagement(http.HandlerFunc(s.handleSettingsWebhooks)))
 	mux.Handle("/settings/webhooks/save", s.requireUserManagement(http.HandlerFunc(s.handleSettingsWebhooksSave)))
@@ -275,6 +295,13 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/settings/providers/{providerKey}/edit", s.requireUserManagement(http.HandlerFunc(s.handleSettingsProviderForm)))
 	mux.Handle("/settings/providers/save", s.requireUserManagement(http.HandlerFunc(s.handleSettingsProviderSave)))
 	mux.Handle("/settings/providers/{providerKey}/delete", s.requireUserManagement(http.HandlerFunc(s.handleSettingsProviderDelete)))
+	mux.Handle("/settings/status-page", s.requireUserManagement(http.HandlerFunc(s.handleSettingsStatusPage)))
+	mux.Handle("/settings/status-page/save", s.requireUserManagement(http.HandlerFunc(s.handleSettingsStatusPageSave)))
+	mux.Handle("/settings/status-page/tokens/create", s.requireUserManagement(http.HandlerFunc(s.handleSettingsAPITokenCreate)))
+	mux.Handle("/settings/status-page/tokens/{id}/revoke", s.requireUserManagement(http.HandlerFunc(s.handleSettingsAPITokenRevoke)))
+	mux.Handle("/settings/maintenance", s.requireUserManagement(http.HandlerFunc(s.handleSettingsMaintenance)))
+	mux.Handle("/settings/maintenance/save", s.requireUserManagement(http.HandlerFunc(s.handleSettingsMaintenanceSave)))
+	mux.Handle("/settings/maintenance/{id}/delete", s.requireUserManagement(http.HandlerFunc(s.handleSettingsMaintenanceDelete)))
 	mux.Handle("/settings/remote-nodes", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSettingsRemoteNodes))))
 	mux.Handle("/settings/remote-nodes/live", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSettingsRemoteNodesLive))))
 	mux.Handle("/settings/remote-nodes/live/snapshot", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSettingsRemoteNodesLiveSnapshot))))
@@ -283,6 +310,7 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/settings/local-users/save", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserSave)))
 	mux.Handle("/settings/local-users/{userID}/delete", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserDelete)))
 	mux.Handle("/settings/users/{userID}/role", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUserRoleSave)))
+	mux.Handle("/settings/users/{userID}/unblock", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUserUnblock)))
 	mux.Handle("/settings/users/{userID}/remove", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUserRemove)))
 	mux.Handle("/settings/remote-nodes/create", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleCreateRemoteNode))))
 	mux.Handle("/settings/remote-nodes/{nodeID}/rotate-bootstrap", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleRotateRemoteNodeBootstrapKey))))

@@ -33,7 +33,6 @@
       <h1>{{index $.Translations "admin.remote_nodes.title"}} · {{.AdminTenant.Name}}</h1>
       <p class="remote-node-live-indicator">{{index $.Translations "admin.remote_nodes.websocket_live"}}</p>
     </div>
-    <a href="/admin/tenants" class="button button-secondary">{{index $.Translations "admin.remote_nodes.back_to_tenants"}}</a>
   </div>
 
   <form method="post" action="/admin/tenants/{{.AdminTenant.ID}}/remote-nodes/create" class="admin-form admin-panel card stack remote-node-create-form">
@@ -113,5 +112,5 @@
 {{end}}
 
 {{define "page_scripts"}}
-<script src="/static/settings-remote-nodes.js" defer></script>
+<script src="/static/settings-remote-nodes.js?v={{$.AssetVersion}}" defer></script>
 {{end}}

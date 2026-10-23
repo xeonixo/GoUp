@@ -43,3 +43,17 @@ func TestNotifierEnabled(t *testing.T) {
 		t.Fatalf("notifier with client should be enabled")
 	}
 }
+
+func TestFormatReminderMessage(t *testing.T) {
+	tr := monitor.Transition{
+		Monitor:  monitor.Monitor{Name: "DB", Kind: monitor.KindTCP, Target: "db:5432"},
+		Previous: monitor.StatusDown, Current: monitor.StatusDown,
+		CheckedAt: time.Now().UTC(), Reminder: true, OutageDuration: 135 * time.Minute,
+	}
+	if msg := formatTransitionMessage(tr, "en"); !strings.Contains(msg, "DB: still DOWN for 2 h 15 min") {
+		t.Fatalf("english reminder: %q", msg)
+	}
+	if msg := formatTransitionMessage(tr, "de"); !strings.Contains(msg, "DB: weiterhin DOWN seit 2 h 15 min") {
+		t.Fatalf("german reminder: %q", msg)
+	}
+}

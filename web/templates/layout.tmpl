@@ -3,16 +3,25 @@
 <html lang="{{if .UILanguage}}{{.UILanguage}}{{else}}en{{end}}">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="{{if .AppTitle}}{{.AppTitle}}{{else}}GoUp{{end}}">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b1020">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f6fb">
   <title>{{.Title}}</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <meta name="color-scheme" content="light dark">
+  <script src="/static/theme.js?v={{$.AssetVersion}}"></script>
+  <link rel="stylesheet" href="/static/style.css?v={{$.AssetVersion}}">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
   <link rel="icon" href="/favicon.ico" sizes="any">
-  <link rel="manifest" href="/site.webmanifest">
+  <link rel="manifest" href="{{if .ManifestURL}}{{.ManifestURL}}{{else}}/site.webmanifest{{end}}">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">{{index $.Translations "layout.skip_to_content"}}</a>
   {{if not .HideTopbar}}
   <header class="topbar">
     <div class="topbar-main">
@@ -25,6 +34,10 @@
       <span class="subtitle">{{index $.Translations "layout.tenant_prefix"}} {{if .User.TenantName}}{{.User.TenantName}}{{else}}{{.User.TenantSlug}}{{end}}</span>
       {{end}}
     </div>
+    <button class="topbar-refresh button button-secondary topbar-icon-link" id="topbar-refresh" type="button" data-action="refresh" aria-label="{{index $.Translations "layout.refresh_aria"}}" title="{{index $.Translations "layout.refresh_title"}}">
+      <span aria-hidden="true">↻</span>
+      <span class="sr-only">{{index $.Translations "layout.refresh_title"}}</span>
+    </button>
     <button class="topbar-hamburger" id="topbar-hamburger" type="button" aria-label="{{index $.Translations "layout.menu_open_aria"}}" data-menu-open-label="{{index $.Translations "layout.menu_open_aria"}}" data-menu-close-label="{{index $.Translations "layout.menu_close_aria"}}" aria-expanded="false" aria-controls="topbar-collapsible">
       <span class="hamburger-line"></span>
       <span class="hamburger-line"></span>
@@ -39,32 +52,41 @@
           <span aria-hidden="true">⚙️</span>
           <span class="sr-only">{{index $.Translations "admin.security.title"}}</span>
         </a>
-        <a class="button button-secondary topbar-icon-link" href="/admin/access?logout=1" aria-label="{{index $.Translations "layout.logout_aria"}}" title="{{index $.Translations "layout.logout_title"}}">
-          <span aria-hidden="true">⎋</span>
-          <span class="sr-only">{{index $.Translations "layout.logout_title"}}</span>
-        </a>
+        <form method="POST" action="/admin/access?logout=1" class="inline-form">
+          <button type="submit" class="button button-secondary topbar-icon-link" aria-label="{{index $.Translations "layout.logout_aria"}}" title="{{index $.Translations "layout.logout_title"}}">
+            <span aria-hidden="true">⎋</span>
+            <span class="sr-only">{{index $.Translations "layout.logout_title"}}</span>
+          </button>
+        </form>
         {{else if .User}}
         <span class="user-pill">{{if .User.Name}}{{.User.Name}}{{else}}{{.User.Email}}{{end}}</span>
         <a class="button button-secondary topbar-icon-link" href="{{.AppBase}}settings/profile" aria-label="{{index $.Translations "layout.settings_aria"}}" title="{{index $.Translations "layout.settings_title"}}">
           <span aria-hidden="true">⚙️</span>
           <span class="sr-only">{{index $.Translations "layout.settings_title"}}</span>
         </a>
-        <a class="button button-secondary topbar-icon-link" href="{{if .AppBase}}{{.AppBase}}auth/logout{{else}}/auth/logout{{end}}" aria-label="{{index $.Translations "layout.logout_aria"}}" title="{{index $.Translations "layout.logout_title"}}">
-          <span aria-hidden="true">⎋</span>
-          <span class="sr-only">{{index $.Translations "layout.logout_title"}}</span>
-        </a>
+        <form method="POST" action="{{if .AppBase}}{{.AppBase}}auth/logout{{else}}/auth/logout{{end}}" class="inline-form">
+          <button type="submit" class="button button-secondary topbar-icon-link" aria-label="{{index $.Translations "layout.logout_aria"}}" title="{{index $.Translations "layout.logout_title"}}">
+            <span aria-hidden="true">⎋</span>
+            <span class="sr-only">{{index $.Translations "layout.logout_title"}}</span>
+          </button>
+        </form>
         {{end}}
         {{if .Version}}
-        <a class="app-version-link" href="https://github.com/xeonixo/goup/releases/tag/{{.Version}}" target="_blank" rel="noopener">{{.Version}}</a>
+        <a class="app-version-link" href="https://github.com/xeonixo/goup/releases/tag/{{.Version}}" target="_blank" rel="noopener noreferrer">{{.Version}}</a>
         {{end}}
       </nav>
     </div>
   </header>
   {{end}}
-  <main class="container">
+  <main class="container" id="main-content" tabindex="-1">
+    {{if .NavBackURL}}
+    <nav class="page-back" aria-label="{{.NavBackLabel}}">
+      <a class="page-back-link" href="{{.NavBackURL}}"><span aria-hidden="true">←</span> {{.NavBackLabel}}</a>
+    </nav>
+    {{end}}
     {{template "content" .}}
   </main>
-  <script src="/static/app.js" defer></script>
+  <script src="/static/app.js?v={{$.AssetVersion}}" defer></script>
   {{block "page_scripts" .}}{{end}}
 </body>
 </html>

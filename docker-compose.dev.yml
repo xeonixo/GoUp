@@ -8,8 +8,17 @@ services:
       - "8080:8080"
     env_file:
       - .env
+    # Drop every capability except NET_RAW (needed for ICMP monitors; the binary
+    # carries cap_net_raw as a file capability).
+    cap_drop:
+      - ALL
     cap_add:
       - NET_RAW
+    # NOTE: do not enable "no-new-privileges:true" while ICMP monitors are used:
+    # it makes the kernel ignore file capabilities, so the non-root process would
+    # lose NET_RAW. If you do not use ICMP monitors you can add:
+    #   security_opt:
+    #     - no-new-privileges:true
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
