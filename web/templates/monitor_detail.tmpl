@@ -65,10 +65,10 @@
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>{{index $.Translations "monitor_detail.incident_start"}}</th>
-          <th>{{index $.Translations "monitor_detail.incident_end"}}</th>
-          <th>{{index $.Translations "monitor_detail.incident_duration"}}</th>
-          <th>{{index $.Translations "monitor_detail.incident_cause"}}</th>
+          <th scope="col">{{index $.Translations "monitor_detail.incident_start"}}</th>
+          <th scope="col">{{index $.Translations "monitor_detail.incident_end"}}</th>
+          <th scope="col">{{index $.Translations "monitor_detail.incident_duration"}}</th>
+          <th scope="col">{{index $.Translations "monitor_detail.incident_cause"}}</th>
         </tr></thead>
         <tbody>
           {{range .Incidents}}

@@ -15,14 +15,14 @@
         <table class="admin-table">
           <thead>
             <tr>
-              <th>{{index $.Translations "monitors.import.col_skip"}}</th>
-              <th>{{index $.Translations "monitors.import.col_name"}}</th>
-              <th>{{index $.Translations "monitors.import.col_group"}}</th>
-              <th>{{index $.Translations "monitors.import.col_kind"}}</th>
-              <th>{{index $.Translations "monitors.import.col_target"}}</th>
-              <th>{{index $.Translations "monitors.import.col_interval"}}</th>
-              <th>{{index $.Translations "monitors.import.col_timeout"}}</th>
-              <th>{{index $.Translations "monitors.import.col_enabled"}}</th>
+              <th scope="col">{{index $.Translations "monitors.import.col_skip"}}</th>
+              <th scope="col">{{index $.Translations "monitors.import.col_name"}}</th>
+              <th scope="col">{{index $.Translations "monitors.import.col_group"}}</th>
+              <th scope="col">{{index $.Translations "monitors.import.col_kind"}}</th>
+              <th scope="col">{{index $.Translations "monitors.import.col_target"}}</th>
+              <th scope="col">{{index $.Translations "monitors.import.col_interval"}}</th>
+              <th scope="col">{{index $.Translations "monitors.import.col_timeout"}}</th>
+              <th scope="col">{{index $.Translations "monitors.import.col_enabled"}}</th>
             </tr>
           </thead>
           <tbody>
@@ -69,7 +69,7 @@
       </div>
     </section>
 
-    <div class="form-actions" style="margin-top:1rem">
+    <div class="form-actions form-actions-spaced">
       <button type="submit" class="button">{{index $.Translations "monitors.import.confirm_button"}}</button>
       <a href="{{$.AppBase}}monitors/import" class="button button-secondary">{{index $.Translations "common.back"}}</a>
     </div>

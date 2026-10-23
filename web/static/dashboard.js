@@ -3093,7 +3093,8 @@
         const buttonRange = normalizeLatencyRange(button.dataset.range || '1h');
         const isActive = buttonRange === selected;
         button.classList.toggle('button-secondary', !isActive);
-        button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        button.tabIndex = isActive ? 0 : -1;
         button.disabled = disabled;
       });
     };
@@ -3479,6 +3480,8 @@
       }
 
       trendDetailLatencyChart.hidden = false;
+      trendDetailLatencyChart.classList.add('is-loading');
+      trendDetailLatencyChart.setAttribute('aria-busy', 'true');
       setLatencyRangeButtonsState(selectedRange, true);
       trendDetailLatencyCaption.textContent = tr('trendLatencyLoading', 'Loading latency ({range}) …', {
         range: latencyRangeLabels[selectedRange] || '1h'
@@ -3509,6 +3512,8 @@
         trendDetailLatencyCaption.textContent = tr('trendLatencyLoadFailed', 'Could not load latency chart.');
         setLatencyRangeButtonsState(selectedRange, false);
       } finally {
+        trendDetailLatencyChart.classList.remove('is-loading');
+        trendDetailLatencyChart.removeAttribute('aria-busy');
       }
     };
 

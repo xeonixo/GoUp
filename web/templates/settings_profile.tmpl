@@ -45,6 +45,15 @@
           {{end}}
         </select>
       </div>
+      <div class="form-group">
+        <label for="theme_preference">{{index $.Translations "settings.profile.theme_label"}}</label>
+        <select id="theme_preference" data-theme-select>
+          <option value="auto">{{index $.Translations "settings.profile.theme_auto"}}</option>
+          <option value="light">{{index $.Translations "settings.profile.theme_light"}}</option>
+          <option value="dark">{{index $.Translations "settings.profile.theme_dark"}}</option>
+        </select>
+        <p class="muted compact">{{index $.Translations "settings.profile.theme_hint"}}</p>
+      </div>
     </section>
 
     <section class="card stack admin-form settings-card settings-panel">

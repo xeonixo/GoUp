@@ -1,5 +1,13 @@
 (() => {
   window.addEventListener('DOMContentLoaded', () => {
+    const themeSelect = document.querySelector('[data-theme-select]');
+    if (themeSelect instanceof HTMLSelectElement && window.GoUpTheme) {
+      themeSelect.value = window.GoUpTheme.get();
+      themeSelect.addEventListener('change', () => {
+        window.GoUpTheme.set(themeSelect.value);
+      });
+    }
+
     const matrixCard = document.getElementById('matrix-channel-card');
     const emptyState = document.getElementById('notifier-empty-state');
     const addButtons = Array.from(document.querySelectorAll('[data-add-notifier]'));
