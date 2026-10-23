@@ -4402,3 +4402,133 @@ main:focus {
     height: 1.375rem;
   }
 }
+
+/* ── PWA: safe areas (notch / home indicator) ─────────────────────────
+   The app runs with viewport-fit=cover and a translucent status bar, so
+   content extends under the system UI. The topbar paints its own background
+   under the status bar and everything else is inset by the safe-area values.
+   env() evaluates to 0 in regular browsers, so desktop layouts are unchanged. */
+.topbar {
+  padding-top: calc(0.45rem + env(safe-area-inset-top));
+  padding-left: max(0.9rem, env(safe-area-inset-left));
+  padding-right: max(0.9rem, env(safe-area-inset-right));
+}
+
+.topbar-collapsible {
+  right: max(0.9rem, env(safe-area-inset-right));
+  max-width: min(520px, calc(100vw - 1.8rem - env(safe-area-inset-left) - env(safe-area-inset-right)));
+}
+
+.container {
+  padding-left: max(1.1rem, env(safe-area-inset-left));
+  padding-right: max(1.1rem, env(safe-area-inset-right));
+  padding-bottom: calc(3.2rem + env(safe-area-inset-bottom));
+}
+
+/* Sticky navs sit below the (taller) topbar. */
+.admin-console-nav {
+  top: calc(3.55rem + env(safe-area-inset-top));
+}
+
+.settings-nav {
+  top: calc(3.1rem + 0.65rem + env(safe-area-inset-top));
+}
+
+.bulk-bar {
+  bottom: calc(0.75rem + env(safe-area-inset-bottom));
+}
+
+.board-toast {
+  bottom: calc(1.2rem + env(safe-area-inset-bottom));
+  max-width: calc(100vw - 2rem - env(safe-area-inset-left) - env(safe-area-inset-right));
+}
+
+.trend-detail-modal {
+  max-height: calc(100vh - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+}
+
+@media (max-width: 640px) {
+  .topbar-collapsible {
+    left: 0;
+    right: 0;
+    max-width: none;
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    /* Long menus must stay reachable on small screens. */
+    max-height: calc(100dvh - 100% - env(safe-area-inset-bottom));
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .topbar {
+    padding-top: calc(0.9rem + env(safe-area-inset-top));
+    padding-bottom: 0.9rem;
+    padding-left: max(0.9rem, env(safe-area-inset-left));
+    padding-right: max(0.9rem, env(safe-area-inset-right));
+  }
+
+  .container {
+    padding-left: max(0.9rem, env(safe-area-inset-left));
+    padding-right: max(0.9rem, env(safe-area-inset-right));
+    padding-bottom: calc(3rem + env(safe-area-inset-bottom));
+  }
+
+  /* Full-screen modal: keep controls out of the notch and home indicator. */
+  .monitor-modal {
+    padding-top: calc(1rem + env(safe-area-inset-top));
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+
+  .trend-detail-modal {
+    max-height: calc(100vh - 1rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+}
+
+.login-shell {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* ── PWA: refresh button, back link, external-link indicator ─────────── */
+.topbar-refresh {
+  flex-shrink: 0;
+  cursor: pointer;
+  font-size: 1.1rem;
+}
+
+.page-back {
+  margin: 0 0 0.9rem;
+}
+
+.page-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.2rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.page-back-link:hover,
+.page-back-link:focus-visible {
+  color: var(--text);
+}
+
+a[target="_blank"]::after {
+  content: "\2197";
+  display: inline-block;
+  margin-left: 0.2em;
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
+/* Installed app: no rubber-band bounce revealing the page behind the status bar. */
+@media (display-mode: standalone) {
+  html {
+    overscroll-behavior-y: none;
+  }
+}

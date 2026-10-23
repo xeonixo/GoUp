@@ -85,9 +85,9 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		Role:              resolvedUser.Role,
 		AuthProvider:      "oidc-primary",
 		SessionVersion:    resolvedUser.SessionVersion,
-		ExpiresAt:         time.Now().Add(12 * time.Hour),
+		ExpiresAt:         time.Now().Add(auth.DefaultSessionLifetime),
 	}
-	if err := s.sessions.Set(w, session); err != nil {
+	if err := s.sessions.SetSecure(w, session, s.requestIsHTTPS(r)); err != nil {
 		http.Error(w, "unable to create session", http.StatusInternalServerError)
 		return
 	}

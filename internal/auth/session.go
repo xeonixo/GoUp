@@ -14,6 +14,13 @@ import (
 
 const sessionCookieName = "goup_session"
 
+const (
+	// DefaultSessionLifetime is the lifetime of a regular login session.
+	DefaultSessionLifetime = 12 * time.Hour
+	// RememberedSessionLifetime is used when the user ticks "stay signed in".
+	RememberedSessionLifetime = 30 * 24 * time.Hour
+)
+
 // validSlugPattern restricts cookie paths to safe slug characters only.
 // This prevents path-injection via user-controlled tenant slugs.
 var validSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9\-]{0,62}$`)
@@ -82,7 +89,17 @@ func (m *SessionManager) GetForTenant(r *http.Request, tenantSlug string) (*User
 	return nil, http.ErrNoCookie
 }
 
+// Set issues the session cookie, marking it Secure when the manager was
+// configured for HTTPS (GOUP_BASE_URL).
 func (m *SessionManager) Set(w http.ResponseWriter, session UserSession) error {
+	return m.SetSecure(w, session, false)
+}
+
+// SetSecure is like Set but additionally marks the cookie Secure when the
+// current request is known to be HTTPS (e.g. via a trusted TLS proxy). The
+// cookie is persistent (Expires and Max-Age), which iOS home-screen apps need
+// to keep the login across app restarts.
+func (m *SessionManager) SetSecure(w http.ResponseWriter, session UserSession, requestIsHTTPS bool) error {
 	payload, err := json.Marshal(session)
 	if err != nil {
 		return err
@@ -96,7 +113,7 @@ func (m *SessionManager) Set(w http.ResponseWriter, session UserSession) error {
 		Value:    value,
 		Path:     path,
 		HttpOnly: true,
-		Secure:   m.secure,
+		Secure:   m.secure || requestIsHTTPS,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  session.ExpiresAt,
 		MaxAge:   int(time.Until(session.ExpiresAt).Seconds()),

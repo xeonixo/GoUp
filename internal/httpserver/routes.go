@@ -30,7 +30,7 @@ func (s *Server) routes() (http.Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("sub favicon fs: %w", err)
 	}
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
+	mux.Handle("/static/", http.StripPrefix("/static/", staticFileHandler(staticFS)))
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assetsFS))))
 	mux.Handle("/favicon/", http.StripPrefix("/favicon/", http.FileServer(http.FS(faviconFS))))
 	mux.HandleFunc("/favicon.ico", serveEmbeddedFile(faviconFS, "favicon.ico"))
@@ -40,6 +40,8 @@ func (s *Server) routes() (http.Handler, error) {
 	mux.HandleFunc("/android-chrome-192x192.png", serveEmbeddedFile(faviconFS, "android-chrome-192x192.png"))
 	mux.HandleFunc("/android-chrome-512x512.png", serveEmbeddedFile(faviconFS, "android-chrome-512x512.png"))
 	mux.HandleFunc("/site.webmanifest", serveEmbeddedFile(faviconFS, "site.webmanifest"))
+	mux.HandleFunc("/sw.js", s.handleServiceWorker)
+	mux.HandleFunc("/offline", s.handleOffline)
 	mux.HandleFunc("/", s.handleRoot)
 	mux.HandleFunc("/healthz", s.handleHealthz)
 	mux.HandleFunc("/auth/login", s.handleGlobalAuthDisabled)
@@ -103,6 +105,9 @@ func serveEmbeddedFile(fsys fs.FS, fileName string) http.HandlerFunc {
 		}
 
 		contentType := mime.TypeByExtension(path.Ext(fileName))
+		if path.Ext(fileName) == ".webmanifest" {
+			contentType = "application/manifest+json; charset=utf-8"
+		}
 		if contentType == "" {
 			contentType = http.DetectContentType(payload)
 		}
@@ -158,7 +163,7 @@ func (s *Server) handlePrettyTenantPath(w http.ResponseWriter, r *http.Request) 
 	slug := strings.TrimSpace(parts[0])
 
 	// Reserve built-in top-level paths for the main mux.
-	if slug == "admin" || slug == "static" || slug == "healthz" || slug == "auth" || slug == "node" || slug == "assets" {
+	if slug == "admin" || slug == "static" || slug == "healthz" || slug == "auth" || slug == "node" || slug == "assets" || slug == "favicon" || slug == "sw.js" || slug == "offline" {
 		return false
 	}
 
@@ -184,6 +189,9 @@ func (s *Server) handlePrettyTenantPath(w http.ResponseWriter, r *http.Request) 
 			// /{slug} — canonical URL is /{slug}/
 			http.Redirect(w, r, "/"+slug+"/", http.StatusMovedPermanently)
 		}
+		return true
+	case len(parts) == 2 && parts[1] == "manifest.webmanifest":
+		s.handleTenantManifest(w, r)
 		return true
 	case len(parts) == 2 && parts[1] == "login":
 		s.handleTenantLoginPage(w, r)

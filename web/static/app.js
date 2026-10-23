@@ -178,4 +178,36 @@
       });
     }
   });
+
+  // ── PWA: service worker registration ───────────────────────────────
+  // Only on secure contexts (HTTPS or localhost); scope "/" is allowed by the
+  // Service-Worker-Allowed header of /sw.js.
+  if ('serviceWorker' in navigator && window.isSecureContext) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {
+      });
+    });
+  }
+
+  // ── Refresh / reload buttons ───────────────────────────────────────
+  // A page (e.g. the dashboard) can handle the refresh itself by listening for
+  // "goup:refresh" and calling preventDefault(); otherwise the page reloads.
+  document.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+    const trigger = target.closest('[data-action="refresh"], [data-action="reload"]');
+    if (!trigger) {
+      return;
+    }
+    event.preventDefault();
+    if (trigger.getAttribute('data-action') === 'refresh') {
+      const refreshEvent = new CustomEvent('goup:refresh', { cancelable: true });
+      if (!window.dispatchEvent(refreshEvent)) {
+        return;
+      }
+    }
+    window.location.reload();
+  });
 })();

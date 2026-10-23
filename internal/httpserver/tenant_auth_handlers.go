@@ -250,9 +250,9 @@ func (s *Server) handleTenantAuthCallback(w http.ResponseWriter, r *http.Request
 		Role:              resolvedUser.Role,
 		AuthProvider:      provider.ProviderKey,
 		SessionVersion:    resolvedUser.SessionVersion,
-		ExpiresAt:         time.Now().Add(12 * time.Hour),
+		ExpiresAt:         time.Now().Add(auth.DefaultSessionLifetime),
 	}
-	if err := s.sessions.Set(w, session); err != nil {
+	if err := s.sessions.SetSecure(w, session, s.requestIsHTTPS(r)); err != nil {
 		http.Error(w, "unable to create session", http.StatusInternalServerError)
 		return
 	}
@@ -343,6 +343,10 @@ func (s *Server) handleTenantLocalLogin(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	sessionLifetime := auth.DefaultSessionLifetime
+	if r.FormValue("remember") != "" {
+		sessionLifetime = auth.RememberedSessionLifetime
+	}
 	session := auth.UserSession{
 		UserID:            resolvedUser.UserID,
 		Subject:           "local:" + strings.ToLower(loginName),
@@ -355,9 +359,9 @@ func (s *Server) handleTenantLocalLogin(w http.ResponseWriter, r *http.Request) 
 		Role:              resolvedUser.Role,
 		AuthProvider:      "local",
 		SessionVersion:    resolvedUser.SessionVersion,
-		ExpiresAt:         time.Now().Add(12 * time.Hour),
+		ExpiresAt:         time.Now().Add(sessionLifetime),
 	}
-	if err := s.sessions.Set(w, session); err != nil {
+	if err := s.sessions.SetSecure(w, session, s.requestIsHTTPS(r)); err != nil {
 		http.Error(w, "unable to create session", http.StatusInternalServerError)
 		return
 	}

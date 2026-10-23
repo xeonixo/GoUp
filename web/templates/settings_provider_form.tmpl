@@ -19,7 +19,6 @@
       <p class="eyebrow">{{index $.Translations "settings.providers.title"}}</p>
       <h1>{{if .IsEdit}}{{index $.Translations "admin.provider_form.title_edit"}}{{else}}{{index $.Translations "admin.provider_form.title_new"}}{{end}}</h1>
     </div>
-    <a href="{{$.AppBase}}settings/providers" class="button button-secondary">{{index $.Translations "settings.providers.back_button"}}</a>
   </div>
 
   <form method="POST" action="{{.FormAction}}" class="admin-form card stack settings-panel">

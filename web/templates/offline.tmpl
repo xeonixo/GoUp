@@ -1,0 +1,14 @@
+{{define "content"}}
+<section class="login-shell">
+  <a class="login-brand" href="/" aria-label="GoUp">
+    <img class="login-brand-logo" src="/assets/logo_goup.svg" alt="GoUp Logo">
+  </a>
+  <article class="card login-card stack">
+    <div>
+      <h1>{{index $.Translations "offline.title"}}</h1>
+      <p class="muted">{{index $.Translations "offline.message"}}</p>
+    </div>
+    <button type="button" class="button" data-action="reload">{{index $.Translations "offline.retry"}}</button>
+  </article>
+</section>
+{{end}}
