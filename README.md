@@ -105,10 +105,10 @@ GOUP_ADDR=:8080
 GOUP_BASE_URL=http://localhost:8080
 GOUP_DATA_DIR=/data
 GOUP_LOG_LEVEL=info
-GOUP_SESSION_KEY=replace-with-64-hex-characters
-GOUP_SSO_SECRET_KEY=replace-with-another-64-hex-key
-GOUP_CONTROL_PLANE_ADMIN_KEY=replace-with-a-third-64-hex-key
-
+# Generate each key independently: openssl rand -hex 32
+GOUP_SESSION_KEY=<output of openssl rand -hex 32>
+GOUP_SSO_SECRET_KEY=<another, different openssl rand -hex 32>
+GOUP_CONTROL_PLANE_ADMIN_KEY=<a third, different openssl rand -hex 32>
 ```
 
 ### 2. Review the Docker volume mapping
@@ -197,6 +197,11 @@ Configuration is provided through environment variables, typically via `.env` an
 | `GOUP_DATA_DIR` | `/data` | Directory containing all SQLite database files |
 | `GOUP_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 | `GOUP_MONITOR_WORKERS` | `4` | Maximum number of local monitor checks running concurrently |
+| `GOUP_TRUSTED_PROXIES` | _(empty)_ | Comma separated CIDRs/IPs of reverse proxies whose `X-Forwarded-For`, `X-Real-IP` and `X-Forwarded-Proto` headers are trusted. See [Running behind a reverse proxy](#running-behind-a-reverse-proxy). |
+| `GOUP_SETUP_TOKEN` | _(random)_ | Token required for the initial `/admin/setup` form. If unset, a random token is generated at startup and written to the server log while setup is pending. |
+| `GOUP_MONITOR_ALLOW_PRIVATE` | `true` | Allow monitors to reach private/loopback networks. Cloud metadata addresses (`169.254.169.254`, `fd00:ec2::254`, `100.100.100.200`) are always blocked. |
+| `GOUP_ALLOW_PRIVATE_INTEGRATIONS` | `false` | Allow the Matrix homeserver URL and OIDC issuer URLs to point at private/loopback addresses. Default is public https only (SSRF protection). **Set to `true` if your Keycloak/Matrix runs on your LAN.** |
+| `GOUP_REMOTE_NODE_ALLOW_INSECURE` | `false` | Remote-node agent only: permit a plain `http://` control-plane URL (otherwise https is required, except `localhost`/`127.0.0.1`). |
 
 ### Security-related settings
 
@@ -205,6 +210,10 @@ Configuration is provided through environment variables, typically via `.env` an
 | `GOUP_SESSION_KEY` | Required HMAC key for tenant session cookies and password-reset tokens. |
 | `GOUP_SSO_SECRET_KEY` | Required encryption key for stored secrets, including OIDC client secrets, TOTP secrets, notification secrets, and remote-node secrets. |
 | `GOUP_CONTROL_PLANE_ADMIN_KEY` | Required HMAC key for control-plane admin cookies under `/admin/*`. |
+
+All three keys must be at least 32 characters, must be different from each
+other and must not be the `replace-with-...` placeholders from the example
+file. GoUp refuses to start otherwise and prints which key is invalid.
 
 Generate each key independently with 32 random bytes encoded as hex:
 
@@ -460,8 +469,39 @@ location / {
   proxy_pass http://127.0.0.1:8080;
   proxy_set_header Host $host;
   proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
 }
 ```
+
+Set `GOUP_TRUSTED_PROXIES` to the address(es) of the proxy as seen by GoUp
+(for example `GOUP_TRUSTED_PROXIES=172.19.27.1/32` or the Docker network CIDR).
+Only then are forwarded headers used for the client IP (rate limits, login
+lockouts, audit log, remote-node events) and for deciding that the connection
+is HTTPS (`Secure` admin cookies, HSTS). The rightmost untrusted
+`X-Forwarded-For` hop is used; IPv6 clients are rate-limited per `/64`.
+Without `GOUP_TRUSTED_PROXIES` every client appears with the proxy's IP, so
+a single attacker can lock out all users of a tenant; configure it.
+
+Session cookies are marked `Secure` based on `GOUP_BASE_URL` (use an `https://`
+base URL behind a TLS-terminating proxy).
+
+### Initial setup token
+
+While no control-plane admin exists, `/admin/setup` requires a setup token:
+either `GOUP_SETUP_TOKEN` or the random token printed to the log at startup
+(`CONTROL-PLANE SETUP PENDING`). This prevents anyone who can reach a fresh
+instance from claiming the admin account.
+
+### OIDC access policy
+
+Each OIDC provider has a *role for new users* (default `viewer`), optional
+*allowed email domains* and optional *allowed groups* (matched against the
+`groups` claim). Users whose `email_verified` claim is `false` are rejected; if
+domains are configured a verified email is required. Existing members keep
+their role on later logins. Users removed from a tenant are blocked (not
+deleted) so they cannot silently rejoin via SSO; use "Re-add" in the user
+list to allow them again.
 
 ---
 

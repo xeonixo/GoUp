@@ -13,6 +13,10 @@
     {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
 
     <form method="POST" action="/admin/setup" class="stack login-form" autocomplete="on">
+      <label for="setup_token">{{index $.Translations "admin.setup.token_label"}}</label>
+      <input id="setup_token" name="setup_token" type="password" required autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next">
+      <p class="muted">{{index $.Translations "admin.setup.token_hint"}}</p>
+
       <label for="username">{{index $.Translations "field.username"}}</label>
       <input id="username" name="username" type="text" required autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next">
 

@@ -115,11 +115,15 @@ func (c HTTPSChecker) checkTarget(ctx context.Context, item Monitor, checkedAt t
 		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: !verifyCertificate, // false for tls mode; true for starttls/tls_insecure
 	}
-	if network != "" {
-		dialer := &net.Dialer{Timeout: item.Timeout}
-		transport.DialContext = func(ctx context.Context, _, addr string) (net.Conn, error) {
-			return dialer.DialContext(ctx, network, addr)
+	// Always use the guarded dialer: it rejects cloud metadata addresses (and
+	// private ranges when GOUP_MONITOR_ALLOW_PRIVATE=false) at connect time,
+	// which also covers redirects and DNS rebinding.
+	dialer := newMonitorDialer(item.Timeout)
+	transport.DialContext = func(ctx context.Context, dialNetwork, addr string) (net.Conn, error) {
+		if network != "" {
+			dialNetwork = network
 		}
+		return dialer.DialContext(ctx, dialNetwork, addr)
 	}
 
 	client := &http.Client{

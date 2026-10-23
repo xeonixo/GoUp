@@ -546,17 +546,17 @@ ORDER BY sort_order ASC, id ASC
 	snapshots := make([]monitor.Snapshot, 0)
 	for rows.Next() {
 		var (
-			item                  monitor.Snapshot
-			kindRaw               string
-			tlsModeRaw            string
-			intervalSeconds       int
-			timeoutSeconds        int
-			enabledRaw            int
-			notifyOnRecovery      int
-			retryCount            int
-			retryIntervalSeconds  int
-			expectedStatusCode    sql.NullInt64
-			mutedUntil            sql.NullTime
+			item                 monitor.Snapshot
+			kindRaw              string
+			tlsModeRaw           string
+			intervalSeconds      int
+			timeoutSeconds       int
+			enabledRaw           int
+			notifyOnRecovery     int
+			retryCount           int
+			retryIntervalSeconds int
+			expectedStatusCode   sql.NullInt64
+			mutedUntil           sql.NullTime
 		)
 
 		if err := rows.Scan(

@@ -5,6 +5,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}}</title>
+  <meta name="color-scheme" content="light dark">
+  <script src="/static/theme.js"></script>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
@@ -13,6 +15,7 @@
   <link rel="manifest" href="/site.webmanifest">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">{{index $.Translations "layout.skip_to_content"}}</a>
   {{if not .HideTopbar}}
   <header class="topbar">
     <div class="topbar-main">
@@ -39,20 +42,24 @@
           <span aria-hidden="true">⚙️</span>
           <span class="sr-only">{{index $.Translations "admin.security.title"}}</span>
         </a>
-        <a class="button button-secondary topbar-icon-link" href="/admin/access?logout=1" aria-label="{{index $.Translations "layout.logout_aria"}}" title="{{index $.Translations "layout.logout_title"}}">
-          <span aria-hidden="true">⎋</span>
-          <span class="sr-only">{{index $.Translations "layout.logout_title"}}</span>
-        </a>
+        <form method="POST" action="/admin/access?logout=1" class="inline-form">
+          <button type="submit" class="button button-secondary topbar-icon-link" aria-label="{{index $.Translations "layout.logout_aria"}}" title="{{index $.Translations "layout.logout_title"}}">
+            <span aria-hidden="true">⎋</span>
+            <span class="sr-only">{{index $.Translations "layout.logout_title"}}</span>
+          </button>
+        </form>
         {{else if .User}}
         <span class="user-pill">{{if .User.Name}}{{.User.Name}}{{else}}{{.User.Email}}{{end}}</span>
         <a class="button button-secondary topbar-icon-link" href="{{.AppBase}}settings/profile" aria-label="{{index $.Translations "layout.settings_aria"}}" title="{{index $.Translations "layout.settings_title"}}">
           <span aria-hidden="true">⚙️</span>
           <span class="sr-only">{{index $.Translations "layout.settings_title"}}</span>
         </a>
-        <a class="button button-secondary topbar-icon-link" href="{{if .AppBase}}{{.AppBase}}auth/logout{{else}}/auth/logout{{end}}" aria-label="{{index $.Translations "layout.logout_aria"}}" title="{{index $.Translations "layout.logout_title"}}">
-          <span aria-hidden="true">⎋</span>
-          <span class="sr-only">{{index $.Translations "layout.logout_title"}}</span>
-        </a>
+        <form method="POST" action="{{if .AppBase}}{{.AppBase}}auth/logout{{else}}/auth/logout{{end}}" class="inline-form">
+          <button type="submit" class="button button-secondary topbar-icon-link" aria-label="{{index $.Translations "layout.logout_aria"}}" title="{{index $.Translations "layout.logout_title"}}">
+            <span aria-hidden="true">⎋</span>
+            <span class="sr-only">{{index $.Translations "layout.logout_title"}}</span>
+          </button>
+        </form>
         {{end}}
         {{if .Version}}
         <a class="app-version-link" href="https://github.com/xeonixo/goup/releases/tag/{{.Version}}" target="_blank" rel="noopener">{{.Version}}</a>
@@ -61,7 +68,7 @@
     </div>
   </header>
   {{end}}
-  <main class="container">
+  <main class="container" id="main-content" tabindex="-1">
     {{template "content" .}}
   </main>
   <script src="/static/app.js" defer></script>

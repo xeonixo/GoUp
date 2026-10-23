@@ -44,11 +44,13 @@ func New(ctx context.Context) (*App, error) {
 		return nil, err
 	}
 
-	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create data dir: %w", err)
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: parseLogLevel(cfg.LogLevel)}))
+	store.HardenDataDir(cfg.DataDir)
+	monitorrunner.SetAllowPrivateTargets(cfg.MonitorAllowPrivate)
 
 	controlStore, err := store.OpenControlPlane(ctx, cfg.ControlPlaneDBPath)
 	if err != nil {

@@ -51,6 +51,7 @@ type pageData struct {
 	AdminProvider                     store.AuthProvider
 	AdminLocalUsers                   []store.LocalUser
 	AdminTenantUsers                  []store.TenantUser
+	BlockedTenantUsers                []store.TenantUser
 	AdminUserRows                     []adminUserOverviewRow
 	AdminLocalUser                    store.LocalUser
 	AdminRemoteNodeRows               []adminRemoteNodeOverviewRow

@@ -88,7 +88,7 @@ func TestControlPlaneAdminCookieInvalidAfterPasswordChange(t *testing.T) {
 		adminCookieKey: strings.Repeat("a", 32),
 	}
 	rec := httptest.NewRecorder()
-	s.setControlPlaneAdminCookie(rec, admin.SessionVersion)
+	s.setControlPlaneAdminCookie(rec, httptest.NewRequest(http.MethodGet, "/admin/", nil), admin.SessionVersion)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/", nil)
 	for _, cookie := range rec.Result().Cookies() {

@@ -991,5 +991,20 @@
   "matrix.timestamp": "Time",
   "matrix.details": "Details",
   "email.status_transition.open_dashboard": "Open dashboard →",
-  "email.status_transition.footer": "This message was generated automatically by GoUp."
+  "email.status_transition.footer": "This message was generated automatically by GoUp.",
+  "layout.skip_to_content": "Skip to content",
+  "settings.profile.theme_label": "Appearance",
+  "settings.profile.theme_auto": "Automatic (system)",
+  "settings.profile.theme_light": "Light",
+  "settings.profile.theme_dark": "Dark",
+  "settings.profile.theme_hint": "Stored on this device only.",
+  "admin.setup.token_label": "Setup token",
+  "admin.setup.token_hint": "Shown in the server log on startup (or set via GOUP_SETUP_TOKEN).",
+  "admin.provider_form.default_role_label": "Role for new users",
+  "admin.provider_form.allowed_domains_label": "Allowed email domains (optional, comma separated)",
+  "admin.provider_form.allowed_groups_label": "Allowed groups (optional, comma separated)",
+  "admin.provider_form.policy_note": "New users signing in via this provider get the selected role; existing members keep theirs. If domains are set, only users with a verified email in one of these domains may sign in. If groups are set, the 'groups' claim must contain one of them.",
+  "settings.users.blocked_title": "Removed users",
+  "settings.users.blocked_hint": "These users were removed and cannot sign in again until they are re-added.",
+  "settings.users.readd_button": "Re-add"
 }

@@ -101,7 +101,7 @@ func (c TCPChecker) checkTarget(ctx context.Context, item Monitor, checkedAt tim
 	}
 
 	if securityMode == TLSModeNone {
-		dialer := &net.Dialer{Timeout: item.Timeout}
+		dialer := newMonitorDialer(item.Timeout)
 		conn, err := dialer.DialContext(ctx, network, target)
 		result.Latency = time.Since(attemptStartedAt)
 		if err != nil {
@@ -116,7 +116,7 @@ func (c TCPChecker) checkTarget(ctx context.Context, item Monitor, checkedAt tim
 	}
 
 	dialer := &tls.Dialer{
-		NetDialer: &net.Dialer{Timeout: item.Timeout},
+		NetDialer: newMonitorDialer(item.Timeout),
 		Config: &tls.Config{
 			MinVersion:         tls.VersionTLS12,
 			ServerName:         serverName,

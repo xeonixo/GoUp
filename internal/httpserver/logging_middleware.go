@@ -78,6 +78,7 @@ func (s *Server) logging(next http.Handler) http.Handler {
 			"http request",
 			"method", r.Method,
 			"path", r.URL.Path,
+			"remote", s.clientIP(r),
 			"status", status,
 			"bytes", lw.bytesWritten,
 			"duration", time.Since(start).String(),

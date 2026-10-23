@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	store "goup/internal/store/sqlite"
 )
@@ -89,6 +90,15 @@ func searchResultIconURL(appBase string, entry dashboardIconEntry) string {
 	return iconURL
 }
 
+const (
+	iconMetadataMaxBytes = 8 << 20
+	maxCachedIconAssets  = 512
+)
+
+// iconHTTPClient fetches the public dashboard-icons index/assets. Unlike
+// http.DefaultClient it has a timeout.
+var iconHTTPClient = &http.Client{Timeout: 15 * time.Second}
+
 func (s *Server) loadDashboardIconIndex(ctx context.Context) ([]dashboardIconEntry, error) {
 	s.iconIndexMu.RLock()
 	if len(s.iconIndex) > 0 {
@@ -98,16 +108,12 @@ func (s *Server) loadDashboardIconIndex(ctx context.Context) ([]dashboardIconEnt
 	}
 	s.iconIndexMu.RUnlock()
 
-	s.iconIndexMu.Lock()
-	defer s.iconIndexMu.Unlock()
-	if len(s.iconIndex) > 0 {
-		return append([]dashboardIconEntry(nil), s.iconIndex...), nil
-	}
+	// Fetch without holding the lock so a slow upstream cannot block readers.
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, dashboardIconsMetadataURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build dashboard icons metadata request: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := iconHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch dashboard icons metadata: %w", err)
 	}
@@ -116,7 +122,7 @@ func (s *Server) loadDashboardIconIndex(ctx context.Context) ([]dashboardIconEnt
 		return nil, fmt.Errorf("dashboard icons metadata returned %s", resp.Status)
 	}
 	metadata := make(map[string]dashboardIconMetadata)
-	if err := json.NewDecoder(resp.Body).Decode(&metadata); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, iconMetadataMaxBytes)).Decode(&metadata); err != nil {
 		return nil, fmt.Errorf("decode dashboard icons metadata: %w", err)
 	}
 	entries := make([]dashboardIconEntry, 0, len(metadata))
@@ -136,7 +142,9 @@ func (s *Server) loadDashboardIconIndex(ctx context.Context) ([]dashboardIconEnt
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Slug < entries[j].Slug
 	})
+	s.iconIndexMu.Lock()
 	s.iconIndex = entries
+	s.iconIndexMu.Unlock()
 	return append([]dashboardIconEntry(nil), entries...), nil
 }
 
@@ -268,20 +276,16 @@ func (s *Server) loadDashboardIconAsset(ctx context.Context, tenantSlug string, 
 	}
 	s.iconAssetMu.RUnlock()
 
-	s.iconAssetMu.Lock()
-	defer s.iconAssetMu.Unlock()
-	if asset, ok := s.iconAssets[slug]; ok && len(asset.Payload) > 0 {
-		return append([]byte(nil), asset.Payload...), asset.ContentType, nil
-	}
 	if !allowRemote {
 		return nil, "", os.ErrNotExist
 	}
 
+	// Network fetch happens outside the lock (bounded by iconHTTPClient's timeout).
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, dashboardIconsBaseURL+"/svg/"+url.PathEscape(slug)+".svg", nil)
 	if err != nil {
 		return nil, "", fmt.Errorf("build dashboard icon request: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := iconHTTPClient.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("fetch dashboard icon: %w", err)
 	}
@@ -298,7 +302,15 @@ func (s *Server) loadDashboardIconAsset(ctx context.Context, tenantSlug string, 
 		contentType = mime.TypeByExtension(".svg")
 	}
 	asset := dashboardIconAsset{Payload: payload, ContentType: contentType}
+	s.iconAssetMu.Lock()
+	if len(s.iconAssets) >= maxCachedIconAssets {
+		for key := range s.iconAssets {
+			delete(s.iconAssets, key)
+			break
+		}
+	}
 	s.iconAssets[slug] = asset
+	s.iconAssetMu.Unlock()
 	return append([]byte(nil), payload...), contentType, nil
 }
 

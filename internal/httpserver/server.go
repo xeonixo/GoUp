@@ -55,6 +55,12 @@ type Server struct {
 	bootstrapAttempts   map[string]localLoginAttempt
 	passwordResetMu     sync.Mutex
 	usedResetTokens     map[string]time.Time
+	notifierTestMu      sync.Mutex
+	notifierTestLast    map[string]time.Time
+	setupTokenMu        sync.Mutex
+	setupToken          string
+	resetLimitMu        sync.Mutex
+	resetAttempts       map[string][]time.Time
 }
 
 func New(deps Dependencies) (*Server, error) {
@@ -78,7 +84,7 @@ func New(deps Dependencies) (*Server, error) {
 		defaultTenant:       deps.DefaultTenant,
 		sessions:            deps.Sessions,
 		oidc:                deps.OIDC,
-		dynamicOIDC:         auth.NewDynamicOIDCManager(),
+		dynamicOIDC:         auth.NewDynamicOIDCManager(deps.Config.AllowPrivateIntegrations),
 		templates:           templates,
 		iconAssets:          make(map[string]dashboardIconAsset),
 		localLoginAttempts:  make(map[string]localLoginAttempt),
@@ -86,6 +92,8 @@ func New(deps Dependencies) (*Server, error) {
 		bootstrapAttempts:   make(map[string]localLoginAttempt),
 		usedResetTokens:     make(map[string]time.Time),
 	}
+	s.resetAttempts = make(map[string][]time.Time)
+	s.announceSetupToken(context.Background())
 	s.appMux = s.buildAppMux()
 	s.handler, err = s.routes()
 	if err != nil {

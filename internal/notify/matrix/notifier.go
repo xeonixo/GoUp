@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -135,7 +134,7 @@ func (n *Notifier) Notify(ctx context.Context, transition monitor.Transition) er
 				homeserverURL: strings.TrimSpace(target.HomeserverURL),
 				accessToken:   strings.TrimSpace(target.AccessToken),
 				roomID:        strings.TrimSpace(target.RoomID),
-				httpClient:    &http.Client{Timeout: 10 * time.Second},
+				httpClient:    newGuardedHTTPClient(),
 			}
 			if !client.Enabled() {
 				continue

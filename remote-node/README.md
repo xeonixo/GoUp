@@ -22,7 +22,7 @@ The agent starts with:
 
 - `REMOTE_NODE_ID`
 - `REMOTE_NODE_BOOTSTRAP_KEY`
-- `REMOTE_NODE_CONTROL_PLANE_URL` (base URL, for example `https://example.com`)
+- `REMOTE_NODE_CONTROL_PLANE_URL` (base URL, for example `https://example.com`; must be `https://` unless it points at `localhost`/`127.0.0.1` or `GOUP_REMOTE_NODE_ALLOW_INSECURE=true` is set)
 
 It authenticates once against the Control Plane bootstrap endpoint and receives a short-lived access token.
 

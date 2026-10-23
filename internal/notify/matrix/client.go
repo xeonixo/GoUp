@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"goup/internal/netguard"
 )
 
 type Client struct {
@@ -19,9 +21,21 @@ type Client struct {
 	roomID        string
 }
 
+// newGuardedHTTPClient returns an SSRF-guarded client: connections to private,
+// loopback and metadata addresses are refused unless
+// GOUP_ALLOW_PRIVATE_INTEGRATIONS=true (metadata addresses are always refused).
+// Redirects are not followed.
+func newGuardedHTTPClient() *http.Client {
+	return netguard.NewHTTPClient(netguard.Options{
+		Timeout:      10 * time.Second,
+		AllowPrivate: netguard.AllowPrivateIntegrationsFromEnv(),
+		UseEnvProxy:  true,
+	})
+}
+
 func New(homeserverURL, accessToken, roomID string) *Client {
 	return &Client{
-		httpClient:    &http.Client{Timeout: 10 * time.Second},
+		httpClient:    newGuardedHTTPClient(),
 		homeserverURL: strings.TrimRight(homeserverURL, "/"),
 		accessToken:   accessToken,
 		roomID:        roomID,
@@ -35,6 +49,10 @@ func (c *Client) Enabled() bool {
 func (c *Client) SendMessage(ctx context.Context, body string) error {
 	if !c.Enabled() {
 		return errors.New("matrix client is not configured")
+	}
+
+	if _, err := netguard.ValidateURL(c.homeserverURL, netguard.AllowPrivateIntegrationsFromEnv()); err != nil {
+		return fmt.Errorf("matrix homeserver url rejected: %w", err)
 	}
 
 	payload, err := json.Marshal(map[string]string{

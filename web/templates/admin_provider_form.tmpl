@@ -59,6 +59,28 @@
         <input type="password" id="client_secret" name="client_secret" value="" {{if not .IsEdit}}required{{end}} placeholder="{{index $.Translations "admin.provider_form.client_secret_placeholder"}}">
       </div>
 
+      <div class="form-group">
+        <label for="default_role">{{index $.Translations "admin.provider_form.default_role_label"}}</label>
+        <select id="default_role" name="default_role">
+          <option value="viewer" {{if ne .AdminProvider.DefaultRole "admin"}}selected{{end}}>viewer</option>
+          <option value="admin" {{if eq .AdminProvider.DefaultRole "admin"}}selected{{end}}>admin</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="allowed_email_domains">{{index $.Translations "admin.provider_form.allowed_domains_label"}}</label>
+        <input type="text" id="allowed_email_domains" name="allowed_email_domains" value="{{.AdminProvider.AllowedEmailDomains}}" placeholder="example.com, corp.example.org" autocomplete="off">
+      </div>
+
+      <div class="form-group">
+        <label for="allowed_groups">{{index $.Translations "admin.provider_form.allowed_groups_label"}}</label>
+        <input type="text" id="allowed_groups" name="allowed_groups" value="{{.AdminProvider.AllowedGroups}}" placeholder="goup-users" autocomplete="off">
+      </div>
+
+      <div class="form-note">
+        {{index $.Translations "admin.provider_form.policy_note"}}
+      </div>
+
       <div class="form-note">
         <strong>{{index $.Translations "common.info"}}:</strong> {{index $.Translations "admin.provider_form.secret_note"}}
       </div>

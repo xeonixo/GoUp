@@ -122,8 +122,15 @@ func (s *Server) handleSettingsProviderSave(w http.ResponseWriter, r *http.Reque
 	if displayName == "" {
 		displayName = providerKey
 	}
+	if err := s.validateIntegrationURL(issuerURL); err != nil {
+		http.Redirect(w, r, appBase+"settings/providers/new?error="+url.QueryEscape("Ungültige Issuer URL: "+err.Error()), http.StatusSeeOther)
+		return
+	}
 
 	_, err := s.controlStore.UpsertAuthProvider(r.Context(), user.TenantID, providerKey, "oidc", displayName, issuerURL, clientID)
+	if err == nil {
+		err = s.controlStore.UpdateAuthProviderPolicy(r.Context(), user.TenantID, providerKey, r.FormValue("default_role"), r.FormValue("allowed_email_domains"), r.FormValue("allowed_groups"))
+	}
 	if err != nil {
 		s.logger.Error("settings upsert auth provider failed", "tenant_id", user.TenantID, "error", err)
 		http.Redirect(w, r, appBase+"settings/providers/new?error="+url.QueryEscape("Provider konnte nicht gespeichert werden"), http.StatusSeeOther)
@@ -138,6 +145,9 @@ func (s *Server) handleSettingsProviderSave(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
+	if s.dynamicOIDC != nil {
+		s.dynamicOIDC.ForgetIssuer(issuerURL)
+	}
 	s.writeAudit(r, "auth_provider.upsert", "tenant", user.TenantID, fmt.Sprintf("provider=%s kind=oidc source=settings", providerKey))
 	http.Redirect(w, r, appBase+"settings/providers?notice="+url.QueryEscape("Provider gespeichert"), http.StatusSeeOther)
 }

@@ -195,7 +195,17 @@ Implemented middleware controls include:
 - `X-Frame-Options: DENY`,
 - `X-Content-Type-Options: nosniff`,
 - HSTS when HTTPS mode is active,
-- lockout windows for local login, admin access, and bootstrap attempts.
+- lockout windows for local login, admin access, and bootstrap attempts,
+- client IP resolution only trusts `X-Forwarded-For` / `X-Real-IP` / `X-Forwarded-Proto` from `GOUP_TRUSTED_PROXIES` (IPv6 rate-limit keys use the /64),
+- global request body limit (1 MiB; larger only for import and icon upload),
+- `Cache-Control: no-store` on all non-static responses,
+- logout is POST-only and invalidates all sessions of the member,
+- SSRF protection (`internal/netguard`): webhooks, Matrix homeserver and OIDC issuer require https and public addresses (`GOUP_ALLOW_PRIVATE_INTEGRATIONS` opts in to private ones); monitors always refuse cloud metadata addresses (`GOUP_MONITOR_ALLOW_PRIVATE`),
+- initial admin setup requires a setup token (`GOUP_SETUP_TOKEN` or the token logged at startup),
+- OIDC provider policy (default role `viewer`, allowed email domains/groups, `email_verified`), blocked memberships for removed users,
+- reserved tenant slugs (`node`, `admin`, `static`, `auth`, `healthz`, `assets`, `api`, ...),
+- local passwords: minimum 12 characters for new/changed passwords, constant-time handling of unknown users, password-reset links are bound to the current password hash,
+- data directory `0700`, SQLite files `0600` (best effort at startup).
 
 ---
 

@@ -991,5 +991,20 @@
   "matrix.timestamp": "Zeitpunkt",
   "matrix.details": "Details",
   "email.status_transition.open_dashboard": "Dashboard öffnen →",
-  "email.status_transition.footer": "Diese Nachricht wurde automatisch von GoUp generiert."
+  "email.status_transition.footer": "Diese Nachricht wurde automatisch von GoUp generiert.",
+  "layout.skip_to_content": "Zum Inhalt springen",
+  "settings.profile.theme_label": "Darstellung",
+  "settings.profile.theme_auto": "Automatisch (System)",
+  "settings.profile.theme_light": "Hell",
+  "settings.profile.theme_dark": "Dunkel",
+  "settings.profile.theme_hint": "Wird nur auf diesem Gerät gespeichert.",
+  "admin.setup.token_label": "Setup-Token",
+  "admin.setup.token_hint": "Wird beim Start im Server-Log angezeigt (oder per GOUP_SETUP_TOKEN festgelegt).",
+  "admin.provider_form.default_role_label": "Rolle für neue Benutzer",
+  "admin.provider_form.allowed_domains_label": "Erlaubte E-Mail-Domains (optional, kommagetrennt)",
+  "admin.provider_form.allowed_groups_label": "Erlaubte Gruppen (optional, kommagetrennt)",
+  "admin.provider_form.policy_note": "Neue Benutzer, die sich über diesen Provider anmelden, erhalten die gewählte Rolle; bestehende Mitglieder behalten ihre. Sind Domains gesetzt, dürfen sich nur Benutzer mit verifizierter E-Mail in einer dieser Domains anmelden. Sind Gruppen gesetzt, muss der 'groups'-Claim eine davon enthalten.",
+  "settings.users.blocked_title": "Entfernte Benutzer",
+  "settings.users.blocked_hint": "Diese Benutzer wurden entfernt und können sich erst nach erneutem Hinzufügen wieder anmelden.",
+  "settings.users.readd_button": "Wieder hinzufügen"
 }

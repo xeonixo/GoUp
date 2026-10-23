@@ -81,10 +81,11 @@ func (s *Server) routes() (http.Handler, error) {
 	mux.Handle("/admin/tenants/{id}/remote-nodes/{nodeID}/rotate-bootstrap", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminRotateRemoteNodeBootstrapKey)))
 	mux.Handle("/admin/tenants/{id}/remote-nodes/{nodeID}/delete", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminDeleteRemoteNode)))
 	mux.Handle("/admin/tenants/{id}/users/{userID}/remove", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantUserRemove)))
+	mux.Handle("/admin/tenants/{id}/users/{userID}/unblock", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantUserUnblock)))
 	mux.Handle("/admin/settings/smtp/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSMTPSettingsSave)))
 	mux.Handle("/admin/settings/smtp/test", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSMTPSettingsTest)))
 
-	return s.logging(s.securityHeaders(s.requireSameOrigin(mux))), nil
+	return s.logging(s.securityHeaders(s.limitRequestBody(s.requireSameOrigin(mux)))), nil
 }
 
 func serveEmbeddedFile(fsys fs.FS, fileName string) http.HandlerFunc {
@@ -157,7 +158,7 @@ func (s *Server) handlePrettyTenantPath(w http.ResponseWriter, r *http.Request) 
 	slug := strings.TrimSpace(parts[0])
 
 	// Reserve built-in top-level paths for the main mux.
-	if slug == "admin" || slug == "static" || slug == "healthz" || slug == "auth" {
+	if slug == "admin" || slug == "static" || slug == "healthz" || slug == "auth" || slug == "node" || slug == "assets" {
 		return false
 	}
 
@@ -283,6 +284,7 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/settings/local-users/save", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserSave)))
 	mux.Handle("/settings/local-users/{userID}/delete", s.requireUserManagement(http.HandlerFunc(s.handleSettingsLocalUserDelete)))
 	mux.Handle("/settings/users/{userID}/role", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUserRoleSave)))
+	mux.Handle("/settings/users/{userID}/unblock", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUserUnblock)))
 	mux.Handle("/settings/users/{userID}/remove", s.requireUserManagement(http.HandlerFunc(s.handleSettingsUserRemove)))
 	mux.Handle("/settings/remote-nodes/create", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleCreateRemoteNode))))
 	mux.Handle("/settings/remote-nodes/{nodeID}/rotate-bootstrap", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleRotateRemoteNodeBootstrapKey))))

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -23,6 +24,7 @@ type DashboardStats struct {
 }
 
 func Open(ctx context.Context, path string) (*Store, error) {
+	defer SecureDBFiles(path)
 	dsn := sqliteDSN(path)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -87,6 +89,7 @@ func recreateStoreAfterCorruption(ctx context.Context, path string) (string, err
 }
 
 func OpenFresh(ctx context.Context, path string) (*Store, error) {
+	defer SecureDBFiles(path)
 	dsn := sqliteDSN(path)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -778,3 +781,44 @@ CREATE TABLE IF NOT EXISTS monitor_groups (
 	updated_at DATETIME NOT NULL
 );
 `
+
+// SecureDBFiles restricts a SQLite database and its sidecar files to the
+// owner (0600). Errors are ignored: this is best-effort hardening.
+func SecureDBFiles(path string) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return
+	}
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if _, err := os.Stat(path + suffix); err == nil {
+			_ = os.Chmod(path+suffix, 0o600)
+		}
+	}
+}
+
+// HardenDataDir makes the data directory owner-only (0700) and every database
+// file below it owner-read/write only (0600). Best-effort.
+func HardenDataDir(root string) {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return
+	}
+	_ = os.Chmod(root, 0o700)
+	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if p != root && strings.Count(strings.TrimPrefix(p, root), string(os.PathSeparator)) <= 2 {
+				// Tenant directories contain databases and uploaded icons.
+				_ = os.Chmod(p, 0o700)
+			}
+			return nil
+		}
+		name := d.Name()
+		if strings.HasSuffix(name, ".db") || strings.HasSuffix(name, ".db-wal") || strings.HasSuffix(name, ".db-shm") || strings.Contains(name, ".db.corrupt-") {
+			_ = os.Chmod(p, 0o600)
+		}
+		return nil
+	})
+}

@@ -17,7 +17,7 @@ func (s *Server) requireSameOrigin(next http.Handler) http.Handler {
 	expectedPort := strings.TrimSpace(expected.Port())
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/node/") {
+		if isRemoteNodeAPIPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -153,4 +153,16 @@ func normalizeRefererOrigin(raw string) string {
 		return strings.ToLower(parsed.Scheme) + "://" + host + ":" + port
 	}
 	return strings.ToLower(parsed.Scheme) + "://" + host
+}
+
+// isRemoteNodeAPIPath reports whether path is one of the machine-to-machine
+// remote node endpoints. They authenticate with bearer/bootstrap keys and have
+// no browser origin, so they are exempt from the same-origin check. Any other
+// /node/... path (e.g. a tenant called "node") is not.
+func isRemoteNodeAPIPath(path string) bool {
+	switch path {
+	case "/node/bootstrap", "/node/poll", "/node/report":
+		return true
+	}
+	return false
 }

@@ -21,12 +21,21 @@ func (s *Server) passwordResetEnabled(ctx context.Context) bool {
 	return strings.TrimSpace(smtpCfg.Host) != "" && strings.TrimSpace(smtpCfg.FromEmail) != "" && smtpCfg.PasswordConfigured
 }
 
-func (s *Server) signPasswordResetToken(tenantID, userID int64, expiresAt time.Time) (string, error) {
+// passwordFingerprint derives a short, non-reversible fingerprint of the
+// current password hash. A reset token embeds it, so the token stops working
+// as soon as the password changes (single use, also across restarts).
+func (s *Server) passwordFingerprint(passwordHash string) string {
+	h := hmac.New(sha256.New, []byte(s.cfg.SessionKey))
+	_, _ = h.Write([]byte("goup-pwreset-fp|" + passwordHash))
+	return hex.EncodeToString(h.Sum(nil))[:24]
+}
+
+func (s *Server) signPasswordResetToken(tenantID, userID int64, expiresAt time.Time, fingerprint string) (string, error) {
 	nonce := make([]byte, 8)
 	if _, err := rand.Read(nonce); err != nil {
 		return "", err
 	}
-	payload := fmt.Sprintf("%d:%d:%d:%s", tenantID, userID, expiresAt.UTC().Unix(), hex.EncodeToString(nonce))
+	payload := fmt.Sprintf("%d:%d:%d:%s:%s", tenantID, userID, expiresAt.UTC().Unix(), hex.EncodeToString(nonce), fingerprint)
 	payloadEncoded := base64.RawURLEncoding.EncodeToString([]byte(payload))
 
 	h := hmac.New(sha256.New, []byte(s.cfg.SessionKey))
@@ -35,49 +44,49 @@ func (s *Server) signPasswordResetToken(tenantID, userID int64, expiresAt time.T
 	return payloadEncoded + "." + signature, nil
 }
 
-func (s *Server) parsePasswordResetToken(token string) (tenantID, userID int64, expiresAt time.Time, err error) {
+func (s *Server) parsePasswordResetToken(token string) (tenantID, userID int64, expiresAt time.Time, fingerprint string, err error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 2 {
-		return 0, 0, time.Time{}, fmt.Errorf("invalid token")
+		return 0, 0, time.Time{}, "", fmt.Errorf("invalid token")
 	}
 	payloadEncoded := parts[0]
 	providedSig, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return 0, 0, time.Time{}, fmt.Errorf("invalid token signature")
+		return 0, 0, time.Time{}, "", fmt.Errorf("invalid token signature")
 	}
 
 	h := hmac.New(sha256.New, []byte(s.cfg.SessionKey))
 	_, _ = h.Write([]byte(payloadEncoded))
 	expectedSig := h.Sum(nil)
 	if !hmac.Equal(providedSig, expectedSig) {
-		return 0, 0, time.Time{}, fmt.Errorf("invalid token")
+		return 0, 0, time.Time{}, "", fmt.Errorf("invalid token")
 	}
 
 	payloadBytes, err := base64.RawURLEncoding.DecodeString(payloadEncoded)
 	if err != nil {
-		return 0, 0, time.Time{}, fmt.Errorf("invalid token payload")
+		return 0, 0, time.Time{}, "", fmt.Errorf("invalid token payload")
 	}
 	fields := strings.Split(string(payloadBytes), ":")
-	if len(fields) < 3 {
-		return 0, 0, time.Time{}, fmt.Errorf("invalid token payload")
+	if len(fields) < 5 {
+		return 0, 0, time.Time{}, "", fmt.Errorf("invalid token payload")
 	}
 
 	tenantID, err = strconv.ParseInt(fields[0], 10, 64)
 	if err != nil {
-		return 0, 0, time.Time{}, fmt.Errorf("invalid token tenant")
+		return 0, 0, time.Time{}, "", fmt.Errorf("invalid token tenant")
 	}
 	userID, err = strconv.ParseInt(fields[1], 10, 64)
 	if err != nil {
-		return 0, 0, time.Time{}, fmt.Errorf("invalid token user")
+		return 0, 0, time.Time{}, "", fmt.Errorf("invalid token user")
 	}
 	expUnix, err := strconv.ParseInt(fields[2], 10, 64)
 	if err != nil {
-		return 0, 0, time.Time{}, fmt.Errorf("invalid token expiration")
+		return 0, 0, time.Time{}, "", fmt.Errorf("invalid token expiration")
 	}
 	expiresAt = time.Unix(expUnix, 0).UTC()
 	if time.Now().UTC().After(expiresAt) {
-		return 0, 0, time.Time{}, fmt.Errorf("token expired")
+		return 0, 0, time.Time{}, "", fmt.Errorf("token expired")
 	}
 
-	return tenantID, userID, expiresAt, nil
+	return tenantID, userID, expiresAt, fields[4], nil
 }

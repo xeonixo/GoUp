@@ -13,6 +13,9 @@ func sendSMTPMail(cfg store.GlobalSMTPDeliveryConfig, to, subject, body string) 
 	if to == "" {
 		return fmt.Errorf("recipient is required")
 	}
+	if strings.ContainsAny(to+subject+cfg.Settings.FromEmail+cfg.Settings.FromName, "\r\n") {
+		return fmt.Errorf("invalid header value")
+	}
 	host := strings.TrimSpace(cfg.Settings.Host)
 	port := cfg.Settings.Port
 	if host == "" || port <= 0 {

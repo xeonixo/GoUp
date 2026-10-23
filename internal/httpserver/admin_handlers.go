@@ -24,6 +24,7 @@ func (s *Server) adminActor(r *http.Request) string {
 }
 
 func (s *Server) writeAudit(r *http.Request, action, targetType string, targetID int64, details string) {
+	details = strings.TrimSpace(details + " ip=" + s.clientIP(r))
 	if err := s.controlStore.InsertAuditEvent(r.Context(), s.adminActor(r), action, targetType, targetID, details); err != nil {
 		s.logger.Warn("write audit event failed", "action", action, "target_type", targetType, "target_id", targetID, "error", err)
 	}
