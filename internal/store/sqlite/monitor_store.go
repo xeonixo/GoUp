@@ -562,7 +562,7 @@ func isMalformedSQLiteError(err error) bool {
 }
 
 func (s *Store) ListMonitorHourlyRollupsSince(ctx context.Context, since time.Time) ([]MonitorHourlyRollup, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	return s.listHourlyRollups(ctx, `
 SELECT
     monitor_id,
     hour_bucket,
@@ -579,6 +579,31 @@ FROM monitor_hourly_rollups
 WHERE hour_bucket >= ?
 ORDER BY hour_bucket ASC, monitor_id ASC
 `, since.UTC())
+}
+
+// ListMonitorHourlyRollupsForMonitorSince returns one monitor's hourly rollups, oldest first.
+func (s *Store) ListMonitorHourlyRollupsForMonitorSince(ctx context.Context, monitorID int64, since time.Time) ([]MonitorHourlyRollup, error) {
+	return s.listHourlyRollups(ctx, `
+SELECT
+    monitor_id,
+    hour_bucket,
+    total_checks,
+    up_checks,
+    down_checks,
+    degraded_checks,
+    latency_sum_ms,
+    latency_min_ms,
+    latency_max_ms,
+    first_checked_at,
+    last_checked_at
+FROM monitor_hourly_rollups
+WHERE monitor_id = ? AND hour_bucket >= ?
+ORDER BY hour_bucket ASC
+`, monitorID, since.UTC())
+}
+
+func (s *Store) listHourlyRollups(ctx context.Context, query string, args ...any) ([]MonitorHourlyRollup, error) {
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		if isMalformedSQLiteError(err) {
 			return []MonitorHourlyRollup{}, nil

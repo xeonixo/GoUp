@@ -3049,19 +3049,26 @@
       '1h': '1h',
       '6h': '6h',
       '24h': '24h',
-      '7d': '7d'
+      '7d': '7d',
+      '30d': '30d',
+      '90d': '90d',
+      '365d': '365d'
     };
 
     const latencyRangeConfig = {
       '1h': { durationMS: 60 * 60 * 1000, slotMS: 60 * 1000, format: 'minute' },
       '6h': { durationMS: 6 * 60 * 60 * 1000, slotMS: 5 * 60 * 1000, format: 'hour' },
       '24h': { durationMS: 24 * 60 * 60 * 1000, slotMS: 30 * 60 * 1000, format: 'hour' },
-      '7d': { durationMS: 7 * 24 * 60 * 60 * 1000, slotMS: 24 * 60 * 60 * 1000, format: 'date', align: 'day' }
+      '7d': { durationMS: 7 * 24 * 60 * 60 * 1000, slotMS: 24 * 60 * 60 * 1000, format: 'date', align: 'day' },
+      // Long ranges come pre-aggregated per day from the hourly rollups.
+      '30d': { durationMS: 30 * 24 * 60 * 60 * 1000, slotMS: 24 * 60 * 60 * 1000, format: 'date', align: 'day' },
+      '90d': { durationMS: 90 * 24 * 60 * 60 * 1000, slotMS: 24 * 60 * 60 * 1000, format: 'date', align: 'day' },
+      '365d': { durationMS: 52 * 7 * 24 * 60 * 60 * 1000, slotMS: 7 * 24 * 60 * 60 * 1000, format: 'date', align: 'day' }
     };
 
     const normalizeLatencyRange = (value) => {
       const raw = String(value || '').trim().toLowerCase();
-      if (raw === '6h' || raw === '24h' || raw === '7d') {
+      if (Object.prototype.hasOwnProperty.call(latencyRangeConfig, raw)) {
         return raw;
       }
       return '1h';
@@ -3188,6 +3195,24 @@
         }
         const status = String(point?.status || '').trim().toLowerCase();
         const latencyMS = Number(point?.latency_ms || 0);
+        const aggregatedChecks = Number(point?.total_checks || 0);
+        if (aggregatedChecks > 0) {
+          slot.hasStatus = true;
+          slot.totalChecks += aggregatedChecks;
+          slot.upChecks += Number(point?.up_checks || 0);
+          slot.downChecks += Number(point?.down_checks || 0);
+          slot.degradedChecks += Number(point?.degraded_checks || 0);
+          const latencyChecks = Number(point?.latency_checks || 0);
+          if (latencyChecks > 0) {
+            const minMS = Number(point?.latency_min_ms || 0);
+            const maxMS = Number(point?.latency_max_ms || 0);
+            slot.latencyMinMS = slot.latencyChecks === 0 ? minMS : Math.min(slot.latencyMinMS, minMS);
+            slot.latencyMaxMS = Math.max(slot.latencyMaxMS, maxMS);
+            slot.latencyChecks += latencyChecks;
+            slot.latencySumMS += Number(point?.latency_sum_ms || 0);
+          }
+          return;
+        }
         if (status) {
           slot.status = status;
           slot.hasStatus = true;
