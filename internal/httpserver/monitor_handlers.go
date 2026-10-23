@@ -21,23 +21,23 @@ func (s *Server) handleReorderMonitor(w http.ResponseWriter, r *http.Request) {
 	}
 	appStore, err := s.appStore(r)
 	if err != nil {
-		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
+		s.dashboardActionRedirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Tenant konnte nicht aufgelöst werden"))
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Formular konnte nicht gelesen werden"), http.StatusSeeOther)
+		s.dashboardActionRedirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Formular konnte nicht gelesen werden"))
 		return
 	}
 	if draggedIDRaw := strings.TrimSpace(r.FormValue("dragged_id")); draggedIDRaw != "" {
 		draggedID, parseErr := strconv.ParseInt(draggedIDRaw, 10, 64)
 		targetID, targetErr := strconv.ParseInt(strings.TrimSpace(r.FormValue("target_id")), 10, 64)
 		if parseErr != nil || targetErr != nil || draggedID <= 0 || targetID <= 0 {
-			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Ungültige Drag&Drop-Monitor-ID"), http.StatusSeeOther)
+			s.dashboardActionRedirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Ungültige Drag&Drop-Monitor-ID"))
 			return
 		}
 		snapshots, err := appStore.ListMonitorSnapshots(r.Context())
 		if err != nil {
-			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitore konnten nicht geladen werden"), http.StatusSeeOther)
+			s.dashboardActionRedirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitore konnten nicht geladen werden"))
 			return
 		}
 		monitorViews := buildMonitorViews(snapshots, nil, time.Now().UTC(), supportedTrendRanges[0], nil)
@@ -55,14 +55,14 @@ func (s *Server) handleReorderMonitor(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if draggedGroupName == "" || targetGroupName == "" {
-			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitor wurde nicht gefunden"), http.StatusSeeOther)
+			s.dashboardActionRedirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitor wurde nicht gefunden"))
 			return
 		}
 		if groupName == "" {
 			groupName = draggedGroupName
 		}
 		if draggedGroupName != groupName || targetGroupName != groupName {
-			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitore müssen in derselben Gruppe liegen"), http.StatusSeeOther)
+			s.dashboardActionRedirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitore müssen in derselben Gruppe liegen"))
 			return
 		}
 		for _, item := range monitorViews {
@@ -72,30 +72,30 @@ func (s *Server) handleReorderMonitor(w http.ResponseWriter, r *http.Request) {
 		}
 		reorderedIDs, ok := reorderMonitorIDs(orderedIDs, draggedID, targetID)
 		if !ok {
-			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitor konnte nicht neu einsortiert werden"), http.StatusSeeOther)
+			s.dashboardActionRedirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitor konnte nicht neu einsortiert werden"))
 			return
 		}
 		if err := appStore.ReorderMonitors(r.Context(), reorderedIDs); err != nil {
-			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", err.Error()), http.StatusSeeOther)
+			s.dashboardActionRedirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", err.Error()))
 			return
 		}
-		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "Monitor sortiert", ""), http.StatusSeeOther)
+		s.dashboardActionRedirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "Monitor sortiert", ""))
 		return
 	}
 	id, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("id")), 10, 64)
 	if err != nil || id <= 0 {
-		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Ungültige Monitor-ID"), http.StatusSeeOther)
+		s.dashboardActionRedirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Ungültige Monitor-ID"))
 		return
 	}
 	groupName := strings.TrimSpace(r.FormValue("group"))
 	direction := strings.TrimSpace(r.FormValue("direction"))
 	if direction != "up" && direction != "down" {
-		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Ungültige Sortierrichtung"), http.StatusSeeOther)
+		s.dashboardActionRedirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Ungültige Sortierrichtung"))
 		return
 	}
 	snapshots, err := appStore.ListMonitorSnapshots(r.Context())
 	if err != nil {
-		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitore konnten nicht geladen werden"), http.StatusSeeOther)
+		s.dashboardActionRedirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitore konnten nicht geladen werden"))
 		return
 	}
 	monitorViews := buildMonitorViews(snapshots, nil, time.Now().UTC(), supportedTrendRanges[0], nil)
@@ -119,7 +119,7 @@ func (s *Server) handleReorderMonitor(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if currentIndex == -1 {
-		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitor wurde nicht gefunden"), http.StatusSeeOther)
+		s.dashboardActionRedirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitor wurde nicht gefunden"))
 		return
 	}
 	targetIndex := currentIndex - 1
@@ -127,18 +127,18 @@ func (s *Server) handleReorderMonitor(w http.ResponseWriter, r *http.Request) {
 		targetIndex = currentIndex + 1
 	}
 	if targetIndex < 0 || targetIndex >= len(groupItems) {
-		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", ""), http.StatusSeeOther)
+		s.dashboardActionRedirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", ""))
 		return
 	}
 	if err := appStore.SwapMonitors(r.Context(), id, groupItems[targetIndex].ID); err != nil {
 		if err == sql.ErrNoRows {
-			http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitor wurde nicht gefunden"), http.StatusSeeOther)
+			s.dashboardActionRedirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", "Monitor wurde nicht gefunden"))
 			return
 		}
-		http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", err.Error()), http.StatusSeeOther)
+		s.dashboardActionRedirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "", err.Error()))
 		return
 	}
-	http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "Monitor sortiert", ""), http.StatusSeeOther)
+	s.dashboardActionRedirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "Monitor sortiert", ""))
 }
 
 func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
@@ -377,32 +377,32 @@ func (s *Server) handleDeleteMonitor(w http.ResponseWriter, r *http.Request) {
 
 	appStore, err := s.appStore(r)
 	if err != nil {
-		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
+		s.dashboardActionRedirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Tenant konnte nicht aufgelöst werden"))
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Formular konnte nicht gelesen werden"), http.StatusSeeOther)
+		s.dashboardActionRedirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Formular konnte nicht gelesen werden"))
 		return
 	}
 
 	id, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("id")), 10, 64)
 	if err != nil || id <= 0 {
-		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Ungültige Monitor-ID"), http.StatusSeeOther)
+		s.dashboardActionRedirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Ungültige Monitor-ID"))
 		return
 	}
 
 	err = appStore.DeleteMonitor(r.Context(), id)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Monitor wurde nicht gefunden"), http.StatusSeeOther)
+			s.dashboardActionRedirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Monitor wurde nicht gefunden"))
 			return
 		}
-		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Monitor konnte nicht gelöscht werden"), http.StatusSeeOther)
+		s.dashboardActionRedirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Monitor konnte nicht gelöscht werden"))
 		return
 	}
 
-	http.Redirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape("Monitor gelöscht"), http.StatusSeeOther)
+	s.dashboardActionRedirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape("Monitor gelöscht"))
 }
 
 func (s *Server) handleUpdateMonitorTarget(w http.ResponseWriter, r *http.Request) {

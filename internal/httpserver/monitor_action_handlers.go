@@ -21,18 +21,18 @@ func (s *Server) handleSetMonitorEnabled(w http.ResponseWriter, r *http.Request)
 
 	appStore, err := s.appStore(r)
 	if err != nil {
-		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
+		s.dashboardActionRedirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Tenant konnte nicht aufgelöst werden"))
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Formular konnte nicht gelesen werden"), http.StatusSeeOther)
+		s.dashboardActionRedirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Formular konnte nicht gelesen werden"))
 		return
 	}
 
 	id, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("id")), 10, 64)
 	if err != nil || id <= 0 {
-		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Ungültige Monitor-ID"), http.StatusSeeOther)
+		s.dashboardActionRedirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Ungültige Monitor-ID"))
 		return
 	}
 
@@ -41,10 +41,10 @@ func (s *Server) handleSetMonitorEnabled(w http.ResponseWriter, r *http.Request)
 
 	if err := appStore.SetMonitorEnabled(r.Context(), id, enabled); err != nil {
 		if err == sql.ErrNoRows {
-			http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Monitor wurde nicht gefunden"), http.StatusSeeOther)
+			s.dashboardActionRedirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Monitor wurde nicht gefunden"))
 			return
 		}
-		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Monitor konnte nicht aktualisiert werden"), http.StatusSeeOther)
+		s.dashboardActionRedirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Monitor konnte nicht aktualisiert werden"))
 		return
 	}
 
@@ -52,7 +52,34 @@ func (s *Server) handleSetMonitorEnabled(w http.ResponseWriter, r *http.Request)
 	if enabled {
 		message = "Monitor aktiviert"
 	}
-	http.Redirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape(message), http.StatusSeeOther)
+	s.dashboardActionRedirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape(message))
+}
+
+// dashboardActionRedirect finishes a dashboard action. Form posts get the usual redirect with
+// notice/error query parameters; fetch requests (Accept: application/json) get the same outcome
+// as localized JSON so the dashboard can update in place without a full page reload.
+func (s *Server) dashboardActionRedirect(w http.ResponseWriter, r *http.Request, target string) {
+	if !strings.Contains(r.Header.Get("Accept"), "application/json") {
+		http.Redirect(w, r, target, http.StatusSeeOther)
+		return
+	}
+	query := url.Values{}
+	if parsed, err := url.Parse(target); err == nil {
+		query = parsed.Query()
+	}
+	translations := s.translationsForLanguage(s.requestLanguage(r))
+	errText := localizeFlashMessage(translations, query.Get("error"))
+	status := http.StatusOK
+	if errText != "" {
+		status = http.StatusUnprocessableEntity
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":     errText == "",
+		"notice": localizeFlashMessage(translations, query.Get("notice")),
+		"error":  errText,
+	})
 }
 
 func checkerForMonitorKind(kind monitor.Kind) (monitor.Checker, bool) {

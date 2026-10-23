@@ -302,7 +302,14 @@
     let stateEventsPage = 1;
     let notificationEventsPage = 1;
     const tablePageSize = 10;
-    const i18n = window.GOUP_DASHBOARD_I18N || {};
+    const i18n = (() => {
+      // Translations ship as a JSON data block: the CSP (script-src 'self') blocks inline scripts.
+      try {
+        return JSON.parse(document.getElementById('goup-dashboard-i18n')?.textContent || '{}');
+      } catch (_) {
+        return {};
+      }
+    })();
     const monitorCreateTitleFallback = String(title?.dataset?.createTitle || title?.textContent || 'Create monitor').trim() || 'Create monitor';
     const monitorEditTitleFallback = String(title?.dataset?.editTitle || 'Edit monitor').trim() || 'Edit monitor';
     const monitorSkipCertFallback = String(httpSkipVerifyLabelField?.textContent || 'Do not verify certificate').trim() || 'Do not verify certificate';
@@ -3001,8 +3008,14 @@
       }
 
       applyKindRules();
+      document.dispatchEvent(new CustomEvent('goup:board-updated'));
       return true;
     };
+
+    // dashboard-board.js asks for a refresh after actions it performed via fetch.
+    document.addEventListener('goup:refresh-board', () => {
+      applyLiveSnapshot([]);
+    });
 
     reformatLiveContent = () => {
       formatClientTimes(document);

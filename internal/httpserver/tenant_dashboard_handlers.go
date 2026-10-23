@@ -79,15 +79,7 @@ func (s *Server) loadDashboardPageData(r *http.Request, appStore *store.Store, t
 	executorOptions := buildMonitorExecutorOptions(remoteNodes)
 
 	curUser := s.currentUser(r)
-	preferredLanguage := defaultUILanguage
-	if curUser != nil {
-		preferredLanguage = normalizeUILanguage(curUser.PreferredLanguage)
-		if strings.TrimSpace(curUser.PreferredLanguage) == "" {
-			preferredLanguage = detectPreferredLanguage(r)
-		}
-	} else {
-		preferredLanguage = detectPreferredLanguage(r)
-	}
+	preferredLanguage := s.requestLanguage(r)
 	translations := s.translationsForLanguage(preferredLanguage)
 	noticeLocalized := localizeFlashMessage(translations, noticeText)
 	errorLocalized := localizeFlashMessage(translations, errorText)
@@ -116,4 +108,12 @@ func (s *Server) loadDashboardPageData(r *http.Request, appStore *store.Store, t
 		StateEvents:      buildMonitorStateEventViews(stateEvents),
 		AppBase:          s.tenantAppBase(r),
 	}, nil
+}
+
+// requestLanguage picks the user's saved UI language, falling back to the browser's Accept-Language.
+func (s *Server) requestLanguage(r *http.Request) string {
+	if curUser := s.currentUser(r); curUser != nil && strings.TrimSpace(curUser.PreferredLanguage) != "" {
+		return normalizeUILanguage(curUser.PreferredLanguage)
+	}
+	return detectPreferredLanguage(r)
 }

@@ -309,27 +309,10 @@
       <small class="muted compact">{{index $.Translations "dashboard.modal.icmp_family_hint"}}</small>
     </label>
 
-    <div class="inline-grid">
-      <label>
-        <span>{{index $.Translations "dashboard.modal.interval_seconds_label"}}</span>
-        <input type="number" name="interval_seconds" id="monitor-interval" min="15" value="60" required>
-      </label>
-      <label>
-        <span>{{index $.Translations "dashboard.modal.timeout_seconds_label"}}</span>
-        <input type="number" name="timeout_seconds" id="monitor-timeout" min="1" value="10" required>
-      </label>
-    </div>
-
-    <div class="inline-grid">
-      <label>
-        <span>{{index $.Translations "dashboard.modal.retry_count_label"}}</span>
-        <input type="number" name="retry_count" id="monitor-retry-count" min="0" max="10" value="0">
-      </label>
-      <label>
-        <span>{{index $.Translations "dashboard.modal.retry_interval_seconds_label"}}</span>
-        <input type="number" name="retry_interval_seconds" id="monitor-retry-interval" min="0" value="0">
-      </label>
-    </div>
+    <label>
+      <span>{{index $.Translations "dashboard.modal.interval_seconds_label"}}</span>
+      <input type="number" name="interval_seconds" id="monitor-interval" min="15" value="60" required>
+    </label>
 
     <label id="expected-status-row" hidden>
       <span>{{index $.Translations "dashboard.modal.expected_http_status_optional"}}</span>
@@ -347,10 +330,29 @@
       <span>{{index $.Translations "dashboard.modal.enabled_checkbox"}}</span>
     </label>
 
-    <label class="checkbox-row">
-      <input type="checkbox" name="notify_on_recovery" id="monitor-notify" checked>
-      <span>{{index $.Translations "dashboard.modal.notify_recovery_checkbox"}}</span>
-    </label>
+    <details class="modal-advanced" id="monitor-advanced">
+      <summary>{{index $.Translations "dashboard.modal.advanced"}}</summary>
+      <div class="stack">
+        <div class="inline-grid">
+          <label>
+            <span>{{index $.Translations "dashboard.modal.timeout_seconds_label"}}</span>
+            <input type="number" name="timeout_seconds" id="monitor-timeout" min="1" value="10" required>
+          </label>
+          <label>
+            <span>{{index $.Translations "dashboard.modal.retry_count_label"}}</span>
+            <input type="number" name="retry_count" id="monitor-retry-count" min="0" max="10" value="0">
+          </label>
+          <label>
+            <span>{{index $.Translations "dashboard.modal.retry_interval_seconds_label"}}</span>
+            <input type="number" name="retry_interval_seconds" id="monitor-retry-interval" min="0" value="0">
+          </label>
+        </div>
+        <label class="checkbox-row">
+          <input type="checkbox" name="notify_on_recovery" id="monitor-notify" checked>
+          <span>{{index $.Translations "dashboard.modal.notify_recovery_checkbox"}}</span>
+        </label>
+      </div>
+    </details>
 
     <div class="modal-actions">
       <button class="button button-secondary" type="button" id="monitor-cancel">{{index $.Translations "dashboard.modal.cancel_button"}}</button>
@@ -511,6 +513,16 @@
   </div>
 </dialog>
 
+<div class="board-toolbar" id="board-toolbar" role="search">
+  <input type="search" id="board-search" class="board-search" placeholder="{{index $.Translations "dashboard.filter.search_placeholder"}}" aria-label="{{index $.Translations "dashboard.filter.search_placeholder"}}" autocomplete="off" enterkeyhint="search">
+  <div class="board-status-filter" role="group" aria-label="{{index $.Translations "dashboard.filter.status_aria"}}">
+    <button type="button" class="button button-small" data-status-filter="all" aria-pressed="true">{{index $.Translations "dashboard.filter.all"}}</button>
+    <button type="button" class="button button-small button-secondary" data-status-filter="problems" aria-pressed="false">{{index $.Translations "dashboard.filter.problems"}}</button>
+    <button type="button" class="button button-small button-secondary" data-status-filter="paused" aria-pressed="false">{{index $.Translations "dashboard.filter.paused"}}</button>
+  </div>
+  <p class="muted compact board-filter-empty" id="board-filter-empty" hidden>{{index $.Translations "dashboard.filter.no_matches"}}</p>
+</div>
+
 <section id="dashboard-live-board" class="card stack dashboard-board">
   {{range .MonitorGroups}}
   <section class="monitor-group {{.AccentClass}} stack">
@@ -579,7 +591,7 @@
           </summary>
           <div class="monitor-grid">
       {{range .Monitors}}
-      <article class="card monitor-card {{.StatusClass}}" {{if $.IsAdmin}}draggable="true"{{end}} data-monitor-id="{{.ID}}" data-group="{{$serviceTitle}}" data-interval-seconds="{{.IntervalSeconds}}" data-last-check="{{.LastCheckedAtRaw}}">
+      <article class="card monitor-card {{.StatusClass}}" {{if $.IsAdmin}}draggable="true"{{end}} data-monitor-id="{{.ID}}" data-group="{{$serviceTitle}}" data-interval-seconds="{{.IntervalSeconds}}" data-last-check="{{.LastCheckedAtRaw}}" data-status="{{.StatusClass}}" data-search="{{.Name}} {{.Target}} {{$serviceTitle}} {{.Kind}}">
         <div class="monitor-card-header">
           <div>
               <h5>{{.Name}}</h5>
@@ -621,13 +633,27 @@
                   data-expected-text="{{.ExpectedText}}">
                   {{index $.Translations "common.edit"}}
                 </button>
+                <form method="post" action="{{$.AppBase}}monitors/reorder" class="action-menu-form js-async-action">
+                  <input type="hidden" name="id" value="{{.ID}}">
+                  <input type="hidden" name="group" value="{{$serviceTitle}}">
+                  <input type="hidden" name="direction" value="up">
+                  <input type="hidden" name="trend" value="{{$.TrendValue}}">
+                  <button class="action-menu-item" type="submit">{{index $.Translations "dashboard.monitor.move_up"}}</button>
+                </form>
+                <form method="post" action="{{$.AppBase}}monitors/reorder" class="action-menu-form js-async-action">
+                  <input type="hidden" name="id" value="{{.ID}}">
+                  <input type="hidden" name="group" value="{{$serviceTitle}}">
+                  <input type="hidden" name="direction" value="down">
+                  <input type="hidden" name="trend" value="{{$.TrendValue}}">
+                  <button class="action-menu-item" type="submit">{{index $.Translations "dashboard.monitor.move_down"}}</button>
+                </form>
                 <a href="{{$.AppBase}}monitors/export?id={{.ID}}" class="action-menu-item">{{index $.Translations "dashboard.monitor.export"}}</a>
-                <form method="post" action="{{$.AppBase}}monitors/enabled" class="action-menu-form">
+                <form method="post" action="{{$.AppBase}}monitors/enabled" class="action-menu-form js-async-action">
                   <input type="hidden" name="id" value="{{.ID}}">
                   <input type="hidden" name="enabled" value="{{if .Enabled}}0{{else}}1{{end}}">
                   <button class="action-menu-item" type="submit">{{if .Enabled}}{{index $.Translations "dashboard.monitor.pause"}}{{else}}{{index $.Translations "dashboard.monitor.enable"}}{{end}}</button>
                 </form>
-                <form method="post" action="{{$.AppBase}}monitors/delete" class="action-menu-form" data-confirm="{{index $.Translations "dashboard.monitor.delete_confirm"}}">
+                <form method="post" action="{{$.AppBase}}monitors/delete" class="action-menu-form js-async-action" data-confirm="{{index $.Translations "dashboard.monitor.delete_confirm"}}">
                   <input type="hidden" name="id" value="{{.ID}}">
                   <button class="action-menu-item action-menu-item-danger" type="submit">{{index $.Translations "common.delete"}}</button>
                 </form>
@@ -839,61 +865,63 @@
 {{end}}
 
 {{define "page_scripts"}}
-<script>
-  window.GOUP_DASHBOARD_I18N = {
-    liveDisconnected: {{printf "%q" (index $.Translations "dashboard.live.disconnected")}},
-    liveConnected: {{printf "%q" (index $.Translations "dashboard.live.connected")}},
-    liveConnecting: {{printf "%q" (index $.Translations "dashboard.live.connecting")}},
-    paginationSummary: {{printf "%q" (index $.Translations "dashboard.pagination.summary")}},
-    paginationPrev: {{printf "%q" (index $.Translations "dashboard.pagination.prev")}},
-    paginationNext: {{printf "%q" (index $.Translations "dashboard.pagination.next")}},
-    groupIconSelectedUpload: {{printf "%q" (index $.Translations "dashboard.group_modal.selected_upload")}},
-    groupIconSelectedSlug: {{printf "%q" (index $.Translations "dashboard.group_modal.selected_slug")}},
-    groupIconNoneSelected: {{printf "%q" (index $.Translations "dashboard.group_modal.no_icon_selected")}},
-    groupIconUseCustomSlug: {{printf "%q" (index $.Translations "dashboard.group_modal.use_custom_slug")}},
-    groupIconAlreadyPresent: {{printf "%q" (index $.Translations "dashboard.group_modal.already_present")}},
-    groupIconSearchHint: {{printf "%q" (index $.Translations "dashboard.group_modal.search_hint")}},
-    groupIconSearchResultsCount: {{printf "%q" (index $.Translations "dashboard.group_modal.search_results_count")}},
-    groupIconSearchNoResults: {{printf "%q" (index $.Translations "dashboard.group_modal.search_no_results")}},
-    groupIconSearchUnavailable: {{printf "%q" (index $.Translations "dashboard.group_modal.search_unavailable")}},
-    groupFallback: {{printf "%q" (index $.Translations "dashboard.group.fallback")}},
-    groupModalTitle: {{printf "%q" (index $.Translations "dashboard.group_modal.title_with_name")}},
-    monitorCreateTitle: {{printf "%q" (index $.Translations "dashboard.modal.create_title")}},
-    monitorEditTitle: {{printf "%q" (index $.Translations "dashboard.modal.edit_title")}},
-    monitorUseHTTPS: {{printf "%q" (index $.Translations "dashboard.modal.https_checkbox")}},
-    monitorVerifyCert: {{printf "%q" (index $.Translations "dashboard.modal.verify_cert_checkbox")}},
-    monitorSkipCert: {{printf "%q" (index $.Translations "dashboard.modal.skip_cert_checkbox")}},
-    monitorTCPHandshake: {{printf "%q" (index $.Translations "dashboard.modal.tcp_tls_handshake")}},
-    monitorHintHTTPS: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_https")}},
-    monitorHintHTTP: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_http_plain")}},
-    monitorHintDNS: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_dns")}},
-    monitorDNSExpectedPlaceholder: {{printf "%q" (index $.Translations "dashboard.modal.dns_expected_placeholder")}},
-    monitorHintUDP: {{printf "%q" (index $.Translations "dashboard.modal.target_hint_udp")}},
-    dnsExpectedOptional: {{printf "%q" (index $.Translations "dashboard.modal.expected_dns_response_optional")}},
-    dnsExpectedHint: {{printf "%q" (index $.Translations "dashboard.modal.expected_dns_hint")}},
-    monitorCycleChecking: {{printf "%q" (index $.Translations "dashboard.monitor.cycle.checking")}},
-    monitorCycleNextIn: {{printf "%q" (index $.Translations "dashboard.monitor.cycle.next_in")}},
-    expectedKeywordsOptional: {{printf "%q" (index $.Translations "dashboard.modal.expected_keywords_optional")}},
-    expectedKeywordsHint: {{printf "%q" (index $.Translations "dashboard.modal.expected_keywords_hint")}},
-    trendLatencyNoValues: {{printf "%q" (index $.Translations "dashboard.trend_detail.latency_no_values")}},
-    trendNoData: {{printf "%q" (index $.Translations "dashboard.trend_detail.no_data")}},
-    trendLatencySingleOnly: {{printf "%q" (index $.Translations "dashboard.trend_detail.latency_single_only")}},
-    trendLatencyLoading: {{printf "%q" (index $.Translations "dashboard.trend_detail.latency_loading")}},
-    trendLatencyLoadFailed: {{printf "%q" (index $.Translations "dashboard.trend_detail.latency_load_failed")}},
-    trendTitleFallback: {{printf "%q" (index $.Translations "dashboard.trend_detail.title")}},
-    trendHistoryTitle: {{printf "%q" (index $.Translations "dashboard.trend_detail.history")}},
-    trendNoDetailMessage: {{printf "%q" (index $.Translations "dashboard.trend_detail.no_detail_message")}},
-    statusUnknown: {{printf "%q" (index $.Translations "monitor.status.unknown")}},
-    stateEventsNone: {{printf "%q" (index $.Translations "dashboard.state_events.empty")}},
-    paginationEntries: {{printf "%q" (index $.Translations "dashboard.pagination.entries")}},
-    paginationOf: {{printf "%q" (index $.Translations "dashboard.pagination.of")}},
-    csvHeaderTime: {{printf "%q" (index $.Translations "dashboard.state_events.time")}},
-    csvHeaderMonitor: {{printf "%q" (index $.Translations "dashboard.state_events.monitor")}},
-    csvHeaderFrom: {{printf "%q" (index $.Translations "dashboard.state_events.from")}},
-    csvHeaderTo: {{printf "%q" (index $.Translations "dashboard.state_events.to")}},
-    csvHeaderDetails: {{printf "%q" (index $.Translations "dashboard.state_events.details")}},
-    csvFilenamePrefix: {{printf "%q" (index $.Translations "dashboard.state_events.csv_filename_prefix")}}
-  };
+<script type="application/json" id="goup-dashboard-i18n">
+  {
+    "liveDisconnected": {{index $.Translations "dashboard.live.disconnected"}},
+    "liveConnected": {{index $.Translations "dashboard.live.connected"}},
+    "liveConnecting": {{index $.Translations "dashboard.live.connecting"}},
+    "paginationSummary": {{index $.Translations "dashboard.pagination.summary"}},
+    "paginationPrev": {{index $.Translations "dashboard.pagination.prev"}},
+    "paginationNext": {{index $.Translations "dashboard.pagination.next"}},
+    "groupIconSelectedUpload": {{index $.Translations "dashboard.group_modal.selected_upload"}},
+    "groupIconSelectedSlug": {{index $.Translations "dashboard.group_modal.selected_slug"}},
+    "groupIconNoneSelected": {{index $.Translations "dashboard.group_modal.no_icon_selected"}},
+    "groupIconUseCustomSlug": {{index $.Translations "dashboard.group_modal.use_custom_slug"}},
+    "groupIconAlreadyPresent": {{index $.Translations "dashboard.group_modal.already_present"}},
+    "groupIconSearchHint": {{index $.Translations "dashboard.group_modal.search_hint"}},
+    "groupIconSearchResultsCount": {{index $.Translations "dashboard.group_modal.search_results_count"}},
+    "groupIconSearchNoResults": {{index $.Translations "dashboard.group_modal.search_no_results"}},
+    "groupIconSearchUnavailable": {{index $.Translations "dashboard.group_modal.search_unavailable"}},
+    "groupFallback": {{index $.Translations "dashboard.group.fallback"}},
+    "groupModalTitle": {{index $.Translations "dashboard.group_modal.title_with_name"}},
+    "monitorCreateTitle": {{index $.Translations "dashboard.modal.create_title"}},
+    "monitorEditTitle": {{index $.Translations "dashboard.modal.edit_title"}},
+    "monitorUseHTTPS": {{index $.Translations "dashboard.modal.https_checkbox"}},
+    "monitorVerifyCert": {{index $.Translations "dashboard.modal.verify_cert_checkbox"}},
+    "monitorSkipCert": {{index $.Translations "dashboard.modal.skip_cert_checkbox"}},
+    "monitorTCPHandshake": {{index $.Translations "dashboard.modal.tcp_tls_handshake"}},
+    "monitorHintHTTPS": {{index $.Translations "dashboard.modal.target_hint_https"}},
+    "monitorHintHTTP": {{index $.Translations "dashboard.modal.target_hint_http_plain"}},
+    "monitorHintDNS": {{index $.Translations "dashboard.modal.target_hint_dns"}},
+    "monitorDNSExpectedPlaceholder": {{index $.Translations "dashboard.modal.dns_expected_placeholder"}},
+    "monitorHintUDP": {{index $.Translations "dashboard.modal.target_hint_udp"}},
+    "dnsExpectedOptional": {{index $.Translations "dashboard.modal.expected_dns_response_optional"}},
+    "dnsExpectedHint": {{index $.Translations "dashboard.modal.expected_dns_hint"}},
+    "monitorCycleChecking": {{index $.Translations "dashboard.monitor.cycle.checking"}},
+    "monitorCycleNextIn": {{index $.Translations "dashboard.monitor.cycle.next_in"}},
+    "expectedKeywordsOptional": {{index $.Translations "dashboard.modal.expected_keywords_optional"}},
+    "expectedKeywordsHint": {{index $.Translations "dashboard.modal.expected_keywords_hint"}},
+    "trendLatencyNoValues": {{index $.Translations "dashboard.trend_detail.latency_no_values"}},
+    "trendNoData": {{index $.Translations "dashboard.trend_detail.no_data"}},
+    "trendLatencySingleOnly": {{index $.Translations "dashboard.trend_detail.latency_single_only"}},
+    "trendLatencyLoading": {{index $.Translations "dashboard.trend_detail.latency_loading"}},
+    "trendLatencyLoadFailed": {{index $.Translations "dashboard.trend_detail.latency_load_failed"}},
+    "trendTitleFallback": {{index $.Translations "dashboard.trend_detail.title"}},
+    "trendHistoryTitle": {{index $.Translations "dashboard.trend_detail.history"}},
+    "trendNoDetailMessage": {{index $.Translations "dashboard.trend_detail.no_detail_message"}},
+    "statusUnknown": {{index $.Translations "monitor.status.unknown"}},
+    "stateEventsNone": {{index $.Translations "dashboard.state_events.empty"}},
+    "paginationEntries": {{index $.Translations "dashboard.pagination.entries"}},
+    "paginationOf": {{index $.Translations "dashboard.pagination.of"}},
+    "csvHeaderTime": {{index $.Translations "dashboard.state_events.time"}},
+    "csvHeaderMonitor": {{index $.Translations "dashboard.state_events.monitor"}},
+    "csvHeaderFrom": {{index $.Translations "dashboard.state_events.from"}},
+    "csvHeaderTo": {{index $.Translations "dashboard.state_events.to"}},
+    "csvHeaderDetails": {{index $.Translations "dashboard.state_events.details"}},
+    "csvFilenamePrefix": {{index $.Translations "dashboard.state_events.csv_filename_prefix"}},
+    "actionFailed": {{index $.Translations "dashboard.action.failed"}}
+  }
 </script>
 <script src="/static/dashboard.js" defer></script>
+<script src="/static/dashboard-board.js" defer></script>
 {{end}}
