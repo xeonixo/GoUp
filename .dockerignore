@@ -5,3 +5,7 @@ data
 AGENDS.md
 CLAUDE.md
 GEMINI.md
+goup-data
+*.db
+*.db-shm
+*.db-wal

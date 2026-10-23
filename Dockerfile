@@ -1,4 +1,4 @@
-FROM golang:1.26-alpine AS build
+FROM golang:1.27-alpine3.24 AS build
 WORKDIR /src
 
 ARG TARGETOS
@@ -16,7 +16,7 @@ RUN set -eux; \
     go build -trimpath -ldflags="-s -w -X goup/internal/version.Version=${VERSION}" -o /out/goup ./cmd/goup; \
     go build -trimpath -ldflags="-s -w -X goup/internal/version.Version=${VERSION}" -o /out/remote-node ./cmd/remote-node
 
-FROM alpine:3.20
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates libcap-utils \
     && addgroup -S goup \
     && adduser -S -G goup goup \
