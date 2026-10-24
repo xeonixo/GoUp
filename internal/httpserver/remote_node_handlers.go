@@ -14,6 +14,9 @@ const (
 	remoteNodeReportMaxMessageLen  = 1000
 	remoteNodeReportMaxPastSkew    = 24 * time.Hour
 	remoteNodeReportMaxFutureSkew  = 10 * time.Minute
+	// remoteNodeReportProcessTimeout bounds storing and dispatching one report
+	// after the node may already have disconnected.
+	remoteNodeReportProcessTimeout = 2 * time.Minute
 )
 
 type remoteNodeBootstrapRequest struct {

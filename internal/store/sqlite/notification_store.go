@@ -209,13 +209,17 @@ func (s *Store) EnsureSystemNotificationEndpoint(ctx context.Context, kind, name
 
 	now := time.Now().UTC()
 
-	var id int64
+	var (
+		id            int64
+		currentEnable int
+		currentConfig string
+	)
 	err := s.db.QueryRowContext(ctx, `
-SELECT id
+SELECT id, enabled, config_json
 FROM notification_endpoints
 WHERE kind = ? AND name = ?
 LIMIT 1
-`, kind, name).Scan(&id)
+`, kind, name).Scan(&id, &currentEnable, &currentConfig)
 	if err != nil {
 		if err != sql.ErrNoRows {
 			return 0, fmt.Errorf("lookup notification endpoint: %w", err)
@@ -232,6 +236,12 @@ VALUES (?, ?, ?, ?, ?, ?)
 		if insertErr != nil {
 			return 0, fmt.Errorf("read notification endpoint id: %w", insertErr)
 		}
+		return id, nil
+	}
+
+	// Callers ensure these endpoints on every notifier build (e.g. each remote
+	// node report); skip the write when nothing changed.
+	if currentEnable == boolToInt(enabled) && currentConfig == configJSON {
 		return id, nil
 	}
 
