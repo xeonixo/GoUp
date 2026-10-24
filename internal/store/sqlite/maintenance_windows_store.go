@@ -3,13 +3,10 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
-	"sort"
+	"goup/internal/monitor"
 	"strings"
 	"time"
-
-	"goup/internal/monitor"
 )
 
 const maintenanceCacheTTL = 30 * time.Second
@@ -55,71 +52,6 @@ ON maintenance_window_targets(window_id);
 		return fmt.Errorf("create maintenance tables: %w", err)
 	}
 	return nil
-}
-
-// Validation errors of maintenance windows; callers map them to localized messages.
-var (
-	ErrMaintenanceTitle   = errors.New("maintenance title is required (max 120 characters)")
-	ErrMaintenanceText    = errors.New("maintenance description must not exceed 1000 characters")
-	ErrMaintenanceTimes   = errors.New("maintenance start and end are required")
-	ErrMaintenanceOrder   = errors.New("maintenance end must be after its start")
-	ErrMaintenanceTooLong = errors.New("a recurring maintenance window must not be longer than its period")
-	ErrMaintenanceTargets = errors.New("select at least one monitor or group")
-	ErrMaintenanceInvalid = errors.New("invalid maintenance recurrence or scope")
-)
-
-// ValidateMaintenanceWindow checks a window before it is stored.
-func ValidateMaintenanceWindow(w monitor.MaintenanceWindow) error {
-	if strings.TrimSpace(w.Title) == "" || len([]rune(strings.TrimSpace(w.Title))) > 120 {
-		return ErrMaintenanceTitle
-	}
-	if len([]rune(w.Description)) > 1000 {
-		return ErrMaintenanceText
-	}
-	if w.StartsAt.IsZero() || w.EndsAt.IsZero() {
-		return ErrMaintenanceTimes
-	}
-	if !w.EndsAt.After(w.StartsAt) {
-		return ErrMaintenanceOrder
-	}
-	length := w.EndsAt.Sub(w.StartsAt)
-	switch w.Recurrence {
-	case monitor.RecurrenceNone:
-	case monitor.RecurrenceDaily:
-		if length > 24*time.Hour {
-			return ErrMaintenanceTooLong
-		}
-	case monitor.RecurrenceWeekly:
-		if length > 7*24*time.Hour {
-			return ErrMaintenanceTooLong
-		}
-	default:
-		return ErrMaintenanceInvalid
-	}
-	switch w.Scope {
-	case monitor.MaintenanceScopeAll:
-	case monitor.MaintenanceScopeMonitors:
-		if len(w.MonitorIDs) == 0 {
-			return ErrMaintenanceTargets
-		}
-	case monitor.MaintenanceScopeGroups:
-		if len(w.Groups) == 0 {
-			return ErrMaintenanceTargets
-		}
-	default:
-		return ErrMaintenanceInvalid
-	}
-	return nil
-}
-
-func normalizeMaintenanceWindow(w monitor.MaintenanceWindow) monitor.MaintenanceWindow {
-	w.Title = strings.TrimSpace(w.Title)
-	w.Description = strings.TrimSpace(w.Description)
-	w.StartsAt = w.StartsAt.UTC()
-	w.EndsAt = w.EndsAt.UTC()
-	w.Recurrence = monitor.NormalizeRecurrence(w.Recurrence)
-	w.Scope = monitor.NormalizeMaintenanceScope(w.Scope)
-	return w
 }
 
 func (s *Store) invalidateMaintenanceCache() {
@@ -307,82 +239,3 @@ ORDER BY starts_at DESC, id DESC
 	}
 	return items, targets.Err()
 }
-
-// MaintenanceSet returns the windows from a cache that is refreshed every 30 seconds and
-// dropped whenever a window is created, changed or deleted through this store.
-func (s *Store) MaintenanceSet(ctx context.Context) monitor.MaintenanceSet {
-	s.maintenanceMu.Lock()
-	defer s.maintenanceMu.Unlock()
-	if !s.maintenanceLoaded.IsZero() && time.Since(s.maintenanceLoaded) < maintenanceCacheTTL {
-		return s.maintenanceCache
-	}
-	items, err := s.ListMaintenanceWindows(ctx)
-	if err != nil {
-		// Keep serving the previous snapshot; retry on the next call.
-		return s.maintenanceCache
-	}
-	sort.SliceStable(items, func(i, j int) bool { return items[i].ID < items[j].ID })
-	s.maintenanceCache = monitor.MaintenanceSet{Windows: items}
-	s.maintenanceLoaded = time.Now()
-	return s.maintenanceCache
-}
-
-// ActiveMaintenance implements monitor.MaintenanceChecker.
-func (s *Store) ActiveMaintenance(ctx context.Context, monitorID int64, group string, now time.Time) bool {
-	_, ok := s.MaintenanceSet(ctx).Active(monitorID, group, now)
-	return ok
-}
-
-// SetMonitorMuteStartStatus stores the catch-up marker.
-func (s *Store) SetMonitorMuteStartStatus(ctx context.Context, monitorID int64, status monitor.Status) error {
-	if _, err := s.db.ExecContext(ctx, `UPDATE monitors SET mute_start_status = ? WHERE id = ?`, string(status), monitorID); err != nil {
-		return fmt.Errorf("set monitor mute_start_status: %w", err)
-	}
-	return nil
-}
-
-// SetMonitorLastAlert records when the current outage was last announced; nil clears it.
-func (s *Store) SetMonitorLastAlert(ctx context.Context, monitorID int64, at *time.Time) error {
-	var value any
-	if at != nil {
-		value = at.UTC()
-	}
-	if _, err := s.db.ExecContext(ctx, `UPDATE monitors SET last_alert_at = ? WHERE id = ?`, value, monitorID); err != nil {
-		return fmt.Errorf("set monitor last_alert_at: %w", err)
-	}
-	return nil
-}
-
-// CurrentOutageStart returns the time of the first result of the ongoing run of down results.
-func (s *Store) CurrentOutageStart(ctx context.Context, monitorID int64) (time.Time, bool, error) {
-	var raw any
-	err := s.db.QueryRowContext(ctx, `
-SELECT MIN(checked_at) FROM monitor_results
-WHERE monitor_id = ? AND status = 'down'
-  AND checked_at > COALESCE((SELECT MAX(checked_at) FROM monitor_results WHERE monitor_id = ? AND status != 'down'), '')
-`, monitorID, monitorID).Scan(&raw)
-	if err != nil {
-		if isMalformedSQLiteError(err) {
-			return time.Time{}, false, nil
-		}
-		return time.Time{}, false, fmt.Errorf("load outage start: %w", err)
-	}
-	switch v := raw.(type) {
-	case time.Time:
-		return v.UTC(), true, nil
-	case string:
-		// The driver stores times in Go's default format ("... +0000 UTC", optionally with a
-		// monotonic clock suffix).
-		if i := strings.Index(v, " m="); i >= 0 {
-			v = v[:i]
-		}
-		for _, layout := range []string{"2006-01-02 15:04:05.999999999 -0700 MST", "2006-01-02 15:04:05.999999999-07:00", time.RFC3339Nano} {
-			if t, err := time.Parse(layout, v); err == nil {
-				return t.UTC(), true, nil
-			}
-		}
-	}
-	return time.Time{}, false, nil
-}
-
-var _ monitor.MaintenanceChecker = (*Store)(nil)

@@ -1,0 +1,14 @@
+{{define "dashboard_bulk_bar"}}{{if .IsAdmin}}
+<div class="bulk-bar" id="bulk-bar" hidden>
+  <strong id="bulk-count">0</strong>
+  <button type="button" class="button button-small button-secondary" id="bulk-select-visible">{{index $.Translations "dashboard.bulk.select_visible"}}</button>
+  <form method="post" action="{{$.AppBase}}monitors/bulk" class="bulk-actions js-async-action" id="bulk-form" data-confirm-delete="{{index $.Translations "dashboard.bulk.delete_confirm"}}">
+    <button type="submit" class="button button-small button-secondary" name="action" value="enable">{{index $.Translations "dashboard.monitor.enable"}}</button>
+    <button type="submit" class="button button-small button-secondary" name="action" value="pause">{{index $.Translations "dashboard.monitor.pause"}}</button>
+    <button type="submit" class="button button-small button-secondary" name="action" value="mute_1h">🔕 1h</button>
+    <button type="submit" class="button button-small button-secondary" name="action" value="mute_24h">🔕 24h</button>
+    <button type="submit" class="button button-small button-secondary" name="action" value="unmute">{{index $.Translations "dashboard.monitor.unmute"}}</button>
+    <button type="submit" class="button button-small button-danger" name="action" value="delete">{{index $.Translations "common.delete"}}</button>
+  </form>
+</div>
+{{end}}{{end}}

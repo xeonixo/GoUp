@@ -34,11 +34,11 @@ func TestFormatTransitionMessage(t *testing.T) {
 }
 
 func TestNotifierEnabled(t *testing.T) {
-	n := NewNotifier(nil, 1)
+	n := &Notifier{endpointID: 1}
 	if n.Enabled() {
 		t.Fatalf("notifier without client should not be enabled")
 	}
-	n = NewNotifier(&Client{homeserverURL: "https://m", accessToken: "t", roomID: "!r"}, 1)
+	n = &Notifier{client: &Client{homeserverURL: "https://m", accessToken: "t", roomID: "!r"}, endpointID: 1}
 	if !n.Enabled() {
 		t.Fatalf("notifier with client should be enabled")
 	}

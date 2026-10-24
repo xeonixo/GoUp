@@ -15,3 +15,4 @@ codeql-custom-queries-go/
 CLAUDE.md
 AGENTS.md
 goup-data/
+.claude/worktrees/

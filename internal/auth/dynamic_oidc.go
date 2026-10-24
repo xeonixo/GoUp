@@ -296,27 +296,6 @@ func (m *DynamicOIDCManager) CompleteAuthForTenant(ctx context.Context, r *http.
 	return identity, nil
 }
 
-func (m *DynamicOIDCManager) ClearEphemeralCookies(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     oidcStateCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-	})
-	http.SetCookie(w, &http.Cookie{
-		Name:     oidcNonceCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-	})
-}
-
 func (m *DynamicOIDCManager) ClearEphemeralCookiesForTenant(w http.ResponseWriter, tenantSlug string, secureCookies bool) {
 	stateCookieName, nonceCookieName, providerCookieName := tenantOIDCCookieNames(tenantSlug)
 	for _, name := range []string{stateCookieName, nonceCookieName, providerCookieName, oidcStateCookieName, oidcNonceCookieName} {

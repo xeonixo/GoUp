@@ -1,0 +1,90 @@
+{{define "dashboard_trend_modal"}}<dialog id="trend-detail-modal" class="monitor-modal trend-detail-modal" aria-modal="true" aria-labelledby="trend-detail-title">
+  <div class="stack">
+    <div class="modal-header">
+      <div>
+        <h2 id="trend-detail-title">{{index $.Translations "dashboard.trend_detail.title"}}</h2>
+        <p class="muted compact" id="trend-detail-subtitle">{{index $.Translations "dashboard.trend_detail.history"}}</p>
+      </div>
+      <button class="modal-close-button" type="button" id="trend-detail-close" aria-label="{{index $.Translations "dashboard.trend_detail.close_aria"}}">×</button>
+    </div>
+
+    <div class="trend-detail-meta">
+      <article class="card trend-detail-card">
+        <span class="muted">{{index $.Translations "common.status"}}</span>
+        <strong id="trend-detail-status">—</strong>
+      </article>
+      <article class="card trend-detail-card">
+        <span class="muted">{{index $.Translations "dashboard.trend_detail.uptime"}}</span>
+        <strong id="trend-detail-uptime">—</strong>
+      </article>
+      <article class="card trend-detail-card">
+        <span class="muted">{{index $.Translations "dashboard.trend_detail.last_check"}}</span>
+        <strong id="trend-detail-last-check">—</strong>
+      </article>
+      <article class="card trend-detail-card">
+        <span class="muted">{{index $.Translations "dashboard.trend_detail.latency_triplet"}}</span>
+        <strong id="trend-detail-latency">—</strong>
+      </article>
+      <article class="card trend-detail-card">
+        <span class="muted">{{index $.Translations "dashboard.trend_detail.checks"}}</span>
+        <strong id="trend-detail-checks">—</strong>
+      </article>
+      <article class="card trend-detail-card">
+        <span class="muted">{{index $.Translations "dashboard.modal.target_label"}}</span>
+        <strong id="trend-detail-target">—</strong>
+      </article>
+    </div>
+
+    <section class="card stack">
+      <h3 id="trend-detail-range-title">{{index $.Translations "dashboard.trend_detail.range"}}</h3>
+      <div id="trend-detail-bars" class="trend-bars trend-bars-large"></div>
+      <div class="trend-detail-latency-chart" id="trend-detail-latency-chart" hidden>
+        <div class="trend-detail-latency-chart-head">
+          <strong>{{index $.Translations "dashboard.trend_detail.latency"}}</strong>
+          <div class="trend-detail-latency-ranges" role="tablist" aria-label="{{index $.Translations "dashboard.trend_detail.latency_range"}}">
+            <button class="button button-small trend-detail-latency-range" type="button" data-range="1h" role="tab" aria-selected="true">1h</button>
+            <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="6h" role="tab" aria-selected="false">6h</button>
+            <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="24h" role="tab" aria-selected="false">24h</button>
+            <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="7d" role="tab" aria-selected="false">7d</button>
+            <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="30d" role="tab" aria-selected="false">30d</button>
+            <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="90d" role="tab" aria-selected="false">90d</button>
+            <button class="button button-small button-secondary trend-detail-latency-range" type="button" data-range="365d" role="tab" aria-selected="false">365d</button>
+          </div>
+        </div>
+        <div class="trend-detail-latency-layout">
+          <div class="trend-detail-latency-plot" id="trend-detail-latency-plot">
+            <div class="trend-detail-latency-tooltip" id="trend-detail-latency-tooltip" hidden></div>
+          </div>
+          <div class="trend-detail-latency-axis trend-detail-latency-axis-y" aria-hidden="true">
+            <span id="trend-detail-latency-y-max">—</span>
+            <span id="trend-detail-latency-y-mid">—</span>
+            <span id="trend-detail-latency-y-min">0 ms</span>
+          </div>
+        </div>
+        <div class="trend-detail-latency-axis trend-detail-latency-axis-x" aria-hidden="true">
+          <span id="trend-detail-latency-x-start">—</span>
+          <span id="trend-detail-latency-x-end">—</span>
+        </div>
+        <p class="muted compact" id="trend-detail-latency-caption">—</p>
+      </div>
+    </section>
+
+    <section class="card stack trend-detail-history-card">
+      <div class="trend-detail-section-head">
+        <h3 id="trend-detail-history-title">{{index $.Translations "dashboard.trend_detail.history"}}</h3>
+        <span class="muted compact" id="trend-detail-history-summary">—</span>
+      </div>
+      <div class="table-wrap">
+        <table class="trend-detail-history-table">
+          <thead>
+            <tr>
+              <th scope="col">{{index $.Translations "dashboard.trend_detail.period"}}</th>
+              <th scope="col">{{index $.Translations "dashboard.trend_detail.result"}}</th>
+            </tr>
+          </thead>
+          <tbody id="trend-detail-history"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</dialog>{{end}}

@@ -9,22 +9,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
-	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"goup/internal/monitor"
 )
-
-type Config struct {
-	ControlPlaneURL    string
-	NodeID             string
-	BootstrapKey       string
-	InitialPollSeconds int
-}
 
 type Agent struct {
 	cfg         Config
@@ -36,123 +26,6 @@ type Agent struct {
 	scheduleMu  sync.Mutex
 	schedule    map[int64]*remoteScheduleState
 	assignments map[int64]assignedMonitorSpec
-}
-
-type remoteScheduleState struct {
-	interval time.Duration
-	nextDue  time.Time
-	inFlight bool
-}
-
-type bootstrapRequest struct {
-	NodeID       string `json:"node_id"`
-	BootstrapKey string `json:"bootstrap_key"`
-}
-
-type bootstrapResponse struct {
-	OK                  bool   `json:"ok"`
-	AccessToken         string `json:"access_token"`
-	AccessTokenExpires  string `json:"access_token_expires"`
-	PollIntervalSeconds int    `json:"poll_interval_seconds"`
-}
-
-type pollResponse struct {
-	OK                  bool                  `json:"ok"`
-	AccessToken         string                `json:"access_token"`
-	AccessTokenExpires  string                `json:"access_token_expires"`
-	PollIntervalSeconds int                   `json:"poll_interval_seconds"`
-	AssignedMonitors    []assignedMonitorSpec `json:"assigned_monitors"`
-}
-
-type assignedMonitorSpec struct {
-	ID                 int64  `json:"id"`
-	Name               string `json:"name"`
-	Kind               string `json:"kind"`
-	Target             string `json:"target"`
-	IntervalSeconds    int    `json:"interval_seconds"`
-	TimeoutSeconds     int    `json:"timeout_seconds"`
-	TLSMode            string `json:"tls_mode"`
-	ExpectedStatusCode *int   `json:"expected_status_code,omitempty"`
-	ExpectedText       string `json:"expected_text,omitempty"`
-}
-
-type reportRequest struct {
-	Results []reportResult `json:"results"`
-}
-
-type reportResult struct {
-	MonitorID        int64   `json:"monitor_id"`
-	CheckedAt        string  `json:"checked_at"`
-	Status           string  `json:"status"`
-	LatencyMS        int64   `json:"latency_ms"`
-	Message          string  `json:"message"`
-	HTTPStatusCode   *int    `json:"http_status_code,omitempty"`
-	TLSValid         *bool   `json:"tls_valid,omitempty"`
-	TLSNotAfter      *string `json:"tls_not_after,omitempty"`
-	TLSDaysRemaining *int    `json:"tls_days_remaining,omitempty"`
-}
-
-func LoadConfigFromEnv() (Config, error) {
-	cfg := Config{
-		ControlPlaneURL:    normalizeControlPlaneURL(os.Getenv("REMOTE_NODE_CONTROL_PLANE_URL")),
-		NodeID:             strings.TrimSpace(os.Getenv("REMOTE_NODE_ID")),
-		BootstrapKey:       strings.TrimSpace(os.Getenv("REMOTE_NODE_BOOTSTRAP_KEY")),
-		InitialPollSeconds: 20,
-	}
-	if cfg.ControlPlaneURL == "" || cfg.NodeID == "" || cfg.BootstrapKey == "" {
-		return Config{}, errors.New("REMOTE_NODE_CONTROL_PLANE_URL, REMOTE_NODE_ID und REMOTE_NODE_BOOTSTRAP_KEY müssen gesetzt sein")
-	}
-	allowInsecure := envTrue(os.Getenv("GOUP_REMOTE_NODE_ALLOW_INSECURE"))
-	if err := validateControlPlaneURLSecurity(cfg.ControlPlaneURL, allowInsecure); err != nil {
-		return Config{}, err
-	}
-	if raw := strings.TrimSpace(os.Getenv("REMOTE_NODE_POLL_SECONDS")); raw != "" {
-		if value, err := strconv.Atoi(raw); err == nil && value > 0 {
-			cfg.InitialPollSeconds = value
-		}
-	}
-	return cfg, nil
-}
-
-func envTrue(v string) bool {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "1", "true", "yes", "on":
-		return true
-	}
-	return false
-}
-
-// validateControlPlaneURLSecurity requires https unless the control plane is on
-// the local machine or GOUP_REMOTE_NODE_ALLOW_INSECURE=true is set. The
-// bootstrap key and access token are sent in request bodies/headers.
-func validateControlPlaneURLSecurity(raw string, allowInsecure bool) error {
-	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Host == "" {
-		return fmt.Errorf("REMOTE_NODE_CONTROL_PLANE_URL is not a valid URL")
-	}
-	switch strings.ToLower(parsed.Scheme) {
-	case "https":
-		return nil
-	case "http":
-		host := strings.ToLower(parsed.Hostname())
-		if allowInsecure || host == "localhost" || host == "127.0.0.1" || host == "::1" {
-			return nil
-		}
-		return errors.New("REMOTE_NODE_CONTROL_PLANE_URL must use https (set GOUP_REMOTE_NODE_ALLOW_INSECURE=true to override for trusted networks)")
-	default:
-		return errors.New("REMOTE_NODE_CONTROL_PLANE_URL must use https")
-	}
-}
-
-func normalizeControlPlaneURL(raw string) string {
-	value := strings.TrimRight(strings.TrimSpace(raw), "/")
-	for _, suffix := range []string{"/node/bootstrap", "/node/poll", "/node/report"} {
-		if strings.HasSuffix(value, suffix) {
-			value = strings.TrimSuffix(value, suffix)
-			break
-		}
-	}
-	return value
 }
 
 func New(cfg Config, logger *slog.Logger) *Agent {
@@ -250,86 +123,6 @@ func (a *Agent) nodeEndpointURL(path string) string {
 	return a.cfg.ControlPlaneURL + path
 }
 
-func (a *Agent) updateAssignments(assigned []assignedMonitorSpec, now time.Time) {
-	a.scheduleMu.Lock()
-	defer a.scheduleMu.Unlock()
-
-	seen := make(map[int64]struct{}, len(assigned))
-	for _, item := range assigned {
-		seen[item.ID] = struct{}{}
-		a.assignments[item.ID] = item
-		interval := normalizedAssignedInterval(item)
-		if a.schedule[item.ID] == nil {
-			a.schedule[item.ID] = &remoteScheduleState{
-				interval: interval,
-				nextDue:  monitor.CascadedDueAtOrAfter(item.ID, interval, now),
-			}
-		} else if a.schedule[item.ID].interval != interval {
-			a.schedule[item.ID].interval = interval
-			if !a.schedule[item.ID].inFlight {
-				a.schedule[item.ID].nextDue = monitor.CascadedDueAtOrAfter(item.ID, interval, now)
-			}
-		}
-	}
-	for monitorID := range a.assignments {
-		if _, ok := seen[monitorID]; !ok {
-			delete(a.assignments, monitorID)
-			delete(a.schedule, monitorID)
-		}
-	}
-}
-
-func (a *Agent) dispatchDueChecks(ctx context.Context, now time.Time) {
-	due := a.dueAssignments(now)
-	for _, item := range due {
-		a.dispatchCheck(ctx, item)
-	}
-}
-
-func (a *Agent) dueAssignments(now time.Time) []assignedMonitorSpec {
-	a.scheduleMu.Lock()
-	defer a.scheduleMu.Unlock()
-
-	due := make([]assignedMonitorSpec, 0)
-	for monitorID, item := range a.assignments {
-		state := a.schedule[monitorID]
-		if state == nil {
-			continue
-		}
-		interval := normalizedAssignedInterval(item)
-		if state.inFlight {
-			if !state.nextDue.After(now) {
-				skipped := int(now.Sub(state.nextDue)/interval) + 1
-				nextDue := state.nextDue.Add(time.Duration(skipped) * interval)
-				a.logger.Warn("remote monitor check slot skipped: previous check still running",
-					"monitor_id", monitorID,
-					"scheduled_at", state.nextDue.Format(time.RFC3339),
-					"next_due_at", nextDue.Format(time.RFC3339),
-					"skipped_slots", skipped,
-					"lag_ms", now.Sub(state.nextDue).Milliseconds(),
-				)
-				state.nextDue = nextDue
-			}
-			continue
-		}
-		if state.nextDue.After(now) {
-			continue
-		}
-		if now.Sub(state.nextDue) >= interval {
-			skipped := int(now.Sub(state.nextDue) / interval)
-			state.nextDue = state.nextDue.Add(time.Duration(skipped) * interval)
-			a.logger.Warn("remote monitor check slots skipped: scheduler lag",
-				"monitor_id", monitorID,
-				"scheduled_at", state.nextDue.Format(time.RFC3339),
-				"skipped_slots", skipped,
-				"lag_ms", now.Sub(state.nextDue).Milliseconds(),
-			)
-		}
-		due = append(due, item)
-	}
-	return due
-}
-
 func (a *Agent) dispatchCheck(ctx context.Context, item assignedMonitorSpec) {
 	a.scheduleMu.Lock()
 	state := a.schedule[item.ID]
@@ -418,13 +211,6 @@ func (a *Agent) runCheck(ctx context.Context, item assignedMonitorSpec, schedule
 		payload.TLSNotAfter = &value
 	}
 	return payload, true
-}
-
-func normalizedAssignedInterval(item assignedMonitorSpec) time.Duration {
-	if item.IntervalSeconds <= 0 {
-		return time.Minute
-	}
-	return time.Duration(item.IntervalSeconds) * time.Second
 }
 
 func (a *Agent) postJSON(ctx context.Context, endpoint string, bearerToken string, requestBody any, responseBody any) error {

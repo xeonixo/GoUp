@@ -37,17 +37,6 @@ func formatLatencyLabel(duration time.Duration) string {
 	return formatted + "s"
 }
 
-func defaultTLSMode(kind monitor.Kind) monitor.TLSMode {
-	switch kind {
-	case monitor.KindHTTPS, monitor.KindIMAP:
-		return monitor.TLSModeTLS
-	case monitor.KindSMTP:
-		return monitor.TLSModeSTARTTLS
-	default:
-		return monitor.TLSModeNone
-	}
-}
-
 func normalizeTLSMode(kind monitor.Kind, requested monitor.TLSMode) monitor.TLSMode {
 	switch kind {
 	case monitor.KindHTTPS:
