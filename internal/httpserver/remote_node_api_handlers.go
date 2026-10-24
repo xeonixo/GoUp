@@ -81,6 +81,12 @@ func (s *Server) handleRemoteNodePoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.controlStore.TouchRemoteNodeLastSeen(r.Context(), node.ID, time.Now().UTC())
+	// Only write the version when it changed; polls arrive every ~20s per node.
+	if reported := store.NormalizeRemoteNodeAgentVersion(payload.AgentVersion); reported != "" && reported != node.AgentVersion {
+		if err := s.controlStore.UpdateRemoteNodeAgentVersion(r.Context(), node.ID, reported, time.Now().UTC()); err != nil {
+			s.logger.Warn("update remote node agent version failed", "node_id", node.NodeID, "error", err)
+		}
+	}
 
 	appStore, err := s.tenantStores.StoreForTenant(r.Context(), node.TenantID)
 	if err != nil {

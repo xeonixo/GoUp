@@ -24,10 +24,11 @@ func (s *ControlPlaneStore) AuthenticateRemoteNodeBootstrap(ctx context.Context,
 		enabledRaw             int
 		lastSeenAt             sql.NullTime
 		accessTokenExpiresAt   sql.NullTime
+		agentVersionSeenAt     sql.NullTime
 		bootstrapKeyCiphertext string
 	)
 	err := s.db.QueryRowContext(ctx, `
-SELECT id, tenant_id, node_id, name, enabled, heartbeat_timeout_seconds, last_seen_at, access_token_expires_at, created_at, updated_at, bootstrap_key_ciphertext
+SELECT id, tenant_id, node_id, name, enabled, heartbeat_timeout_seconds, last_seen_at, access_token_expires_at, created_at, updated_at, agent_version, agent_version_seen_at, bootstrap_key_ciphertext
 FROM remote_nodes
 WHERE node_id = ?
 `, nodeID).Scan(
@@ -41,6 +42,8 @@ WHERE node_id = ?
 		&accessTokenExpiresAt,
 		&item.CreatedAt,
 		&item.UpdatedAt,
+		&item.AgentVersion,
+		&agentVersionSeenAt,
 		&bootstrapKeyCiphertext,
 	)
 	if err != nil {
@@ -56,6 +59,10 @@ WHERE node_id = ?
 	if lastSeenAt.Valid {
 		value := lastSeenAt.Time.UTC()
 		item.LastSeenAt = &value
+	}
+	if agentVersionSeenAt.Valid {
+		value := agentVersionSeenAt.Time.UTC()
+		item.AgentVersionSeenAt = &value
 	}
 	if accessTokenExpiresAt.Valid {
 		value := accessTokenExpiresAt.Time.UTC()
@@ -110,7 +117,7 @@ func (s *ControlPlaneStore) AuthenticateRemoteNodeAccessToken(ctx context.Contex
 	now := time.Now().UTC()
 	fingerprint := remoteNodeTokenFingerprint(token)
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, tenant_id, node_id, name, enabled, heartbeat_timeout_seconds, last_seen_at, access_token_expires_at, created_at, updated_at, access_token_ciphertext
+SELECT id, tenant_id, node_id, name, enabled, heartbeat_timeout_seconds, last_seen_at, access_token_expires_at, created_at, updated_at, agent_version, agent_version_seen_at, access_token_ciphertext
 FROM remote_nodes
 WHERE access_token_fingerprint = ?
 	AND enabled = 1
@@ -129,6 +136,7 @@ WHERE access_token_fingerprint = ?
 			enabledRaw           int
 			lastSeenAt           sql.NullTime
 			accessTokenExpiresAt sql.NullTime
+			agentVersionSeenAt   sql.NullTime
 			ciphertext           string
 		)
 		if err := rows.Scan(
@@ -142,6 +150,10 @@ WHERE access_token_fingerprint = ?
 			&accessTokenExpiresAt,
 			&item.CreatedAt,
 			&item.UpdatedAt,
+			&item.AgentVersion,
+			&agentVersionSeenAt,
+			&item.AgentVersion,
+			&agentVersionSeenAt,
 			&ciphertext,
 		); err != nil {
 			return RemoteNode{}, fmt.Errorf("scan remote node access candidate: %w", err)
@@ -150,6 +162,10 @@ WHERE access_token_fingerprint = ?
 		if lastSeenAt.Valid {
 			value := lastSeenAt.Time.UTC()
 			item.LastSeenAt = &value
+		}
+		if agentVersionSeenAt.Valid {
+			value := agentVersionSeenAt.Time.UTC()
+			item.AgentVersionSeenAt = &value
 		}
 		if accessTokenExpiresAt.Valid {
 			value := accessTokenExpiresAt.Time.UTC()

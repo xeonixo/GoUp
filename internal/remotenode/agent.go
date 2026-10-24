@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"goup/internal/monitor"
+	"goup/internal/version"
 )
 
 type Agent struct {
@@ -88,7 +89,7 @@ func (a *Agent) bootstrap(ctx context.Context) error {
 }
 
 func (a *Agent) poll(ctx context.Context) ([]assignedMonitorSpec, error) {
-	request := map[string]any{"agent_version": "remote-node/0.1"}
+	request := map[string]any{"agent_version": version.Version}
 	var response pollResponse
 	if err := a.postJSON(ctx, a.nodeEndpointURL("/node/poll"), a.accessToken, request, &response); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "401") {

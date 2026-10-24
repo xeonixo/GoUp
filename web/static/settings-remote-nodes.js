@@ -10,6 +10,9 @@
     const i18nOnline = page.dataset.i18nOnline || 'ONLINE';
     const i18nOffline = page.dataset.i18nOffline || 'OFFLINE';
     const i18nEntries = page.dataset.i18nEntries || 'entries';
+    const serverVersion = page.dataset.serverVersion || '';
+    const i18nOutdated = page.dataset.i18nOutdated || 'outdated';
+    const i18nOutdatedTitle = page.dataset.i18nOutdatedTitle || '';
     const i18nFrom = page.dataset.i18nFrom || 'From';
     const nodesRoot = document.getElementById('remote-nodes-body');
     if (!(nodesRoot instanceof HTMLElement)) {
@@ -45,6 +48,28 @@
       badge.className = online ? 'status-badge status-badge-success' : 'status-badge status-badge-muted';
       badge.textContent = online ? i18nOnline : i18nOffline;
       cell.appendChild(badge);
+    };
+
+    const updateVersionCell = (cell, agentVersion, versionState) => {
+      clearNode(cell);
+      const value = String(agentVersion || '').trim();
+      if (!value) {
+        cell.appendChild(document.createTextNode('—'));
+        return;
+      }
+      const code = document.createElement('code');
+      code.textContent = value;
+      cell.appendChild(code);
+      if (versionState === 'outdated') {
+        cell.appendChild(document.createTextNode(' '));
+        const badge = document.createElement('span');
+        badge.className = 'status-badge status-badge-warning';
+        badge.textContent = i18nOutdated;
+        let title = i18nOutdatedTitle;
+        title = title.replace('%s', serverVersion).replace('%s', value);
+        badge.title = title;
+        cell.appendChild(badge);
+      }
     };
 
     const updateLastSeenCell = (cell, lastSeenAtRaw) => {
@@ -163,11 +188,15 @@
         const statusCell = element.querySelector('[data-role="status"]');
         const lastSeenCell = element.querySelector('[data-role="last-seen"]');
         const logsCell = element.querySelector('[data-role="logs"]');
+        const versionCell = element.querySelector('[data-role="version"]');
         if (statusCell instanceof HTMLElement) {
           updateStatusCell(statusCell, Boolean(node?.online));
         }
         if (lastSeenCell instanceof HTMLElement) {
           updateLastSeenCell(lastSeenCell, node?.last_seen_at_raw);
+        }
+        if (versionCell instanceof HTMLElement) {
+          updateVersionCell(versionCell, node?.agent_version, node?.version_state);
         }
         if (logsCell instanceof HTMLElement) {
           updateLogsCell(logsCell, node?.events);
