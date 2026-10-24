@@ -355,3 +355,33 @@ func TestPhase2IndexesExist(t *testing.T) {
 		}
 	}
 }
+
+func TestEnsureSystemNotificationEndpointSkipsNoopWrites(t *testing.T) {
+	ctx := context.Background()
+	st, _ := openDataQualityStore(t)
+	id, err := st.EnsureSystemNotificationEndpoint(ctx, "matrix", "user-matrix", `{}`, true)
+	if err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	readUpdatedAt := func() string {
+		var updatedAt string
+		if err := st.db.QueryRowContext(ctx, `SELECT updated_at FROM notification_endpoints WHERE id = ?`, id).Scan(&updatedAt); err != nil {
+			t.Fatalf("read updated_at: %v", err)
+		}
+		return updatedAt
+	}
+	before := readUpdatedAt()
+	time.Sleep(5 * time.Millisecond)
+	if again, err := st.EnsureSystemNotificationEndpoint(ctx, "matrix", "user-matrix", `{}`, true); err != nil || again != id {
+		t.Fatalf("second ensure: id=%d err=%v", again, err)
+	}
+	if after := readUpdatedAt(); after != before {
+		t.Fatalf("unchanged endpoint was rewritten: %s -> %s", before, after)
+	}
+	if _, err := st.EnsureSystemNotificationEndpoint(ctx, "matrix", "user-matrix", `{}`, false); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if after := readUpdatedAt(); after == before {
+		t.Fatalf("changed endpoint was not updated")
+	}
+}

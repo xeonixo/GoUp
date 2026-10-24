@@ -146,15 +146,20 @@ func (s *Server) handleRemoteNodeReport(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "too many results", http.StatusRequestEntityTooLarge)
 		return
 	}
-	_ = s.controlStore.TouchRemoteNodeLastSeen(r.Context(), node.ID, time.Now().UTC())
+	// Results are stored and dispatched even if the node gives up waiting (its
+	// client times out after 30 s), otherwise a slow disk loses check results.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), remoteNodeReportProcessTimeout)
+	defer cancel()
 
-	appStore, err := s.tenantStores.StoreForTenant(r.Context(), node.TenantID)
+	_ = s.controlStore.TouchRemoteNodeLastSeen(ctx, node.ID, time.Now().UTC())
+
+	appStore, err := s.tenantStores.StoreForTenant(ctx, node.TenantID)
 	if err != nil {
 		http.Error(w, "unable to resolve tenant store", http.StatusInternalServerError)
 		return
 	}
 
-	assigned, err := appStore.ListMonitorsByExecutor(r.Context(), "remote", node.NodeID)
+	assigned, err := appStore.ListMonitorsByExecutor(ctx, "remote", node.NodeID)
 	if err != nil {
 		http.Error(w, "unable to list assigned monitors", http.StatusInternalServerError)
 		return
@@ -164,7 +169,7 @@ func (s *Server) handleRemoteNodeReport(w http.ResponseWriter, r *http.Request) 
 		assignedByID[item.ID] = item
 	}
 
-	snapshots, err := appStore.ListMonitorSnapshots(r.Context())
+	snapshots, err := appStore.ListMonitorSnapshots(ctx)
 	if err != nil {
 		http.Error(w, "unable to load monitor snapshots", http.StatusInternalServerError)
 		return
@@ -179,7 +184,7 @@ func (s *Server) handleRemoteNodeReport(w http.ResponseWriter, r *http.Request) 
 
 	// Remote results go through the same dispatcher as the local runner: identical notifier set
 	// (including webhooks), mute and confirm_after handling, and the persistent retry queue.
-	dispatcher := s.remoteNodeDispatcher(r.Context(), appStore, node.TenantID)
+	dispatcher := s.remoteNodeDispatcher(ctx, appStore, node.TenantID)
 
 	accepted := 0
 	for _, item := range payload.Results {
@@ -192,7 +197,7 @@ func (s *Server) handleRemoteNodeReport(w http.ResponseWriter, r *http.Request) 
 			continue
 		}
 		result.MonitorID = monitorConfig.ID
-		if !dispatcher.ProcessResult(r.Context(), monitor.Snapshot{Monitor: monitorConfig, LastResult: previousByID[monitorConfig.ID]}, result) {
+		if !dispatcher.ProcessResult(ctx, monitor.Snapshot{Monitor: monitorConfig, LastResult: previousByID[monitorConfig.ID]}, result) {
 			continue
 		}
 		resultCopy := result
@@ -201,7 +206,7 @@ func (s *Server) handleRemoteNodeReport(w http.ResponseWriter, r *http.Request) 
 	}
 	// Polls and fully accepted reports arrive every few seconds; only rejected results are worth an event row.
 	if accepted < len(payload.Results) {
-		_ = s.controlStore.InsertRemoteNodeEvent(r.Context(), node.TenantID, node.NodeID, "report", s.clientIP(r), strings.TrimSpace(r.UserAgent()), fmt.Sprintf("accepted=%d received=%d", accepted, len(payload.Results)), time.Now().UTC())
+		_ = s.controlStore.InsertRemoteNodeEvent(ctx, node.TenantID, node.NodeID, "report", s.clientIP(r), strings.TrimSpace(r.UserAgent()), fmt.Sprintf("accepted=%d received=%d", accepted, len(payload.Results)), time.Now().UTC())
 	}
 
 	w.Header().Set("Content-Type", "application/json")
