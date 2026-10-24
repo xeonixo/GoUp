@@ -212,20 +212,6 @@ func (s *Server) handleRemoteNodesLive(w http.ResponseWriter, r *http.Request, t
 	}
 }
 
-func (s *Server) loadSettingsRemoteNodesLiveSnapshot(r *http.Request) (settingsRemoteNodesLiveSnapshotResponse, string, error) {
-	tenantID := tenantIDFromRequest(r)
-	if tenantID <= 0 {
-		if user := s.currentUser(r); user != nil {
-			tenantID = user.TenantID
-		}
-	}
-	if tenantID <= 0 {
-		return settingsRemoteNodesLiveSnapshotResponse{}, "", fmt.Errorf("tenant not resolved")
-	}
-
-	return s.loadRemoteNodesLiveSnapshot(r.Context(), tenantID, "settings")
-}
-
 func (s *Server) loadRemoteNodesLiveSnapshot(ctx context.Context, tenantID int64, logScope string) (settingsRemoteNodesLiveSnapshotResponse, string, error) {
 	if tenantID <= 0 {
 		return settingsRemoteNodesLiveSnapshotResponse{}, "", fmt.Errorf("tenant not resolved")

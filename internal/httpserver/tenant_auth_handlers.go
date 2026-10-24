@@ -12,31 +12,6 @@ import (
 	"time"
 )
 
-func (s *Server) handleTenantEntry(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	tenantSlug := tenantSlugFromRequest(r)
-	if tenantSlug == "" {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
-	tenant, err := s.controlStore.GetTenantBySlug(r.Context(), tenantSlug)
-	if err != nil {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
-
-	if session, err := s.sessionForRequest(r); err == nil && session != nil && session.TenantID == tenant.ID {
-		http.Redirect(w, r, "/"+tenantSlug+"/", http.StatusSeeOther)
-		return
-	}
-
-	http.Redirect(w, r, "/"+tenantSlug+"/login", http.StatusSeeOther)
-}
-
 func (s *Server) handleTenantLoginPage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
