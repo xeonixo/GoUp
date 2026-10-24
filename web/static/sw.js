@@ -7,7 +7,8 @@
  *  - Precache the app shell assets and the /offline page.
  *  - Navigations: network-first; on network failure show /offline. HTML is never
  *    stored (it is authenticated and Cache-Control: no-store).
- *  - /static/, /assets/, /favicon/ and icon files: stale-while-revalidate.
+ *  - /static/, /assets/, /favicon/ and icon files: stale-while-revalidate when
+ *    versioned (?v=), otherwise network-first with cache fallback.
  *  - Everything else (API, WebSocket upgrade, POST, live snapshots) is not
  *    intercepted and goes straight to the network.
  */
@@ -93,6 +94,23 @@ self.addEventListener('fetch', (event) => {
             status: 503,
             headers: { 'Content-Type': 'text/plain; charset=utf-8' }
           }))
+      )
+    );
+    return;
+  }
+
+  if (isCacheableAsset(url) && !url.searchParams.has('v')) {
+    // Unversioned assets (e.g. ES modules imported by /static/dashboard/main.js)
+    // must match the versioned entry point: network-first (cheap thanks to
+    // ETags), cache only as offline fallback.
+    event.respondWith(
+      caches.open(CACHE_NAME).then((cache) =>
+        fetch(request).then((response) => {
+          if (response && response.ok && response.type === 'basic') {
+            cache.put(request, response.clone()).catch(() => {});
+          }
+          return response;
+        }).catch(() => cache.match(request).then((cached) => cached || Response.error()))
       )
     );
     return;

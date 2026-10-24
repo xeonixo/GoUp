@@ -51,6 +51,6 @@
 
 {{define "page_scripts"}}
 {{template "dashboard_i18n" .}}
-<script src="/static/dashboard.js?v={{$.AssetVersion}}" defer></script>
+<script type="module" src="/static/dashboard/main.js?v={{$.AssetVersion}}"></script>
 <script src="/static/dashboard-board.js?v={{$.AssetVersion}}" defer></script>
 {{end}}
