@@ -52,17 +52,15 @@ func NormalizePolicyList(raw string, lower bool) string {
 }
 
 // CheckOIDCAccess evaluates the provider's access policy for an identity.
-// - email_verified=false is always rejected (when the claim is present).
-// - allowed_email_domains requires a verified email in one of the domains.
-// - allowed_groups requires membership in at least one listed group.
+//   - with RequireEmailVerified, the email_verified claim must be present and true.
+//   - allowed_email_domains requires an email in one of the domains (verified only
+//     when RequireEmailVerified is set).
+//   - allowed_groups requires membership in at least one listed group.
 func (p AuthProvider) CheckOIDCAccess(claims OIDCClaims) error {
-	if claims.EmailVerified != nil && !*claims.EmailVerified {
+	if p.RequireEmailVerified && (claims.EmailVerified == nil || !*claims.EmailVerified) {
 		return fmt.Errorf("%w: email is not verified", ErrOIDCAccessDenied)
 	}
 	if domains := SplitPolicyList(p.AllowedEmailDomains); len(domains) > 0 {
-		if claims.EmailVerified == nil || !*claims.EmailVerified {
-			return fmt.Errorf("%w: verified email required", ErrOIDCAccessDenied)
-		}
 		email := strings.ToLower(strings.TrimSpace(claims.Email))
 		at := strings.LastIndexByte(email, '@')
 		if at <= 0 || at == len(email)-1 {
@@ -101,12 +99,12 @@ func (p AuthProvider) CheckOIDCAccess(claims OIDCClaims) error {
 }
 
 // UpdateAuthProviderPolicy stores the OIDC access policy of a provider.
-func (s *ControlPlaneStore) UpdateAuthProviderPolicy(ctx context.Context, tenantID int64, providerKey, defaultRole, allowedEmailDomains, allowedGroups string) error {
+func (s *ControlPlaneStore) UpdateAuthProviderPolicy(ctx context.Context, tenantID int64, providerKey, defaultRole, allowedEmailDomains, allowedGroups string, requireEmailVerified bool) error {
 	result, err := s.db.ExecContext(ctx, `
 UPDATE auth_providers
-SET default_role = ?, allowed_email_domains = ?, allowed_groups = ?, updated_at = ?
+SET default_role = ?, allowed_email_domains = ?, allowed_groups = ?, require_email_verified = ?, updated_at = ?
 WHERE tenant_id = ? AND provider_key = ?
-`, NormalizeTenantRole(defaultRole), NormalizePolicyList(allowedEmailDomains, true), NormalizePolicyList(allowedGroups, false), time.Now().UTC(), tenantID, strings.TrimSpace(providerKey))
+`, NormalizeTenantRole(defaultRole), NormalizePolicyList(allowedEmailDomains, true), NormalizePolicyList(allowedGroups, false), boolToInt(requireEmailVerified), time.Now().UTC(), tenantID, strings.TrimSpace(providerKey))
 	if err != nil {
 		return fmt.Errorf("update auth provider policy: %w", err)
 	}

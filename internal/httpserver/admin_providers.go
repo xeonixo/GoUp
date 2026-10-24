@@ -144,7 +144,7 @@ func (s *Server) handleAdminProviderSave(w http.ResponseWriter, r *http.Request)
 
 	_, err = s.controlStore.UpsertAuthProvider(r.Context(), tenantID, providerKey, kind, displayName, issuerURL, clientID)
 	if err == nil && kind == "oidc" {
-		err = s.controlStore.UpdateAuthProviderPolicy(r.Context(), tenantID, providerKey, r.FormValue("default_role"), r.FormValue("allowed_email_domains"), r.FormValue("allowed_groups"))
+		err = s.controlStore.UpdateAuthProviderPolicy(r.Context(), tenantID, providerKey, r.FormValue("default_role"), r.FormValue("allowed_email_domains"), r.FormValue("allowed_groups"), r.FormValue("require_email_verified") != "")
 	}
 	if err != nil {
 		s.logger.Error("upsert auth provider failed", "error", err)
