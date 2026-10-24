@@ -1,0 +1,186 @@
+{{define "content"}}
+{{$v := .SystemView}}
+<div class="admin-section admin-console system-page">
+  {{template "admin_nav" .}}
+
+  <div class="admin-header admin-page-header">
+    <div>
+      <h1>{{index $.Translations "admin.system.title"}}</h1>
+      <p class="muted">{{index $.Translations "admin.system.generated_at"}} <span class="js-relative-age" data-utc="{{$v.GeneratedAt}}">{{$v.GeneratedAt}}</span></p>
+    </div>
+    <a href="/admin/system" class="button button-secondary">{{index $.Translations "admin.system.refresh"}}</a>
+  </div>
+  {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
+  {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+
+  <section class="card stack system-card">
+    <h2>{{index $.Translations "admin.system.process"}}</h2>
+    <dl class="system-facts">
+      <div><dt>{{index $.Translations "admin.system.version"}}</dt><dd>{{$v.Process.Version}}</dd></div>
+      <div><dt>{{index $.Translations "admin.system.go_version"}}</dt><dd>{{$v.Process.GoVersion}}</dd></div>
+      <div><dt>{{index $.Translations "admin.system.uptime"}}</dt><dd>{{$v.Process.Uptime}}</dd></div>
+      <div><dt>{{index $.Translations "admin.system.goroutines"}}</dt><dd>{{$v.Process.Goroutines}}</dd></div>
+      <div><dt>{{index $.Translations "admin.system.heap_in_use"}}</dt><dd>{{$v.Process.HeapInUse}}</dd></div>
+      <div><dt>{{index $.Translations "admin.system.sys_memory"}}</dt><dd>{{$v.Process.Sys}}</dd></div>
+      <div><dt>GOMAXPROCS</dt><dd>{{$v.Process.GOMAXPROCS}}</dd></div>
+      <div><dt>{{index $.Translations "admin.system.tenants"}}</dt><dd>{{$v.Process.TenantCount}}</dd></div>
+      <div><dt>{{index $.Translations "admin.system.active_runners"}}</dt><dd>{{$v.Process.ActiveRunners}}</dd></div>
+    </dl>
+  </section>
+
+  <section class="card stack system-card">
+    <h2>{{index $.Translations "admin.system.storage"}}</h2>
+    <dl class="system-facts">
+      <div><dt>{{index $.Translations "admin.system.data_dir"}}</dt><dd class="break-all"><code>{{$v.Storage.DataDir}}</code></dd></div>
+      <div><dt>{{index $.Translations "admin.system.free_space"}}</dt><dd>{{if $v.Storage.FreeKnown}}{{$v.Storage.FreeSpace}}{{else}}—{{end}}</dd></div>
+    </dl>
+    <div class="system-table-wrap">
+      <table class="admin-table system-table">
+        <thead>
+          <tr>
+            <th scope="col">{{index $.Translations "admin.system.database"}}</th>
+            <th scope="col">{{index $.Translations "admin.system.path"}}</th>
+            <th scope="col">{{index $.Translations "admin.system.db_size"}}</th>
+            <th scope="col">WAL</th>
+            <th scope="col">SHM</th>
+            <th scope="col">{{index $.Translations "admin.system.last_retention"}}</th>
+            <th scope="col">{{index $.Translations "admin.system.last_rollup_prune"}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $v.Storage.Files}}
+          <tr>
+            <td><strong>{{.Label}}</strong></td>
+            <td class="break-all"><code>{{.RelPath}}</code></td>
+            {{if .Missing}}
+            <td colspan="5"><span class="status-badge status-badge-danger">{{index $.Translations "admin.system.file_missing"}}</span></td>
+            {{else}}
+            <td>{{.Size}}{{if .LargeDB}} <span class="status-badge status-badge-warn">&gt; 1 GB</span>{{end}}</td>
+            <td>{{.WAL}}{{if .LargeWAL}} <span class="status-badge status-badge-warn">&gt; 256 MB</span>{{end}}</td>
+            <td>{{.SHM}}</td>
+            <td>{{if .RetentionRaw}}<span class="js-relative-age" data-utc="{{.RetentionRaw}}">{{.RetentionRaw}}</span>{{else}}—{{end}}</td>
+            {{end}}
+            {{if not .Missing}}<td>{{if .RollupRaw}}<span class="js-relative-age" data-utc="{{.RollupRaw}}">{{.RollupRaw}}</span>{{else}}—{{end}}</td>{{end}}
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card stack system-card">
+    <h2>{{index $.Translations "admin.system.checks"}}</h2>
+    <div class="system-table-wrap">
+      <table class="admin-table system-table">
+        <thead>
+          <tr>
+            <th scope="col">{{index $.Translations "admin.users.tenant"}}</th>
+            <th scope="col">{{index $.Translations "admin.system.monitors"}}</th>
+            <th scope="col">{{index $.Translations "admin.system.workers"}}</th>
+            <th scope="col">{{index $.Translations "admin.system.checks_5m"}}</th>
+            <th scope="col">{{index $.Translations "admin.system.running"}}</th>
+            <th scope="col">{{index $.Translations "admin.system.backlog"}}</th>
+            <th scope="col">{{index $.Translations "admin.system.last_loop"}}</th>
+            <th scope="col">{{index $.Translations "admin.system.avg_check"}}</th>
+            <th scope="col">{{index $.Translations "admin.system.retry_queue"}}</th>
+            <th scope="col">{{index $.Translations "admin.system.oldest_retry"}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $v.Tenants}}
+          <tr>
+            <td><strong>{{.Name}}</strong> <span class="muted">{{.Slug}}</span></td>
+            {{if .Err}}
+            <td colspan="9"><span class="status-badge status-badge-danger">{{.Err}}</span></td>
+            {{else if not .Active}}
+            <td colspan="9" class="muted">{{index $.Translations "admin.system.inactive"}}</td>
+            {{else}}
+            <td>{{.EnabledMonitor}}</td>
+            {{if .HasRunner}}
+            <td>{{.Workers}}</td>
+            <td>{{.ChecksLast5Min}}</td>
+            <td>{{.Running}}</td>
+            <td>{{if .Backlog}}<span class="status-badge status-badge-warn">{{.Backlog}}</span>{{else}}0{{end}}</td>
+            <td>{{.LastLoop}}</td>
+            <td>{{.AvgCheck}}</td>
+            <td>{{.RetryQueue}}</td>
+            <td>{{if .OldestRetryRaw}}<span class="js-relative-age" data-utc="{{.OldestRetryRaw}}">{{.OldestRetryRaw}}</span>{{else}}—{{end}}</td>
+            {{else}}
+            <td colspan="8" class="muted">{{index $.Translations "admin.system.no_runner"}}</td>
+            {{end}}
+            {{end}}
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card stack system-card">
+    <h2>{{index $.Translations "admin.system.notifications"}}</h2>
+    <div class="system-table-wrap">
+      <table class="admin-table system-table">
+        <thead>
+          <tr>
+            <th scope="col">{{index $.Translations "admin.users.tenant"}}</th>
+            <th scope="col">{{index $.Translations "admin.system.delivered"}}</th>
+            <th scope="col">{{index $.Translations "admin.system.failed"}}</th>
+            <th scope="col">{{index $.Translations "admin.system.suppressed"}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $v.Tenants}}{{if and .Active (not .Err)}}
+          <tr>
+            <td><strong>{{.Name}}</strong></td>
+            <td><span class="status-badge status-badge-success">{{.Delivered24h}}</span></td>
+            <td>{{if .Failed24h}}<span class="status-badge status-badge-danger">{{.Failed24h}}</span>{{else}}0{{end}}</td>
+            <td>{{.Suppressed24h}}</td>
+          </tr>
+          {{end}}{{end}}
+        </tbody>
+      </table>
+    </div>
+
+    <h3>{{index $.Translations "admin.system.last_failures"}}</h3>
+    {{if $v.Failures}}
+    <div class="system-table-wrap">
+      <table class="admin-table system-table">
+        <thead>
+          <tr>
+            <th scope="col">{{index $.Translations "admin.system.time"}}</th>
+            <th scope="col">{{index $.Translations "admin.users.tenant"}}</th>
+            <th scope="col">{{index $.Translations "admin.system.monitor"}}</th>
+            <th scope="col">{{index $.Translations "admin.system.endpoint"}}</th>
+            <th scope="col">{{index $.Translations "admin.system.error"}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $v.Failures}}
+          <tr>
+            <td><span class="js-relative-age" data-utc="{{.TimeRaw}}">{{.TimeRaw}}</span></td>
+            <td>{{.Tenant}}</td>
+            <td>{{.Monitor}}</td>
+            <td>{{.Endpoint}}</td>
+            <td class="break-all system-error">{{.Error}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <p class="muted">{{index $.Translations "admin.system.no_failures"}}</p>
+    {{end}}
+  </section>
+
+  <section class="card stack system-card">
+    <h2>{{index $.Translations "admin.nav.remote_nodes"}}</h2>
+    {{if $v.RemoteNodes.Err}}<div class="notice error">{{$v.RemoteNodes.Err}}</div>{{end}}
+    <dl class="system-facts">
+      <div><dt>{{index $.Translations "admin.system.total"}}</dt><dd>{{$v.RemoteNodes.Total}}</dd></div>
+      <div><dt>{{index $.Translations "admin.system.online"}}</dt><dd><span class="status-badge status-badge-success">{{$v.RemoteNodes.Online}}</span></dd></div>
+      <div><dt>{{index $.Translations "admin.system.offline"}}</dt><dd>{{if $v.RemoteNodes.Offline}}<span class="status-badge status-badge-danger">{{$v.RemoteNodes.Offline}}</span>{{else}}0{{end}}</dd></div>
+      <div><dt>{{index $.Translations "admin.system.outdated"}}</dt><dd>{{if $v.RemoteNodes.Outdated}}<a href="/admin/remote-nodes" class="status-badge status-badge-warn" title="{{index $.Translations "admin.system.outdated_hint"}}">{{$v.RemoteNodes.Outdated}}</a>{{else}}0{{end}}</dd></div>
+    </dl>
+  </section>
+</div>
+{{end}}

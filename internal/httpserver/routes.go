@@ -59,6 +59,8 @@ func (s *Server) routes() (http.Handler, error) {
 	mux.Handle("/admin/providers", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminProvidersOverview)))
 	mux.Handle("/admin/users", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminUsersOverview)))
 	mux.Handle("/admin/remote-nodes", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminRemoteNodesOverview)))
+	// System health page (read-only)
+	mux.Handle("/admin/system", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSystem)))
 	mux.Handle("/admin/tenants/new", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantForm)))
 	mux.Handle("/admin/tenants/{id}/edit", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantForm)))
 	mux.Handle("/admin/tenants/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantSave)))

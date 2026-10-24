@@ -171,3 +171,13 @@ func tenantHasAppDatabase(path string) bool {
 	}
 	return !info.IsDir()
 }
+
+// runnerForTenant returns the runner of a tenant, or nil when none is registered.
+func (a *App) runnerForTenant(tenantID int64) *monitorrunner.Runner {
+	a.runnerMu.Lock()
+	defer a.runnerMu.Unlock()
+	if item := a.runners[tenantID]; item != nil {
+		return item.runner
+	}
+	return nil
+}
