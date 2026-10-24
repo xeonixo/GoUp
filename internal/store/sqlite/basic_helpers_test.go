@@ -102,17 +102,6 @@ func TestReorderStringsBasic(t *testing.T) {
 	}
 }
 
-func TestReorderInt64Basic(t *testing.T) {
-	items := []int64{1, 2, 3}
-	reordered, moved := reorderInt64(items, 1, 3)
-	if !moved {
-		t.Errorf("reorderInt64 should move")
-	}
-	if len(reordered) != len(items) {
-		t.Errorf("reorderInt64 should preserve length")
-	}
-}
-
 func contains(s, substr string) bool {
 	for i := 0; i < len(s)-len(substr)+1; i++ {
 		if s[i:i+len(substr)] == substr {

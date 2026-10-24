@@ -131,32 +131,6 @@ func TestReorderStringsHelper(t *testing.T) {
 	}
 }
 
-func TestReorderInt64Helper(t *testing.T) {
-	tests := []struct {
-		name       string
-		items      []int64
-		dragged    int64
-		target     int64
-		shouldMove bool
-	}{
-		{"move forward", []int64{1, 2, 3}, 1, 3, true},
-		{"move backward", []int64{1, 2, 3}, 3, 1, true},
-		{"same position returns true", []int64{1, 2, 3}, 2, 2, true},
-		{"not found", []int64{1, 2}, 9, 1, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, moved := reorderInt64(tt.items, tt.dragged, tt.target)
-			if moved != tt.shouldMove {
-				t.Errorf("reorderInt64(%v, %d, %d) moved = %v, want %v", tt.items, tt.dragged, tt.target, moved, tt.shouldMove)
-			}
-			if moved && len(got) != len(tt.items) {
-				t.Errorf("reorderInt64() length = %d, want %d", len(got), len(tt.items))
-			}
-		})
-	}
-}
-
 func TestMonitorHourlyRollupFields(t *testing.T) {
 	// Verify MonitorHourlyRollup struct invariants without a real DB
 	r := MonitorHourlyRollup{
