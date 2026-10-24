@@ -70,18 +70,3 @@ func IsValidHTTPSTLSMode(mode TLSMode) bool {
 	securityMode, _, _ := ParseHTTPSTLSMode(mode)
 	return securityMode == TLSModeNone || securityMode == TLSModeTLS || securityMode == TLSModeSTARTTLS
 }
-
-func IsExplicitHTTPSInsecureMode(mode TLSMode) bool {
-	securityMode, _, _ := ParseHTTPSTLSMode(mode)
-	base := strings.ToLower(strings.TrimSpace(string(mode)))
-	for _, suffix := range []string{"_ipv4", "_ipv6", "_dual"} {
-		base = strings.TrimSuffix(base, suffix)
-	}
-	// tls_insecure is the explicit form; starttls is the legacy alias.
-	return securityMode != TLSModeNone && (TLSMode(base) == TLSModeTLSInsecure || TLSMode(base) == TLSModeSTARTTLS)
-}
-
-func IsExplicitHTTPSFamilyMode(mode TLSMode) bool {
-	raw := strings.ToLower(strings.TrimSpace(string(mode)))
-	return strings.HasSuffix(raw, "_ipv4") || strings.HasSuffix(raw, "_ipv6") || strings.HasSuffix(raw, "_dual")
-}

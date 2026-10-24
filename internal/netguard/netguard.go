@@ -4,7 +4,6 @@
 package netguard
 
 import (
-	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -213,10 +212,4 @@ func NewHTTPClient(opts Options) *http.Client {
 			return nil
 		},
 	}
-}
-
-// ContextDialer is a convenience wrapper for callers that only need a guarded
-// DialContext function.
-func ContextDialer(timeout time.Duration, allowPrivate bool) func(ctx context.Context, network, address string) (net.Conn, error) {
-	return NewDialer(timeout, allowPrivate).DialContext
 }
