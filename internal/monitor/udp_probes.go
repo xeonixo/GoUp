@@ -135,12 +135,11 @@ func buildDNSProbeQuery() ([]byte, uint16) {
 	_ = binary.Write(buf, binary.BigEndian, uint16(0))
 	_ = binary.Write(buf, binary.BigEndian, uint16(0))
 	_ = binary.Write(buf, binary.BigEndian, uint16(0))
-	buf.WriteByte(7)
-	buf.WriteString("example")
-	buf.WriteByte(3)
-	buf.WriteString("com")
+	// Question: ". IN NS". Every resolver knows (and usually caches) the root
+	// name servers, so the probe tests the DNS service itself instead of
+	// depending on one particular domain resolving.
 	buf.WriteByte(0)
-	_ = binary.Write(buf, binary.BigEndian, uint16(1))
+	_ = binary.Write(buf, binary.BigEndian, uint16(2))
 	_ = binary.Write(buf, binary.BigEndian, uint16(1))
 
 	return buf.Bytes(), id
