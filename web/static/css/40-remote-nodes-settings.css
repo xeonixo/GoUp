@@ -155,6 +155,17 @@
   background: rgba(var(--rgb-muted), 0.1);
 }
 
+.status-badge-warning {
+  color: var(--warning);
+  border-color: rgba(var(--rgb-warn), 0.35);
+  background: rgba(var(--rgb-warn), 0.12);
+}
+
+.remote-node-meta code {
+  font-size: 0.85em;
+  word-break: break-all;
+}
+
 .admin-security-meta {
   display: flex;
   gap: 1rem;

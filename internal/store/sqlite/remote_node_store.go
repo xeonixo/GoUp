@@ -20,6 +20,8 @@ type RemoteNode struct {
 	HeartbeatTimeoutSeconds int
 	LastSeenAt              *time.Time
 	AccessTokenExpiresAt    *time.Time
+	AgentVersion            string
+	AgentVersionSeenAt      *time.Time
 	CreatedAt               time.Time
 	UpdatedAt               time.Time
 }
@@ -156,7 +158,7 @@ func (s *ControlPlaneStore) ListRemoteNodesByTenant(ctx context.Context, tenantI
 		return []RemoteNode{}, nil
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, tenant_id, node_id, name, enabled, heartbeat_timeout_seconds, last_seen_at, access_token_expires_at, created_at, updated_at
+SELECT id, tenant_id, node_id, name, enabled, heartbeat_timeout_seconds, last_seen_at, access_token_expires_at, created_at, updated_at, agent_version, agent_version_seen_at
 FROM remote_nodes
 WHERE tenant_id = ? AND enabled = 1
 ORDER BY name COLLATE NOCASE ASC, id ASC
@@ -182,7 +184,7 @@ ORDER BY name COLLATE NOCASE ASC, id ASC
 
 func (s *ControlPlaneStore) ListAllEnabledRemoteNodes(ctx context.Context) ([]RemoteNode, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, tenant_id, node_id, name, enabled, heartbeat_timeout_seconds, last_seen_at, access_token_expires_at, created_at, updated_at
+SELECT id, tenant_id, node_id, name, enabled, heartbeat_timeout_seconds, last_seen_at, access_token_expires_at, created_at, updated_at, agent_version, agent_version_seen_at
 FROM remote_nodes
 WHERE enabled = 1
 ORDER BY tenant_id ASC, name COLLATE NOCASE ASC, id ASC
@@ -212,7 +214,7 @@ func (s *ControlPlaneStore) GetRemoteNodeByTenantAndNodeID(ctx context.Context, 
 		return RemoteNode{}, errors.New("tenant id and node id are required")
 	}
 	row := s.db.QueryRowContext(ctx, `
-SELECT id, tenant_id, node_id, name, enabled, heartbeat_timeout_seconds, last_seen_at, access_token_expires_at, created_at, updated_at
+SELECT id, tenant_id, node_id, name, enabled, heartbeat_timeout_seconds, last_seen_at, access_token_expires_at, created_at, updated_at, agent_version, agent_version_seen_at
 FROM remote_nodes
 WHERE tenant_id = ? AND node_id = ? AND enabled = 1
 `, tenantID, nodeID)
@@ -232,6 +234,7 @@ func scanRemoteNode(scanner interface{ Scan(dest ...any) error }) (RemoteNode, e
 		enabledRaw           int
 		lastSeenAt           sql.NullTime
 		accessTokenExpiresAt sql.NullTime
+		agentVersionSeenAt   sql.NullTime
 	)
 	if err := scanner.Scan(
 		&item.ID,
@@ -244,6 +247,8 @@ func scanRemoteNode(scanner interface{ Scan(dest ...any) error }) (RemoteNode, e
 		&accessTokenExpiresAt,
 		&item.CreatedAt,
 		&item.UpdatedAt,
+		&item.AgentVersion,
+		&agentVersionSeenAt,
 	); err != nil {
 		return RemoteNode{}, fmt.Errorf("scan remote node: %w", err)
 	}
@@ -251,6 +256,10 @@ func scanRemoteNode(scanner interface{ Scan(dest ...any) error }) (RemoteNode, e
 	if lastSeenAt.Valid {
 		value := lastSeenAt.Time.UTC()
 		item.LastSeenAt = &value
+	}
+	if agentVersionSeenAt.Valid {
+		value := agentVersionSeenAt.Time.UTC()
+		item.AgentVersionSeenAt = &value
 	}
 	if accessTokenExpiresAt.Valid {
 		value := accessTokenExpiresAt.Time.UTC()
@@ -265,6 +274,7 @@ func scanRemoteNodeRow(row *sql.Row) (RemoteNode, error) {
 		enabledRaw           int
 		lastSeenAt           sql.NullTime
 		accessTokenExpiresAt sql.NullTime
+		agentVersionSeenAt   sql.NullTime
 	)
 	if err := row.Scan(
 		&item.ID,
@@ -277,6 +287,8 @@ func scanRemoteNodeRow(row *sql.Row) (RemoteNode, error) {
 		&accessTokenExpiresAt,
 		&item.CreatedAt,
 		&item.UpdatedAt,
+		&item.AgentVersion,
+		&agentVersionSeenAt,
 	); err != nil {
 		return RemoteNode{}, err
 	}
@@ -284,6 +296,10 @@ func scanRemoteNodeRow(row *sql.Row) (RemoteNode, error) {
 	if lastSeenAt.Valid {
 		value := lastSeenAt.Time.UTC()
 		item.LastSeenAt = &value
+	}
+	if agentVersionSeenAt.Valid {
+		value := agentVersionSeenAt.Time.UTC()
+		item.AgentVersionSeenAt = &value
 	}
 	if accessTokenExpiresAt.Valid {
 		value := accessTokenExpiresAt.Time.UTC()

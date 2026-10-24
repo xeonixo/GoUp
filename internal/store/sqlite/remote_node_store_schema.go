@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS remote_nodes (
 	access_token_fingerprint TEXT NOT NULL DEFAULT '',
 	access_token_expires_at DATETIME,
 	last_seen_at DATETIME,
+	agent_version TEXT NOT NULL DEFAULT '',
+	agent_version_seen_at DATETIME,
 	heartbeat_timeout_seconds INTEGER NOT NULL DEFAULT 120,
 	enabled INTEGER NOT NULL DEFAULT 1,
 	created_at DATETIME NOT NULL,
@@ -27,6 +29,9 @@ CREATE TABLE IF NOT EXISTS remote_nodes (
 		return fmt.Errorf("create remote_nodes table: %w", err)
 	}
 	if err := s.ensureRemoteNodeAccessTokenFingerprintColumn(ctx); err != nil {
+		return err
+	}
+	if err := s.ensureRemoteNodeAgentVersionColumns(ctx); err != nil {
 		return err
 	}
 	if _, err := s.db.ExecContext(ctx, `
