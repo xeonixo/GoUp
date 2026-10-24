@@ -57,15 +57,24 @@ func TestValidateURL(t *testing.T) {
 		if _, err := ValidateURL(raw, false); err == nil {
 			t.Errorf("expected %q to be rejected", raw)
 		}
+		if IsValidRedirectURL(raw, false) {
+			t.Errorf("IsValidRedirectURL(%q) should be false", raw)
+		}
 	}
 	if _, err := ValidateURL("https://192.168.1.10:8448", true); err != nil {
 		t.Errorf("private allowed when opted in: %v", err)
+	}
+	if !IsValidRedirectURL("https://192.168.1.10:8448", true) {
+		t.Error("IsValidRedirectURL should allow private when opted in")
 	}
 	if _, err := ValidateURL("https://169.254.169.254/", true); err == nil {
 		t.Error("metadata must stay blocked")
 	}
 	if _, err := ValidateURL("https://example.com/path", false); err != nil {
 		t.Errorf("public host should pass: %v", err)
+	}
+	if !IsValidRedirectURL("https://example.com/path", false) {
+		t.Error("IsValidRedirectURL should accept public https")
 	}
 }
 

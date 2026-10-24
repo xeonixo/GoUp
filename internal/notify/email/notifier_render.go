@@ -140,7 +140,7 @@ func formatEmailTemplate(template string, values map[string]string) string {
 	return result
 }
 
-// sanitizeEmailHeader removes CR and LF characters to prevent email header injection.
+// sanitizeEmailHeader removes CR, LF, and NUL characters to prevent email header injection.
 func sanitizeEmailHeader(value string) string {
-	return strings.NewReplacer("\r", "", "\n", "").Replace(value)
+	return strings.NewReplacer("\r", "", "\n", "", "\x00", "").Replace(value)
 }

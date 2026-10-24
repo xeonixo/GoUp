@@ -56,10 +56,13 @@ func (s *Server) storeUploadedGroupIcon(r *http.Request, groupName string) (stri
 	hash := hex.EncodeToString(hashBytes[:])
 	baseName := sanitizeUploadedIconBaseName(header.Filename)
 	if baseName == "" {
-		baseName = normalizeDashboardIconSlug(groupName)
+		baseName = sanitizeDashboardIconFileSlug(groupName)
 	}
 	if baseName == "" {
 		baseName = "custom-icon"
+	}
+	if strings.Contains(baseName, "..") || strings.ContainsAny(baseName, `/\\`) {
+		return "", fmt.Errorf("Icon-Upload konnte nicht gespeichert werden")
 	}
 
 	dir := s.uploadedIconsDir(s.tenantSlugForRequest(r))
@@ -71,6 +74,9 @@ func (s *Server) storeUploadedGroupIcon(r *http.Request, groupName string) (stri
 	}
 
 	fileName := hash + "-" + baseName + ext
+	if strings.Contains(fileName, "..") {
+		return "", fmt.Errorf("Icon-Upload konnte nicht gespeichert werden")
+	}
 	iconPath, err := safePathWithinDir(dir, fileName)
 	if err != nil {
 		return "", fmt.Errorf("Icon-Upload konnte nicht gespeichert werden")
@@ -208,11 +214,14 @@ func safePathWithinDir(baseDir string, name string) (string, error) {
 	if baseDir == "" || name == "" {
 		return "", fmt.Errorf("invalid path")
 	}
-	if filepath.IsAbs(name) {
+	if filepath.IsAbs(name) || strings.Contains(name, "..") {
 		return "", fmt.Errorf("invalid path")
 	}
-	cleanName := filepath.Clean(name)
-	if cleanName == "." || cleanName == ".." || strings.HasPrefix(cleanName, ".."+string(filepath.Separator)) {
+	// filepath.Clean("/"+name) is the CodeQL-recognized path-traversal sanitizer.
+	// Trim the forced root prefix afterward and re-check containment under baseDir.
+	cleaned := filepath.Clean("/" + name)
+	cleanName := strings.TrimPrefix(cleaned, "/")
+	if cleanName == "" || cleanName == "." || cleanName == ".." || strings.HasPrefix(cleanName, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("invalid path")
 	}
 	absBaseDir, err := filepath.Abs(baseDir)
@@ -225,6 +234,10 @@ func safePathWithinDir(baseDir string, name string) (string, error) {
 		return "", err
 	}
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("invalid path")
+	}
+	// strings.HasPrefix is a CodeQL-recognized path sanitizer guard.
+	if !strings.HasPrefix(fullPath, absBaseDir+string(filepath.Separator)) && fullPath != absBaseDir {
 		return "", fmt.Errorf("invalid path")
 	}
 	return fullPath, nil

@@ -37,6 +37,9 @@ func TestFormatAndSanitize(t *testing.T) {
 	if got := sanitizeEmailHeader("a\r\nb"); got != "ab" {
 		t.Fatalf("got %q", got)
 	}
+	if got := sanitizeEmailHeader("a\x00b\nc"); got != "abc" {
+		t.Fatalf("got %q", got)
+	}
 }
 
 func TestBuildStatusTransitionSubject(t *testing.T) {

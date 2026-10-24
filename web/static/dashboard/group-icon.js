@@ -44,12 +44,22 @@ const updateGroupIconPreview = () => {
   const uploadFile = groupIconUpload?.files?.[0] || null;
   if (uploadFile) {
     clearGroupIconUploadPreviewURL();
-    groupIconUploadPreviewURL = URL.createObjectURL(uploadFile);
+    const objectURL = URL.createObjectURL(uploadFile);
+    // Only accept blob: URLs from createObjectURL — never DOM text / javascript: URLs.
+    if (!objectURL.startsWith('blob:')) {
+      URL.revokeObjectURL(objectURL);
+      if (groupIconSelection) {
+        groupIconSelection.textContent = tr('groupIconSelectedUpload', 'Selected: custom uploaded icon');
+      }
+      return;
+    }
+    groupIconUploadPreviewURL = objectURL;
     if (groupIconPreviewFrame) {
       groupIconPreviewFrame.hidden = false;
     }
     if (groupIconPreview) {
-      groupIconPreview.src = groupIconUploadPreviewURL; // codeql[js/xss-through-dom]: groupIconUploadPreviewURL is a blob: URL created via URL.createObjectURL() from a user-selected file input, not DOM text.
+      // codeql[js/xss-through-dom]: src is a blob: URL from URL.createObjectURL(File); img treats SVG as an image (scripts disabled).
+      groupIconPreview.src = objectURL;
     }
     if (groupIconSelection) {
       groupIconSelection.textContent = tr('groupIconSelectedUpload', 'Selected: custom uploaded icon');

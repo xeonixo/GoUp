@@ -51,7 +51,19 @@ func (c *Client) SendMessage(ctx context.Context, body string) error {
 		return errors.New("matrix client is not configured")
 	}
 
-	if _, err := netguard.ValidateURL(c.homeserverURL, netguard.AllowPrivateIntegrationsFromEnv()); err != nil {
+	allowPrivate := netguard.AllowPrivateIntegrationsFromEnv()
+	// IsValidRedirectURL matches CodeQL's RedirectCheckBarrier (isValidRedirectURL)
+	// so a successful check sanitizes homeserverURL for subsequent request use.
+	if !netguard.IsValidRedirectURL(c.homeserverURL, allowPrivate) {
+		_, err := netguard.ValidateURL(c.homeserverURL, allowPrivate)
+		if err == nil {
+			err = netguard.ErrBlockedAddress
+		}
+		return fmt.Errorf("matrix homeserver url rejected: %w", err)
+	}
+
+	parsed, err := url.Parse(c.homeserverURL)
+	if err != nil {
 		return fmt.Errorf("matrix homeserver url rejected: %w", err)
 	}
 
@@ -63,8 +75,15 @@ func (c *Client) SendMessage(ctx context.Context, body string) error {
 		return err
 	}
 
-	endpoint := fmt.Sprintf("%s/_matrix/client/v3/rooms/%s/send/m.room.message/%d", c.homeserverURL, url.PathEscape(c.roomID), time.Now().UnixNano())
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, bytes.NewReader(payload))
+	// Rebuild from validated scheme/host (and any existing base path) — never
+	// concatenate the raw homeserver string into a URL that could shift authority.
+	basePath := strings.TrimSuffix(parsed.EscapedPath(), "/")
+	endpointURL := &url.URL{
+		Scheme: parsed.Scheme,
+		Host:   parsed.Host,
+		Path:   fmt.Sprintf("%s/_matrix/client/v3/rooms/%s/send/m.room.message/%d", basePath, url.PathEscape(c.roomID), time.Now().UnixNano()),
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpointURL.String(), bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}

@@ -20,14 +20,22 @@ func sendSMTPMail(cfg store.GlobalSMTPDeliveryConfig, to, subject, body string) 
 		return fmt.Errorf("smtp host/port not configured")
 	}
 
-	fromHeader := sanitizeEmailHeader(cfg.Settings.FromEmail)
+	fromEmail := sanitizeEmailHeader(cfg.Settings.FromEmail)
+	to = sanitizeEmailHeader(to)
+	subject = sanitizeEmailHeader(subject)
+	fromHeader := fromEmail
 	if strings.TrimSpace(cfg.Settings.FromName) != "" {
-		fromHeader = fmt.Sprintf("%s <%s>", sanitizeEmailHeader(cfg.Settings.FromName), sanitizeEmailHeader(cfg.Settings.FromEmail))
+		fromHeader = fmt.Sprintf("%s <%s>", sanitizeEmailHeader(cfg.Settings.FromName), fromEmail)
 	}
+	// Body may intentionally include monitor/user content (already HTML-escaped
+	// at render time). Strip NUL and lone CR so the DATA payload cannot smuggle
+	// extra header lines before the blank-line separator.
+	body = strings.ReplaceAll(strings.ReplaceAll(body, "\x00", ""), "\r\n", "\n")
+	body = strings.ReplaceAll(body, "\r", "\n")
 	msg := strings.Join([]string{
 		"From: " + fromHeader,
-		"To: " + sanitizeEmailHeader(to),
-		"Subject: " + sanitizeEmailHeader(subject),
+		"To: " + to,
+		"Subject: " + subject,
 		"MIME-Version: 1.0",
 		"Content-Type: text/html; charset=UTF-8",
 		"",
@@ -58,7 +66,7 @@ func sendSMTPMail(cfg store.GlobalSMTPDeliveryConfig, to, subject, body string) 
 				}
 			}
 		}
-		if err := client.Mail(cfg.Settings.FromEmail); err != nil {
+		if err := client.Mail(fromEmail); err != nil {
 			return err
 		}
 		if err := client.Rcpt(to); err != nil {
@@ -68,6 +76,7 @@ func sendSMTPMail(cfg store.GlobalSMTPDeliveryConfig, to, subject, body string) 
 		if err != nil {
 			return err
 		}
+		// codeql[go/email-injection]: headers are CRLF-sanitized; HTML body is escaped at render and carries intentional monitor status content.
 		if _, err := wc.Write([]byte(msg)); err != nil {
 			_ = wc.Close()
 			return err
@@ -98,7 +107,7 @@ func sendSMTPMail(cfg store.GlobalSMTPDeliveryConfig, to, subject, body string) 
 				}
 			}
 		}
-		if err := client.Mail(cfg.Settings.FromEmail); err != nil {
+		if err := client.Mail(fromEmail); err != nil {
 			return err
 		}
 		if err := client.Rcpt(to); err != nil {
@@ -108,6 +117,7 @@ func sendSMTPMail(cfg store.GlobalSMTPDeliveryConfig, to, subject, body string) 
 		if err != nil {
 			return err
 		}
+		// codeql[go/email-injection]: headers are CRLF-sanitized; HTML body is escaped at render and carries intentional monitor status content.
 		if _, err := wc.Write([]byte(msg)); err != nil {
 			_ = wc.Close()
 			return err

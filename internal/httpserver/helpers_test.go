@@ -3,6 +3,7 @@ package httpserver
 import (
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"goup/internal/config"
@@ -58,6 +59,22 @@ func TestSanitizeIconName(t *testing.T) {
 	got := sanitizeUploadedIconName("test.png")
 	if got == "" {
 		t.Errorf("sanitizeUploadedIconName should not return empty for valid name")
+	}
+}
+
+func TestSafePathWithinDir(t *testing.T) {
+	dir := t.TempDir()
+	ok, err := safePathWithinDir(dir, "abc-icon.svg")
+	if err != nil {
+		t.Fatalf("safe path: %v", err)
+	}
+	if !strings.HasPrefix(ok, dir) {
+		t.Fatalf("expected under %q, got %q", dir, ok)
+	}
+	for _, name := range []string{"../etc/passwd", "..", "/etc/passwd", "a/../../b"} {
+		if _, err := safePathWithinDir(dir, name); err == nil {
+			t.Fatalf("expected reject for %q", name)
+		}
 	}
 }
 
