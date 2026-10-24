@@ -21,6 +21,7 @@ type Runner struct {
 	workerSem         chan struct{}
 	scheduleMu        sync.Mutex
 	schedule          map[int64]*monitorScheduleState
+	stats             runnerStats
 }
 
 type monitorScheduleState struct {
@@ -82,6 +83,10 @@ func (r *Runner) Run(ctx context.Context) {
 }
 
 func (r *Runner) runDueChecks(ctx context.Context) {
+	loopStartedAt := time.Now()
+	startedBefore := r.stats.startedTotal()
+	defer func() { r.stats.recordLoop(loopStartedAt, time.Since(loopStartedAt)) }()
+
 	snapshots, err := r.store.ListMonitorSnapshots(ctx)
 	if err != nil {
 		r.logger.Error("load monitor snapshots failed", "error", err)
@@ -91,12 +96,14 @@ func (r *Runner) runDueChecks(ctx context.Context) {
 	now := time.Now().UTC()
 	dueSnapshots := r.dueSnapshots(snapshots, now)
 	if len(dueSnapshots) == 0 {
+		r.stats.setBacklog(0)
 		return
 	}
 
 	for _, due := range dueSnapshots {
 		r.dispatchSnapshot(ctx, due)
 	}
+	r.stats.setBacklog(len(dueSnapshots) - int(r.stats.startedTotal()-startedBefore))
 }
 
 type dueSnapshot struct {
@@ -206,8 +213,11 @@ func (r *Runner) dispatchSnapshot(ctx context.Context, due dueSnapshot) {
 	state.nextDue = due.dueAt.Add(normalizedMonitorInterval(due.snapshot.Monitor.Interval))
 	r.scheduleMu.Unlock()
 
+	r.stats.checkStarted()
+	checkStartedAt := time.Now()
 	go func() {
 		defer func() {
+			r.stats.checkFinished(time.Now(), time.Since(checkStartedAt))
 			<-r.workerSem
 			r.scheduleMu.Lock()
 			if state := r.schedule[due.snapshot.Monitor.ID]; state != nil {

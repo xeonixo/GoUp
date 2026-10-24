@@ -43,6 +43,7 @@ WHERE total_checks > up_checks + down_checks + degraded_checks
 func (s *Store) ensurePhase2Indexes(ctx context.Context) error {
 	for _, stmt := range []string{
 		`CREATE INDEX IF NOT EXISTS idx_notification_events_monitor_created ON notification_events(monitor_id, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_notification_events_created ON notification_events(created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_incidents_monitor ON incidents(monitor_id)`,
 	} {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {

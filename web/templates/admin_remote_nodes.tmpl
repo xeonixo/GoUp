@@ -1,12 +1,6 @@
 {{define "content"}}
 <div class="admin-section admin-console" id="remote-nodes-page" data-live-base="/admin/tenants/{{.AdminTenant.ID}}/remote-nodes/live" data-expired-redirect="/admin/access" data-i18n-online="{{index $.Translations "admin.remote_nodes.online"}}" data-i18n-offline="{{index $.Translations "admin.remote_nodes.offline"}}" data-i18n-entries="{{index $.Translations "admin.remote_nodes.entries"}}" data-i18n-from="{{index $.Translations "admin.remote_nodes.from"}}">
-  <nav class="admin-nav admin-console-nav card" aria-label="{{index $.Translations "layout.control_plane"}}">
-    <a href="/admin/" class="admin-nav-link">{{index $.Translations "admin.nav.general"}}</a>
-    <a href="/admin/tenants" class="admin-nav-link">{{index $.Translations "admin.nav.tenants"}}</a>
-    <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link">{{index $.Translations "admin.nav.providers"}}</a>
-    <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link">{{index $.Translations "admin.nav.users"}}</a>
-    <a href="/admin/tenants/{{.AdminTenant.ID}}/remote-nodes" class="admin-nav-link is-active">{{index $.Translations "admin.nav.remote_nodes"}}</a>
-  </nav>
+  {{template "admin_nav" .}}
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}

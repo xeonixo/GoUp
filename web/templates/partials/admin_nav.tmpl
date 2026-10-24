@@ -1,0 +1,16 @@
+{{define "admin_nav"}}
+<nav class="admin-nav admin-console-nav card" aria-label="{{index $.Translations "layout.control_plane"}}">
+  <a href="/admin/" class="admin-nav-link{{if eq .AdminNavActive "general"}} is-active{{end}}">{{index $.Translations "admin.nav.general"}}</a>
+  <a href="/admin/tenants" class="admin-nav-link{{if eq .AdminNavActive "tenants"}} is-active{{end}}">{{index $.Translations "admin.nav.tenants"}}</a>
+  {{if .AdminNavScoped}}
+  <a href="/admin/tenants/{{.AdminTenant.ID}}/providers" class="admin-nav-link{{if eq .AdminNavActive "providers"}} is-active{{end}}">{{index $.Translations "admin.nav.providers"}}</a>
+  <a href="/admin/tenants/{{.AdminTenant.ID}}/local-users" class="admin-nav-link{{if eq .AdminNavActive "users"}} is-active{{end}}">{{index $.Translations "admin.nav.users"}}</a>
+  <a href="/admin/tenants/{{.AdminTenant.ID}}/remote-nodes" class="admin-nav-link{{if eq .AdminNavActive "remote_nodes"}} is-active{{end}}">{{index $.Translations "admin.nav.remote_nodes"}}</a>
+  {{else}}
+  <a href="/admin/providers" class="admin-nav-link{{if eq .AdminNavActive "providers"}} is-active{{end}}">{{index $.Translations "admin.nav.providers"}}</a>
+  <a href="/admin/users" class="admin-nav-link{{if eq .AdminNavActive "users"}} is-active{{end}}">{{index $.Translations "admin.nav.users"}}</a>
+  <a href="/admin/remote-nodes" class="admin-nav-link{{if eq .AdminNavActive "remote_nodes"}} is-active{{end}}">{{index $.Translations "admin.nav.remote_nodes"}}</a>
+  {{end}}
+  <a href="/admin/system" class="admin-nav-link{{if eq .AdminNavActive "system"}} is-active{{end}}">{{index $.Translations "admin.system.nav"}}</a>
+</nav>
+{{end}}

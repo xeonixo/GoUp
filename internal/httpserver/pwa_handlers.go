@@ -283,7 +283,7 @@ func (s *Server) applyNavBack(data *pageData, name string) {
 	}
 	tenantID := data.AdminTenant.ID
 	switch name {
-	case "admin_tenants", "admin_providers_overview", "admin_users_overview", "admin_remote_nodes_overview", "admin_security":
+	case "admin_tenants", "admin_providers_overview", "admin_users_overview", "admin_remote_nodes_overview", "admin_security", "admin_system":
 		set("/admin/", "layout.back_admin")
 	case "admin_tenant_form":
 		set("/admin/tenants", "layout.back_tenants")

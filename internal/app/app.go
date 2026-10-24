@@ -120,6 +120,14 @@ func New(ctx context.Context) (*App, error) {
 		logger.Info("runner initialized for tenant", "tenant", t.Slug)
 	}
 
+	var app *App
+	runnerLookup := func(tenantID int64) *monitorrunner.Runner {
+		if app == nil {
+			return nil
+		}
+		return app.runnerForTenant(tenantID)
+	}
+
 	server, err := httpserver.New(httpserver.Dependencies{
 		Config:         cfg,
 		Logger:         logger,
@@ -129,6 +137,7 @@ func New(ctx context.Context) (*App, error) {
 		TenantStores:   tenantStores,
 		DefaultTenant:  defaultTenant,
 		Sessions:       sessions,
+		RunnerLookup:   runnerLookup,
 	})
 	if err != nil {
 		if sqliteStore != nil {
@@ -140,7 +149,7 @@ func New(ctx context.Context) (*App, error) {
 
 	logger.Info("initialized application", "control_db_path", filepath.Clean(cfg.ControlPlaneDBPath), "auth_mode", cfg.Auth.Mode)
 
-	return &App{
+	app = &App{
 		config:       cfg,
 		logger:       logger,
 		store:        sqliteStore,
@@ -149,7 +158,8 @@ func New(ctx context.Context) (*App, error) {
 		server:       server,
 		runners:      runners,
 		remoteNodeUp: make(map[string]bool),
-	}, nil
+	}
+	return app, nil
 }
 
 func (a *App) Run(ctx context.Context) error {
