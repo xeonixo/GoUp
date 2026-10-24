@@ -1,0 +1,319 @@
+{{define "dashboard_monitor_modal"}}{{if .IsAdmin}}
+<dialog id="monitor-modal" class="monitor-modal" aria-modal="true" aria-labelledby="monitor-modal-title">
+  <form method="post" action="{{$.AppBase}}monitors/save" class="stack form-grid" id="monitor-form">
+    <input type="hidden" name="id" id="monitor-id">
+    <div class="modal-header">
+      <h2 id="monitor-modal-title" data-create-title="{{index $.Translations "dashboard.modal.create_title"}}" data-edit-title="{{index $.Translations "dashboard.modal.edit_title"}}">{{index $.Translations "dashboard.modal.create_title"}}</h2>
+      <button class="modal-close-button" type="button" id="monitor-close" aria-label="{{index $.Translations "dashboard.modal.close_aria"}}">×</button>
+    </div>
+
+    <label>
+      <span>{{index $.Translations "dashboard.modal.type_label"}}</span>
+      <select name="kind" id="monitor-kind">
+        <option value="https">{{index $.Translations "dashboard.modal.type_https"}}</option>
+        <option value="tcp">{{index $.Translations "dashboard.modal.type_tcp"}}</option>
+        <option value="icmp">{{index $.Translations "dashboard.modal.type_icmp"}}</option>
+        <option value="smtp">{{index $.Translations "dashboard.modal.type_smtp"}}</option>
+        <option value="imap">{{index $.Translations "dashboard.modal.type_imap"}}</option>
+        <option value="dns">{{index $.Translations "dashboard.modal.type_dns"}}</option>
+        <option value="udp">{{index $.Translations "dashboard.modal.type_udp"}}</option>
+        <option value="whois">{{index $.Translations "dashboard.modal.type_whois"}}</option>
+      </select>
+    </label>
+
+    <label id="tls-mode-row">
+      <span>{{index $.Translations "dashboard.modal.tls_mode"}}</span>
+      <select name="tls_mode" id="monitor-tls-mode">
+        <option value="tls">{{index $.Translations "dashboard.modal.tls_mode_tls"}}</option>
+        <option value="starttls">{{index $.Translations "dashboard.modal.tls_mode_starttls"}}</option>
+        <option value="none">{{index $.Translations "dashboard.modal.tls_mode_none"}}</option>
+      </select>
+    </label>
+
+    <label>
+      <span>{{index $.Translations "dashboard.modal.name_label"}}</span>
+      <input type="text" name="name" id="monitor-name" placeholder="{{index $.Translations "dashboard.modal.name_placeholder"}}" required>
+    </label>
+
+    <label>
+      <span>{{index $.Translations "dashboard.modal.group_label"}}</span>
+      <input type="text" name="group" id="monitor-group" list="monitor-group-options" placeholder="{{index $.Translations "dashboard.modal.group_placeholder"}}">
+    </label>
+
+    <datalist id="monitor-group-options">
+      {{range .AvailableGroups}}
+      <option value="{{.}}"></option>
+      {{end}}
+    </datalist>
+
+    {{if .HasRemoteNodes}}
+    <label id="monitor-executor-row">
+      <span>{{index $.Translations "dashboard.modal.executor_label"}}</span>
+      <select name="executor" id="monitor-executor">
+        {{range .MonitorExecutors}}
+        <option value="{{.Value}}">{{.Label}}</option>
+        {{end}}
+      </select>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.executor_hint"}}</small>
+    </label>
+    {{end}}
+
+    <label id="monitor-target-row">
+      <span>{{index $.Translations "dashboard.modal.target_label"}}</span>
+      <input type="text" name="target" id="monitor-target" placeholder="{{index $.Translations "dashboard.modal.target_placeholder"}}" required>
+      <small class="muted compact" id="monitor-target-hint">{{index $.Translations "dashboard.modal.target_hint_http"}}</small>
+      <small class="muted compact" id="monitor-target-warn" hidden>{{index $.Translations "dashboard.modal.target_warn_whois_de"}}</small>
+    </label>
+
+    <label id="https-target-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.http_target_label"}}</span>
+      <div class="inline-grid inline-grid-http-target">
+        <label class="field-compact">
+          <span>{{index $.Translations "dashboard.modal.protocol_label"}}</span>
+          <select id="monitor-http-scheme">
+            <option value="https">https://</option>
+            <option value="http">http://</option>
+          </select>
+        </label>
+        <label>
+          <span>{{index $.Translations "dashboard.modal.host_label"}}</span>
+          <input type="text" id="monitor-http-host" name="http_host" placeholder="{{index $.Translations "dashboard.modal.http_host_placeholder"}}" autocomplete="off" spellcheck="false">
+        </label>
+        <label class="field-compact field-port-compact">
+          <span>{{index $.Translations "dashboard.modal.port_optional_label"}}</span>
+          <input type="number" id="monitor-http-port" name="http_port" min="1" max="65535" placeholder="{{index $.Translations "dashboard.modal.http_port_placeholder"}}" inputmode="numeric">
+        </label>
+      </div>
+      <label id="https-skip-verify-row" class="checkbox-row" hidden>
+        <input type="checkbox" id="monitor-http-skip-cert">
+        <span id="monitor-http-skip-cert-label">{{index $.Translations "dashboard.modal.skip_cert_checkbox"}}</span>
+      </label>
+      <label>
+        <span>{{index $.Translations "dashboard.modal.path_query_optional_label"}}</span>
+        <input type="text" id="monitor-http-path" name="http_path" placeholder="{{index $.Translations "dashboard.modal.http_path_placeholder"}}">
+      </label>
+    </label>
+
+    <label id="https-family-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.ip_family_hostname_only"}}</span>
+      <select id="monitor-https-family" name="https_family">
+        <option value="ipv4">IPv4</option>
+        <option value="ipv6">IPv6</option>
+        <option value="dual" selected>Dual Stack (IPv4 + IPv6)</option>
+      </select>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.https_family_hint"}}</small>
+    </label>
+
+    <label id="tcp-target-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.tcp_target_label"}}</span>
+      <div class="inline-grid">
+        <label>
+          <span>{{index $.Translations "dashboard.modal.host_label"}}</span>
+          <input type="text" id="monitor-tcp-host" name="tcp_host" placeholder="{{index $.Translations "dashboard.modal.tcp_host_placeholder"}}" autocomplete="off" spellcheck="false">
+        </label>
+        <label>
+          <span>{{index $.Translations "dashboard.modal.port_label"}}</span>
+          <input type="number" id="monitor-tcp-port" name="tcp_port" min="1" max="65535" placeholder="{{index $.Translations "dashboard.modal.tcp_port_placeholder"}}" inputmode="numeric">
+        </label>
+      </div>
+    </label>
+
+    <label id="dns-target-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.dns_target_label"}}</span>
+      <div class="inline-grid">
+        <label>
+          <span>{{index $.Translations "dashboard.modal.host_label"}}</span>
+          <input type="text" id="monitor-dns-host" name="dns_host" placeholder="{{index $.Translations "dashboard.modal.dns_host_placeholder"}}" autocomplete="off" spellcheck="false">
+        </label>
+        <label class="field-compact">
+          <span>{{index $.Translations "dashboard.modal.dns_record_type_label"}}</span>
+          <select id="monitor-dns-record-type" name="dns_record_type">
+            <option value="mixed">{{index $.Translations "dashboard.modal.dns_record_type_mixed"}}</option>
+            <option value="a">{{index $.Translations "dashboard.modal.dns_record_type_a"}}</option>
+            <option value="aaaa">{{index $.Translations "dashboard.modal.dns_record_type_aaaa"}}</option>
+            <option value="cname">{{index $.Translations "dashboard.modal.dns_record_type_cname"}}</option>
+            <option value="mx">{{index $.Translations "dashboard.modal.dns_record_type_mx"}}</option>
+            <option value="txt">{{index $.Translations "dashboard.modal.dns_record_type_txt"}}</option>
+            <option value="ns">{{index $.Translations "dashboard.modal.dns_record_type_ns"}}</option>
+            <option value="srv">{{index $.Translations "dashboard.modal.dns_record_type_srv"}}</option>
+            <option value="caa">{{index $.Translations "dashboard.modal.dns_record_type_caa"}}</option>
+            <option value="soa">{{index $.Translations "dashboard.modal.dns_record_type_soa"}}</option>
+          </select>
+        </label>
+      </div>
+      <label>
+        <span>{{index $.Translations "dashboard.modal.dns_server_label"}}</span>
+        <input type="text" id="monitor-dns-server" name="dns_server" placeholder="{{index $.Translations "dashboard.modal.dns_server_placeholder"}}" autocomplete="off" spellcheck="false">
+      </label>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.dns_server_hint"}}</small>
+    </label>
+
+    <label id="https-mode-row" class="checkbox-row" hidden>
+      <input type="checkbox" id="monitor-use-https" checked>
+      <span id="monitor-use-https-label">{{index $.Translations "dashboard.modal.tcp_tls_handshake"}}</span>
+    </label>
+
+    <label id="https-verify-row" class="checkbox-row" hidden>
+      <input type="checkbox" id="monitor-verify-cert" checked>
+      <span id="monitor-verify-cert-label">{{index $.Translations "dashboard.modal.verify_cert_checkbox"}}</span>
+    </label>
+
+    <label id="tcp-family-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.ip_family_hostname_only"}}</span>
+      <select id="monitor-tcp-family" name="tcp_family">
+        <option value="ipv4">IPv4</option>
+        <option value="ipv6">IPv6</option>
+        <option value="dual" selected>Dual Stack (IPv4 + IPv6)</option>
+      </select>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.tcp_family_hint"}}</small>
+    </label>
+
+    <label id="mail-target-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.mail_target_label"}}</span>
+      <div class="inline-grid">
+        <label>
+          <span>{{index $.Translations "dashboard.modal.host_label"}}</span>
+          <input type="text" id="monitor-mail-host" name="mail_host" placeholder="{{index $.Translations "dashboard.modal.mail_host_placeholder"}}" autocomplete="off" spellcheck="false">
+        </label>
+        <label>
+          <span>{{index $.Translations "dashboard.modal.port_label"}}</span>
+          <input type="number" id="monitor-mail-port" name="mail_port" min="1" max="65535" placeholder="{{index $.Translations "dashboard.modal.mail_port_placeholder"}}" inputmode="numeric">
+        </label>
+      </div>
+    </label>
+
+    <label id="mail-family-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.ip_family_hostname_only"}}</span>
+      <select id="monitor-mail-family" name="mail_family">
+        <option value="ipv4">IPv4</option>
+        <option value="ipv6">IPv6</option>
+        <option value="dual" selected>Dual Stack (IPv4 + IPv6)</option>
+      </select>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.mail_family_hint"}}</small>
+    </label>
+
+    <label id="mail-verify-row" class="checkbox-row" hidden>
+      <input type="checkbox" id="monitor-mail-verify-cert" name="mail_skip_cert">
+      <span id="monitor-mail-verify-cert-label">{{index $.Translations "dashboard.modal.skip_cert_checkbox"}}</span>
+    </label>
+
+    <label id="udp-check-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.udp_check_label"}}</span>
+      <select id="monitor-udp-check" name="udp_check">
+        <option value="dns">{{index $.Translations "dashboard.modal.udp_check_dns"}}</option>
+        <option value="ntp">{{index $.Translations "dashboard.modal.udp_check_ntp"}}</option>
+      </select>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.udp_check_hint"}}</small>
+    </label>
+
+    <label id="udp-target-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.udp_target_label"}}</span>
+      <div class="inline-grid">
+        <label>
+          <span>{{index $.Translations "dashboard.modal.host_label"}}</span>
+          <input type="text" id="monitor-udp-host" name="udp_host" placeholder="{{index $.Translations "dashboard.modal.udp_host_placeholder"}}" autocomplete="off" spellcheck="false">
+        </label>
+        <label>
+          <span>{{index $.Translations "dashboard.modal.port_label"}}</span>
+          <input type="number" id="monitor-udp-port" name="udp_port" min="1" max="65535" placeholder="{{index $.Translations "dashboard.modal.udp_port_placeholder"}}" inputmode="numeric">
+        </label>
+      </div>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.udp_target_hint"}}</small>
+    </label>
+
+    <label id="udp-family-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.ip_family_hostname_only"}}</span>
+      <select id="monitor-udp-family" name="udp_family">
+        <option value="ipv4">IPv4</option>
+        <option value="ipv6">IPv6</option>
+        <option value="dual" selected>Dual Stack (IPv4 + IPv6)</option>
+      </select>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.udp_family_hint"}}</small>
+    </label>
+
+    <label id="icmp-family-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.ip_family_hostname_only"}}</span>
+      <select id="monitor-icmp-family" name="icmp_family">
+        <option value="ipv4">IPv4</option>
+        <option value="ipv6">IPv6</option>
+        <option value="dual">Dual Stack (IPv4 + IPv6)</option>
+      </select>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.icmp_family_hint"}}</small>
+    </label>
+
+    <label>
+      <span>{{index $.Translations "dashboard.modal.interval_seconds_label"}}</span>
+      <input type="number" name="interval_seconds" id="monitor-interval" min="15" value="60" required>
+    </label>
+
+    <label id="expected-status-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.expected_http_status_optional"}}</span>
+      <input type="number" name="expected_status_code" id="monitor-expected-status" min="100" max="599" placeholder="{{index $.Translations "dashboard.modal.expected_status_placeholder"}}">
+    </label>
+
+    <label id="expected-text-row" hidden>
+      <span id="monitor-expected-text-label">{{index $.Translations "dashboard.modal.expected_keywords_optional"}}</span>
+      <input type="text" name="expected_text" id="monitor-expected-text" placeholder="{{index $.Translations "dashboard.modal.expected_text_placeholder"}}">
+      <small class="muted compact" id="monitor-expected-text-hint">{{index $.Translations "dashboard.modal.expected_keywords_hint"}}</small>
+    </label>
+
+    <label class="checkbox-row">
+      <input type="checkbox" name="enabled" id="monitor-enabled" checked>
+      <span>{{index $.Translations "dashboard.modal.enabled_checkbox"}}</span>
+    </label>
+
+    <details class="modal-advanced" id="monitor-advanced">
+      <summary>{{index $.Translations "dashboard.modal.advanced"}}</summary>
+      <div class="stack">
+        <div class="inline-grid">
+          <label>
+            <span>{{index $.Translations "dashboard.modal.timeout_seconds_label"}}</span>
+            <input type="number" name="timeout_seconds" id="monitor-timeout" min="1" value="10" required>
+          </label>
+          <label>
+            <span>{{index $.Translations "dashboard.modal.retry_count_label"}}</span>
+            <input type="number" name="retry_count" id="monitor-retry-count" min="0" max="10" value="0">
+          </label>
+          <label>
+            <span>{{index $.Translations "dashboard.modal.retry_interval_seconds_label"}}</span>
+            <input type="number" name="retry_interval_seconds" id="monitor-retry-interval" min="0" value="0">
+          </label>
+        </div>
+        <label>
+          <span>{{index $.Translations "dashboard.modal.confirm_after_label"}}</span>
+          <input type="number" name="confirm_after" id="monitor-confirm-after" min="1" max="10" value="1" inputmode="numeric">
+          <small class="muted compact">{{index $.Translations "dashboard.modal.confirm_after_hint"}}</small>
+        </label>
+        <label>
+          <span>{{index $.Translations "dashboard.modal.remind_every_label"}}</span>
+          <select name="remind_every" id="monitor-remind-every">
+            <option value="0">{{index $.Translations "dashboard.modal.remind_every_off"}}</option>
+            <option value="15">15 min</option>
+            <option value="30">30 min</option>
+            <option value="60">1 h</option>
+            <option value="120">2 h</option>
+            <option value="240">4 h</option>
+            <option value="720">12 h</option>
+            <option value="1440">24 h</option>
+          </select>
+          <small class="muted compact">{{index $.Translations "dashboard.modal.remind_every_hint"}}</small>
+        </label>
+        <label>
+          <span>{{index $.Translations "dashboard.modal.cert_warning_days_label"}}</span>
+          <input type="number" name="cert_warning_days" id="monitor-cert-warning-days" min="1" max="365" value="7" inputmode="numeric">
+          <small class="muted compact">{{index $.Translations "dashboard.modal.cert_warning_days_hint"}}</small>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" name="notify_on_recovery" id="monitor-notify" checked>
+          <span>{{index $.Translations "dashboard.modal.notify_recovery_checkbox"}}</span>
+        </label>
+      </div>
+    </details>
+
+    <div class="modal-actions">
+      <button class="button button-secondary" type="button" id="monitor-cancel">{{index $.Translations "dashboard.modal.cancel_button"}}</button>
+      <button class="button" type="submit">{{index $.Translations "dashboard.modal.save_button"}}</button>
+    </div>
+  </form>
+</dialog>
+{{end}}{{end}}

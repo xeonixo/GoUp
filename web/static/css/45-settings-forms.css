@@ -1,0 +1,257 @@
+.settings-table-card select {
+  min-height: 2.35rem;
+  border-radius: 9px;
+}
+
+.settings-table-card .compact-form {
+  min-width: min(560px, calc(100vw - 4rem));
+}
+
+.settings-table-card tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+textarea {
+  border: 1px solid var(--border);
+  background: rgba(var(--rgb-bg-deep), 0.9);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 0.8rem 0.9rem;
+  font: inherit;
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.input-compact {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.9rem;
+  border-radius: 8px;
+  width: 100%;
+  min-width: 120px;
+}
+
+.input-narrow {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.9rem;
+  border-radius: 8px;
+  width: 5rem;
+}
+
+.import-preview-table-wrap {
+  overflow-x: auto;
+}
+
+.import-preview-table-wrap .admin-table td {
+  vertical-align: middle;
+  padding: 0.5rem 0.6rem;
+}
+
+.import-preview-table-wrap .admin-table th {
+  white-space: nowrap;
+}
+
+@media (max-width: 860px) {
+  .admin-console {
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
+  }
+
+  .admin-console > :not(.admin-console-nav),
+  .admin-console-nav {
+    grid-column: 1;
+  }
+
+  .admin-console-nav {
+    grid-row: auto;
+  }
+
+  .settings-section {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .settings-section > :not(.settings-nav),
+  .settings-nav {
+    grid-column: 1;
+  }
+
+  .settings-nav {
+    grid-row: auto;
+  }
+
+  .admin-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-console-nav {
+    position: static;
+    display: flex;
+    flex-wrap: nowrap;
+    flex-direction: row;
+    gap: 0.35rem;
+    margin: -0.15rem -0.1rem 0;
+    padding: 0.25rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .admin-console-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .admin-console-nav .admin-nav-link {
+    flex: 0 0 auto;
+    min-width: max-content;
+    min-height: 2.2rem;
+    padding: 0.45rem 0.7rem;
+    justify-content: center;
+  }
+
+  .settings-nav {
+    position: static;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.35rem;
+    margin: -0.25rem -0.15rem 0;
+    padding: 0.25rem;
+    border-radius: 10px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .settings-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .settings-nav .admin-nav-link {
+    flex: 0 0 auto;
+    min-width: max-content;
+    min-height: 2.2rem;
+    padding: 0.45rem 0.7rem;
+    white-space: nowrap;
+    justify-content: center;
+  }
+
+  .settings-header {
+    align-items: flex-start;
+    gap: 0.7rem;
+    padding-bottom: 0.65rem;
+  }
+
+  .admin-page-header {
+    align-items: flex-start;
+    gap: 0.7rem;
+  }
+
+  .admin-page-header h1 {
+    font-size: 1.32rem;
+  }
+
+  .admin-page-header .button,
+  .admin-page-header .admin-actions-inline {
+    width: 100%;
+  }
+
+  .admin-page-header .button {
+    justify-content: center;
+  }
+
+  .admin-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-form-grid,
+  .admin-form .inline-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .admin-panel {
+    padding: 0.85rem;
+  }
+
+  .settings-header h1 {
+    font-size: 1.32rem;
+  }
+
+  .settings-header .admin-actions-inline,
+  .settings-header .button {
+    width: 100%;
+  }
+
+  .settings-header .button {
+    justify-content: center;
+  }
+
+  .settings-panel,
+  .settings-table-card {
+    border-radius: 10px;
+  }
+
+  .settings-panel {
+    padding: 0.85rem;
+  }
+
+  .settings-panel-grid {
+    gap: 0.85rem;
+  }
+
+  .settings-panel .inline-grid {
+    gap: 0.75rem;
+  }
+
+  .settings-card-header,
+  .settings-channel-header {
+    gap: 0.75rem;
+  }
+
+  .settings-channel-card,
+  .settings-empty-state {
+    padding: 0.85rem;
+  }
+
+  .settings-table-card .admin-table th,
+  .settings-table-card .admin-table td {
+    padding: 0.75rem 0.8rem;
+  }
+
+  .remote-node-env-card {
+    padding: 0.85rem;
+    border-radius: 10px;
+  }
+
+  .remote-node-env-row {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+
+  .remote-node-create-form {
+    grid-template-columns: 1fr;
+  }
+
+  .remote-node-create-form .inline-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .remote-node-create-form .button,
+  .remote-node-create-form .form-actions {
+    width: 100%;
+  }
+
+  .table-card {
+    overflow-x: auto;
+  }
+  .admin-table {
+    min-width: 760px;
+  }
+
+  .admin-actions-inline .button,
+  .admin-actions-inline .inline-form,
+  .admin-actions-inline button {
+    width: 100%;
+  }
+}
