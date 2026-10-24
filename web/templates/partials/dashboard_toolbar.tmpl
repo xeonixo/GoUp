@@ -1,0 +1,12 @@
+{{define "dashboard_toolbar"}}<div class="board-toolbar" id="board-toolbar" role="search">
+  <input type="search" id="board-search" class="board-search" placeholder="{{index $.Translations "dashboard.filter.search_placeholder"}}" aria-label="{{index $.Translations "dashboard.filter.search_placeholder"}}" autocomplete="off" enterkeyhint="search">
+  <div class="board-status-filter" role="group" aria-label="{{index $.Translations "dashboard.filter.status_aria"}}">
+    <button type="button" class="button button-small" data-status-filter="all" aria-pressed="true">{{index $.Translations "dashboard.filter.all"}}</button>
+    <button type="button" class="button button-small button-secondary" data-status-filter="problems" aria-pressed="false">{{index $.Translations "dashboard.filter.problems"}}</button>
+    <button type="button" class="button button-small button-secondary" data-status-filter="paused" aria-pressed="false">{{index $.Translations "dashboard.filter.paused"}}</button>
+  </div>
+  {{if .IsAdmin}}
+  <button type="button" class="button button-small button-secondary" id="bulk-toggle" aria-pressed="false">{{index $.Translations "dashboard.bulk.select"}}</button>
+  {{end}}
+  <p class="muted compact board-filter-empty" id="board-filter-empty" hidden>{{index $.Translations "dashboard.filter.no_matches"}}</p>
+</div>{{end}}

@@ -1,0 +1,377 @@
+/* ── topbar collapsible & mobile hamburger ─────────────────────────── */
+.topbar-collapsible {
+  display: none;
+  position: absolute;
+  top: calc(100% + 0.2rem);
+  right: 0.9rem;
+  left: auto;
+  min-width: 320px;
+  max-width: min(520px, calc(100vw - 1.8rem));
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.95rem;
+  background: rgba(var(--rgb-bg), 0.98);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 10px 24px rgba(var(--rgb-shadow), 0.38);
+  z-index: 29;
+}
+
+.topbar-collapsible.is-open {
+  display: flex;
+}
+
+.topbar-hamburger {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0.44rem 0.5rem;
+  margin-left: 0;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--primary-solid);
+  color: var(--on-primary);
+  border: 1px solid rgba(var(--rgb-accent), 0.35);
+  cursor: pointer;
+}
+
+.topbar-collapsible .topbar-dashboard-actions {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.6rem;
+  width: 100%;
+}
+
+.topbar-collapsible .live-connection-indicator {
+  align-self: flex-start;
+}
+
+.topbar-collapsible .topbar-trend-range {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.4rem;
+  width: 100%;
+}
+
+.topbar-collapsible .topbar-trend-range .button {
+  text-align: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+.topbar-collapsible #open-create-monitor {
+  width: 100%;
+}
+
+.topbar-collapsible .topbar-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
+  margin-left: 0;
+  padding-left: 0;
+  border-left: none;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  width: 100%;
+}
+
+.topbar-collapsible .user-pill {
+  display: block;
+  margin: 0 0 0.15rem;
+  padding: 0.1rem 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.topbar-collapsible .topbar-icon-link {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 0.65rem;
+  min-height: 0;
+  padding: 0.7rem 0.85rem;
+}
+
+.topbar-collapsible .topbar-icon-link .sr-only {
+  position: static;
+  width: auto;
+  height: auto;
+  padding: 0;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+  border: 0;
+}
+
+.app-version-link {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  margin-left: 0.25rem;
+  white-space: nowrap;
+}
+
+.app-version-link:hover {
+  text-decoration: underline;
+}
+
+.topbar-hamburger:hover {
+  filter: brightness(1.06);
+}
+
+.hamburger-line {
+  display: block;
+  width: 1.05rem;
+  height: 2px;
+  background: currentColor;
+  border-radius: 2px;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.topbar-hamburger[aria-expanded="true"] .hamburger-line:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+
+.topbar-hamburger[aria-expanded="true"] .hamburger-line:nth-child(2) {
+  opacity: 0;
+  transform: scaleX(0);
+}
+
+.topbar-hamburger[aria-expanded="true"] .hamburger-line:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+/* Wide screens: show the topbar actions inline instead of behind the hamburger. */
+@media (min-width: 1100px) {
+  .topbar-hamburger {
+    display: none;
+  }
+
+  .topbar-collapsible,
+  .topbar-collapsible.is-open {
+    display: flex;
+    position: static;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.7rem;
+    min-width: 0;
+    max-width: none;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .topbar-collapsible .topbar-dashboard-actions {
+    flex-direction: row;
+    align-items: center;
+    width: auto;
+  }
+
+  .topbar-collapsible .topbar-trend-range {
+    display: inline-flex;
+    width: auto;
+  }
+
+  .topbar-collapsible .topbar-trend-range .button {
+    min-width: 3rem;
+  }
+
+  .topbar-collapsible #open-create-monitor {
+    width: auto;
+  }
+
+  .topbar-collapsible .topbar-nav {
+    flex-direction: row;
+    align-items: center;
+    width: auto;
+    padding-top: 0;
+    border-top: none;
+    padding-left: 0.7rem;
+    border-left: 1px solid var(--border);
+  }
+
+  .topbar-collapsible .user-pill {
+    margin: 0;
+    padding: 0 0.2rem;
+    font-size: 0.9rem;
+  }
+
+  .topbar-collapsible .topbar-icon-link {
+    width: auto;
+    justify-content: center;
+    min-height: 2.2rem;
+    padding: 0.35rem 0.55rem;
+  }
+
+  .topbar-collapsible .topbar-icon-link .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.brand-logo {
+  width: 92px;
+  height: auto;
+  display: block;
+}
+
+.subtitle {
+  color: var(--text-muted);
+  margin-left: 0.75rem;
+}
+
+.container {
+  max-width: 1560px;
+  margin: 0 auto;
+  padding: 1.4rem 1.1rem 3.2rem;
+}
+
+.stats-grid {
+  margin-bottom: 1.25rem;
+}
+
+.eyebrow {
+  display: inline-block;
+  margin-bottom: 0.65rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--rgb-accent), 0.35);
+  color: var(--primary);
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.stats-grid-wide {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.card {
+  background: rgba(var(--rgb-surface), 0.96);
+  border: 1px solid rgba(var(--rgb-line), 0.28);
+  border-radius: 14px;
+  padding: 1rem;
+  box-shadow: none;
+}
+
+.stat-card {
+  min-height: 0;
+  padding: 0.65rem 0.8rem;
+}
+
+.stat-card h2 {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 0.2rem;
+}
+
+.stat-card .metric {
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+.stat-card-primary {
+  background: rgba(var(--rgb-raised), 0.96);
+}
+
+.stat-card-soft {
+  background: rgba(var(--rgb-raised), 0.96);
+}
+
+.stat-card-incident {
+  border-color: rgba(var(--rgb-bad), 0.4);
+}
+
+.stack > :first-child {
+  margin-top: 0;
+}
+
+.stack > :last-child {
+  margin-bottom: 0;
+}
+
+.narrow {
+  max-width: 460px;
+}
+
+.login-shell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 1rem;
+  padding-top: 1.35rem;
+}
+
+.login-card {
+  width: min(560px, 100%);
+  background: linear-gradient(170deg, rgba(var(--rgb-grad-e), 0.96), rgba(var(--rgb-surface), 0.96));
+  margin-top: 0;
+  padding: 1.35rem 1.2rem 1.1rem;
+}
+
+.login-card.stack {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: var(--text);
+  margin: 0;
+}
+
+.login-brand-logo {
+  width: clamp(170px, 27vw, 240px);
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.login-card h1 {
+  margin: 0;
+  font-size: 1.55rem;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+}
+
+.login-card .eyebrow {
+  margin-bottom: 0.45rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+}

@@ -57,14 +57,25 @@ func sanitizeAssetVersion(raw string) string {
 
 // staticFileHandler serves embedded static assets. Requests carrying the
 // build version (?v=<version>) are immutable and cached for a year; anything
-// else must be revalidated so a deploy is picked up quickly.
+// else must be revalidated so a deploy is picked up quickly. Every file also
+// carries a strong content-hash ETag, so revalidation (e.g. of ES modules
+// imported without ?v=) is answered with a cheap 304. /style.css is served
+// from the bundle of the ordered sources under static/css/.
 func staticFileHandler(fsys fs.FS) http.Handler {
 	files := http.FileServer(http.FS(fsys))
+	etags := &staticETags{fsys: fsys}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("v") == assetVersion() {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		} else {
 			w.Header().Set("Cache-Control", "no-cache")
+		}
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			if r.URL.Path == "/"+stylesheetURLPath {
+				etags.serveStylesheet(w, r)
+				return
+			}
+			etags.setETag(w, r)
 		}
 		files.ServeHTTP(w, r)
 	})

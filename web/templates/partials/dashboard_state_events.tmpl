@@ -1,0 +1,67 @@
+{{define "dashboard_state_events"}}<details id="dashboard-live-state-events" class="card stack notification-events-card dashboard-activity-panel">
+  <summary class="activity-summary">
+    <div>
+      <h2>{{index $.Translations "dashboard.state_events.title"}}</h2>
+      {{if .StateEvents}}<span class="muted">{{index $.Translations "dashboard.events.latest_prefix"}} {{len .StateEvents}} {{index $.Translations "common.entries"}}</span>{{end}}
+    </div>
+    <span class="activity-summary-caret">⌄</span>
+  </summary>
+  {{if .StateEvents}}
+  <div class="state-events-toolbar">
+    <label>
+      <span class="sr-only">{{index $.Translations "dashboard.state_events.search_sr"}}</span>
+      <input type="search" id="state-events-search" placeholder="{{index $.Translations "dashboard.state_events.search_placeholder"}}" autocomplete="off" spellcheck="false">
+    </label>
+    <label>
+      <span class="sr-only">{{index $.Translations "dashboard.state_events.filter_status_sr"}}</span>
+      <select id="state-events-status-filter">
+        <option value="all">{{index $.Translations "dashboard.state_events.status_all"}}</option>
+        <option value="down">DOWN</option>
+        <option value="degraded">DEGRADED</option>
+        <option value="up">UP</option>
+      </select>
+    </label>
+    <label class="checkbox-row">
+      <input type="checkbox" id="state-events-incidents-only">
+      <span>{{index $.Translations "dashboard.state_events.incidents_only"}}</span>
+    </label>
+    <button class="button button-secondary button-small" type="button" id="state-events-export">{{index $.Translations "dashboard.state_events.export_csv"}}</button>
+  </div>
+  <p class="muted compact" id="state-events-filter-status"></p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">{{index $.Translations "dashboard.state_events.time"}}</th>
+          <th scope="col">{{index $.Translations "dashboard.state_events.group"}}</th>
+          <th scope="col">{{index $.Translations "dashboard.state_events.monitor"}}</th>
+          <th scope="col">{{index $.Translations "dashboard.state_events.from"}}</th>
+          <th scope="col">{{index $.Translations "dashboard.state_events.to"}}</th>
+          <th scope="col">{{index $.Translations "dashboard.state_events.details"}}</th>
+        </tr>
+      </thead>
+      <tbody id="state-events-body">
+        {{range .StateEvents}}
+        <tr data-group="{{.Group}}" data-monitor="{{.Monitor}}" data-from="{{.From}}" data-to="{{.To}}" data-message="{{.Message}}" data-when="{{.WhenRaw}}">
+          <td><time class="client-time" datetime="{{.WhenRaw}}" data-format="datetime">{{.When}}</time></td>
+          <td>{{if .Group}}{{.Group}}{{else}}—{{end}}</td>
+          <td>{{.Monitor}}</td>
+          <td><span class="status-pill {{.FromClass}}">{{.From}}</span></td>
+          <td><span class="status-pill {{.ToClass}}">{{.To}}</span></td>
+          <td class="break-all" title="{{.Message}}"><span class="event-message-cell">{{.Message}}</span></td>
+        </tr>
+        {{end}}
+        <tr id="state-events-empty-row" hidden>
+          <td colspan="6" class="muted">{{index $.Translations "dashboard.state_events.empty_filtered"}}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="table-pagination" id="state-events-pagination" hidden></div>
+  <div class="section-footer-link">
+    <a href="{{$.AppBase}}state-events">{{index $.Translations "dashboard.state_events.view_all"}}</a>
+  </div>
+  {{else}}
+  <p class="muted">{{index $.Translations "dashboard.state_events.empty"}}</p>
+  {{end}}
+</details>{{end}}

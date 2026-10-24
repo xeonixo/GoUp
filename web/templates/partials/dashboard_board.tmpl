@@ -1,0 +1,249 @@
+{{define "dashboard_board"}}<section id="dashboard-live-board" class="card stack dashboard-board">
+  {{range .MonitorGroups}}
+  <section class="monitor-group {{.AccentClass}} stack">
+    {{if .Monitors}}
+      <div class="service-group-list">
+        {{range .Services}}
+        {{$serviceTitle := .Title}}
+        <details class="service-cluster" {{if .Open}}open{{end}} {{if $.IsAdmin}}draggable="true"{{end}} data-group="{{.Title}}">
+          <summary class="service-cluster-header">
+            <div class="service-summary">
+              <div class="service-summary-top">
+                <div class="service-cluster-title">
+                  {{if .IconURL}}
+                  <img class="group-icon" src="{{.IconURL}}" alt="{{.Title}} Icon" loading="lazy" referrerpolicy="no-referrer">
+                  {{end}}
+                  <div class="service-title-copy">
+                    <h4>{{.Title}}</h4>
+                    {{if ne .StatusLabel "UP"}}<span>{{.StatusInfo}}</span>{{end}}
+                  </div>
+                </div>
+                <div class="service-summary-right">
+                  <span class="service-count" aria-label="{{printf (index $.Translations "dashboard.group.monitor_count_aria") (len .Monitors)}}">{{len .Monitors}}</span>
+                  <span class="status-pill {{.StatusClass}}">{{if eq .StatusLabel "MAINTENANCE"}}{{index $.Translations "status.maintenance"}}{{else}}{{.StatusLabel}}{{end}}</span>
+                  {{if $.IsAdmin}}
+                  <details class="action-menu">
+                  <summary class="action-menu-trigger" aria-label="{{printf (index $.Translations "dashboard.group.actions_aria") .Title}}">⋯</summary>
+                  <div class="action-menu-list">
+                    <button
+                      class="action-menu-item group-settings"
+                      type="button"
+                      data-group="{{.Title}}"
+                      data-icon-slug="{{.IconSlug}}"
+                      aria-label="{{printf (index $.Translations "dashboard.group.configure_icon_aria") .Title}}">{{index $.Translations "dashboard.group.settings"}}</button>
+                    <form method="post" action="{{$.AppBase}}groups/delete" class="action-menu-form" data-confirm="{{index $.Translations "dashboard.group.delete_confirm"}}">
+                      <input type="hidden" name="group" value="{{.Title}}">
+                      <button class="action-menu-item action-menu-item-danger" type="submit">{{index $.Translations "dashboard.group.delete"}}</button>
+                    </form>
+                  </div>
+                </details>
+                  {{end}}
+                </div>
+              </div>
+              {{if .TrendPoints}}
+              <button
+                class="trend-trigger service-summary-trend"
+                type="button"
+                data-monitor-name="{{.Title}}"
+                data-monitor-kind="{{index $.Translations "dashboard.group.kind_service"}}"
+                data-target="{{.Title}}"
+                data-status="{{.StatusLabel}}"
+                data-uptime="{{.UptimeLabel}}"
+                data-trend-label="{{.TrendLabel}}"
+                data-last-check=""
+                data-last-message="{{.StatusInfo}}"
+                aria-label="{{printf (index $.Translations "dashboard.trend_detail.open_for") .Title}}">
+                <div class="trend-bars" aria-label="{{printf (index $.Translations "dashboard.trend.aria") .TrendLabel}}">
+                  {{range .TrendPoints}}
+                  <span class="trend-bar {{.Class}}" data-bucket="{{.BucketRaw}}" data-label="{{.Label}}" data-format="{{.Format}}" data-checks="{{.Checks}}" data-latency-checks="{{.LatencyChecks}}" data-avg-ms="{{.AvgMS}}" data-min-ms="{{.MinMS}}" data-max-ms="{{.MaxMS}}"></span>
+                  {{end}}
+                </div>
+              </button>
+              {{else}}
+              <p class="muted compact">{{index $.Translations "dashboard.group.no_monitors"}}</p>
+              {{end}}
+            </div>
+          </summary>
+          <div class="monitor-grid">
+      {{range .Monitors}}
+      <article class="card monitor-card {{.StatusClass}}" {{if $.IsAdmin}}draggable="true"{{end}} data-monitor-id="{{.ID}}" data-group="{{$serviceTitle}}" data-interval-seconds="{{.IntervalSeconds}}" data-last-check="{{.LastCheckedAtRaw}}" data-status="{{.StatusClass}}" data-search="{{.Name}} {{.Target}} {{$serviceTitle}} {{.Kind}}">
+        <div class="monitor-card-header">
+          {{if $.IsAdmin}}<input type="checkbox" class="bulk-select" value="{{.ID}}" aria-label="{{printf (index $.Translations "dashboard.bulk.select_aria") .Name}}">{{end}}
+          <div>
+              <h5><a class="monitor-detail-link" href="{{$.AppBase}}monitors/{{.ID}}">{{.Name}}</a></h5>
+            <p class="muted compact">{{.Kind}}{{if .TLSMode}} / {{.TLSMode}}{{end}} · {{index $.Translations "dashboard.monitor.every"}} {{.Interval}} · {{index $.Translations "dashboard.monitor.timeout"}} {{.Timeout}}</p>
+            {{if .Muted}}<span class="muted-badge" title="{{index $.Translations "dashboard.monitor.muted_until"}} {{.MutedUntilLabel}}">🔕 <time class="client-time" datetime="{{.MutedUntilRaw}}" data-format="hour">{{.MutedUntilLabel}}</time></span>{{end}}
+          </div>
+          <div class="monitor-header-right">
+            {{if and $.IsAdmin (ne .ExecutorKind "remote")}}
+            <button
+              class="monitor-cycle-indicator monitor-cycle-trigger"
+              type="button"
+              data-check-monitor-id="{{.ID}}"
+              aria-label="{{printf (index $.Translations "dashboard.monitor.check_now_aria") .Name}}"
+              title="{{index $.Translations "dashboard.monitor.check_now"}}"></button>
+            {{else}}
+            <span class="monitor-cycle-indicator" aria-hidden="true"></span>
+            {{end}}
+            <span class="status-pill {{.StatusClass}}"{{if .InMaintenance}} title="{{.MaintenanceTitle}}"{{end}}>{{if .InMaintenance}}{{index $.Translations "status.maintenance"}}{{else}}{{.StatusLabel}}{{end}}</span>
+            {{if $.IsAdmin}}
+            <details class="action-menu">
+              <summary class="action-menu-trigger" aria-label="{{printf (index $.Translations "dashboard.monitor.actions_aria") .Name}}">⋯</summary>
+              <div class="action-menu-list">
+                <button
+                  class="action-menu-item edit-monitor"
+                  type="button"
+                  data-id="{{.ID}}"
+                  data-name="{{.Name}}"
+                  data-group="{{.Group}}"
+                  data-kind="{{.KindValue}}"
+                  data-tls-mode="{{.TLSModeValue}}"
+                  data-target="{{.Target}}"
+                  data-executor="{{.ExecutorValue}}"
+                  data-interval="{{.IntervalSeconds}}"
+                  data-timeout="{{.TimeoutSeconds}}"
+                  data-enabled="{{if .Enabled}}1{{else}}0{{end}}"
+                  data-notify-on-recovery="{{if .NotifyOnRecovery}}1{{else}}0{{end}}"
+                  data-retry-count="{{.RetryCount}}"
+                  data-retry-interval="{{.RetryIntervalSeconds}}"
+                  data-expected-status="{{.ExpectedStatus}}"
+                  data-expected-text="{{.ExpectedText}}"
+                  data-confirm-after="{{.ConfirmAfter}}"
+                  data-remind-every="{{.RemindEveryMinutes}}"
+                  data-cert-warning-days="{{.CertWarningDays}}">
+                  {{index $.Translations "common.edit"}}
+                </button>
+                <button class="action-menu-item clone-monitor" type="button">{{index $.Translations "dashboard.monitor.clone"}}</button>
+                <form method="post" action="{{$.AppBase}}monitors/reorder" class="action-menu-form js-async-action">
+                  <input type="hidden" name="id" value="{{.ID}}">
+                  <input type="hidden" name="group" value="{{$serviceTitle}}">
+                  <input type="hidden" name="direction" value="up">
+                  <input type="hidden" name="trend" value="{{$.TrendValue}}">
+                  <button class="action-menu-item" type="submit">{{index $.Translations "dashboard.monitor.move_up"}}</button>
+                </form>
+                <form method="post" action="{{$.AppBase}}monitors/reorder" class="action-menu-form js-async-action">
+                  <input type="hidden" name="id" value="{{.ID}}">
+                  <input type="hidden" name="group" value="{{$serviceTitle}}">
+                  <input type="hidden" name="direction" value="down">
+                  <input type="hidden" name="trend" value="{{$.TrendValue}}">
+                  <button class="action-menu-item" type="submit">{{index $.Translations "dashboard.monitor.move_down"}}</button>
+                </form>
+                {{if .Muted}}
+                <form method="post" action="{{$.AppBase}}monitors/bulk" class="action-menu-form js-async-action">
+                  <input type="hidden" name="id" value="{{.ID}}">
+                  <input type="hidden" name="action" value="unmute">
+                  <button class="action-menu-item" type="submit">{{index $.Translations "dashboard.monitor.unmute"}}</button>
+                </form>
+                {{else}}
+                <form method="post" action="{{$.AppBase}}monitors/bulk" class="action-menu-form js-async-action action-menu-mute">
+                  <input type="hidden" name="id" value="{{.ID}}">
+                  <span class="action-menu-label">{{index $.Translations "dashboard.monitor.mute"}}</span>
+                  <button class="action-menu-chip" type="submit" name="action" value="mute_1h">1h</button>
+                  <button class="action-menu-chip" type="submit" name="action" value="mute_8h">8h</button>
+                  <button class="action-menu-chip" type="submit" name="action" value="mute_24h">24h</button>
+                </form>
+                {{end}}
+                <form method="post" action="{{$.AppBase}}monitors/bulk" class="action-menu-form js-async-action">
+                  <input type="hidden" name="id" value="{{.ID}}">
+                  <button class="action-menu-item" type="submit" name="action" value="maintenance_1h">{{index $.Translations "dashboard.monitor.maintenance_1h"}}</button>
+                </form>
+                <a href="{{$.AppBase}}monitors/export?id={{.ID}}" class="action-menu-item">{{index $.Translations "dashboard.monitor.export"}}</a>
+                <form method="post" action="{{$.AppBase}}monitors/enabled" class="action-menu-form js-async-action">
+                  <input type="hidden" name="id" value="{{.ID}}">
+                  <input type="hidden" name="enabled" value="{{if .Enabled}}0{{else}}1{{end}}">
+                  <button class="action-menu-item" type="submit">{{if .Enabled}}{{index $.Translations "dashboard.monitor.pause"}}{{else}}{{index $.Translations "dashboard.monitor.enable"}}{{end}}</button>
+                </form>
+                <form method="post" action="{{$.AppBase}}monitors/delete" class="action-menu-form js-async-action" data-confirm="{{index $.Translations "dashboard.monitor.delete_confirm"}}">
+                  <input type="hidden" name="id" value="{{.ID}}">
+                  <button class="action-menu-item action-menu-item-danger" type="submit">{{index $.Translations "common.delete"}}</button>
+                </form>
+              </div>
+            </details>
+            {{end}}
+          </div>
+        </div>
+
+        <button
+          class="trend-trigger monitor-summary-trend"
+          type="button"
+          data-monitor-id="{{.ID}}"
+          data-monitor-name="{{.Name}}"
+          data-monitor-kind="{{.Kind}}"
+          data-target="{{.TargetLabel}}"
+          data-status="{{.StatusLabel}}"
+          data-uptime="{{.UptimeLabel}}"
+          data-trend-label="{{.TrendLabel}}"
+          data-last-check="{{.LastCheckedAtRaw}}"
+          data-last-message="{{.LastMessage}}"
+          aria-label="{{printf (index $.Translations "dashboard.trend_detail.open_for") .Name}}">
+          <div class="trend-bars" aria-label="{{printf (index $.Translations "dashboard.trend.aria") .TrendLabel}}">
+            {{range .TrendPoints}}
+            <span class="trend-bar {{.Class}}" data-bucket="{{.BucketRaw}}" data-label="{{.Label}}" data-format="{{.Format}}" data-checks="{{.Checks}}" data-latency-checks="{{.LatencyChecks}}" data-avg-ms="{{.AvgMS}}" data-min-ms="{{.MinMS}}" data-max-ms="{{.MaxMS}}"></span>
+            {{end}}
+          </div>
+        </button>
+
+        <div class="monitor-card-body stack compact-stack">
+          <div class="monitor-card-main">
+            <div class="info-row monitor-target-row">
+              <span class="muted">{{index $.Translations "dashboard.modal.target_label"}}</span>
+              <strong class="break-all">{{.TargetLabel}}</strong>
+            </div>
+            <div class="monitor-diagnostics {{.StatusClass}}">
+              <span class="muted">{{index $.Translations "common.status"}}</span>
+              <strong title="{{.StatusSummary}}">{{.StatusSummary}}</strong>
+            </div>
+          </div>
+          {{if $.HasRemoteNodes}}
+          <div class="info-row">
+            <span class="muted">{{index $.Translations "dashboard.monitor.executor"}}</span>
+            <strong>{{.ExecutorLabel}}</strong>
+          </div>
+          {{end}}
+
+          <div class="monitor-metrics">
+            <div class="monitor-metric">
+              <span class="muted">{{index $.Translations "dashboard.trend_detail.latency"}}</span>
+              <strong>{{if .LastLatency}}{{.LastLatency}}{{else}}—{{end}}</strong>
+            </div>
+            <div class="monitor-metric">
+              <span class="muted">{{index $.Translations "dashboard.monitor.result"}}</span>
+              <strong>{{if eq .KindValue "https"}}{{if .HTTPStatusCode}}HTTP {{.HTTPStatusCode}}{{else}}{{if .InMaintenance}}{{index $.Translations "status.maintenance"}}{{else}}{{.StatusLabel}}{{end}}{{end}}{{else}}{{if .InMaintenance}}{{index $.Translations "status.maintenance"}}{{else}}{{.StatusLabel}}{{end}}{{end}}</strong>
+            </div>
+            <div class="monitor-metric">
+              <span class="muted">{{index $.Translations "dashboard.trend_detail.last_check"}}</span>
+              <strong>{{if .LastCheckedAtRaw}}<time class="client-time" datetime="{{.LastCheckedAtRaw}}" data-format="relative-age">{{.LastCheckedAt}}</time>{{else}}—{{end}}</strong>
+            </div>
+            {{if eq .KindValue "https" "tcp" "smtp" "imap"}}
+            <div class="monitor-metric">
+              <span class="muted">{{index $.Translations "dashboard.monitor.certificate"}}</span>
+              <strong>{{if .TLSNotAfterRaw}}<time class="client-time" datetime="{{.TLSNotAfterRaw}}" data-format="minute">{{.TLSNotAfter}}</time>{{else}}—{{end}}</strong>
+              {{if .TLSDaysRemaining}}<span class="muted compact">{{.TLSDaysRemaining}} {{index $.Translations "dashboard.monitor.remaining"}}</span>{{end}}
+            </div>
+            {{else if eq .KindValue "whois"}}
+            <div class="monitor-metric">
+              <span class="muted">{{index $.Translations "dashboard.monitor.domain_expiry"}}</span>
+              <strong>{{if .TLSNotAfterRaw}}<time class="client-time" datetime="{{.TLSNotAfterRaw}}" data-format="minute">{{.TLSNotAfter}}</time>{{else}}—{{end}}</strong>
+              {{if .TLSDaysRemaining}}<span class="muted compact">{{.TLSDaysRemaining}} {{index $.Translations "dashboard.monitor.remaining"}}</span>{{end}}
+            </div>
+            {{else}}
+            <div class="monitor-metric">
+              <span class="muted">{{index $.Translations "dashboard.monitor.kind"}}</span>
+              <strong>{{.Kind}}{{if .TLSMode}} · {{.TLSMode}}{{end}}</strong>
+            </div>
+            {{end}}
+          </div>
+
+        </div>
+      </article>
+      {{end}}
+          </div>
+        </details>
+        {{end}}
+    </div>
+    {{else}}
+    <p class="muted">{{.EmptyText}}</p>
+    {{end}}
+  </section>
+  {{end}}
+</section>{{end}}

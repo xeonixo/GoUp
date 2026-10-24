@@ -1,0 +1,376 @@
+.monitor-detail-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.monitor-detail-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.monitor-detail-status .muted-badge {
+  white-space: normal;
+}
+
+.monitor-detail-uptime {
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+}
+
+.monitor-detail {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.uptime-good .metric {
+  color: var(--success);
+}
+
+.uptime-warn .metric {
+  color: var(--star);
+}
+
+.uptime-bad .metric {
+  color: var(--danger);
+}
+
+.monitor-card-header .muted-badge {
+  margin-top: 0.35rem;
+}
+
+.detail-day-bars {
+  display: grid;
+  grid-template-columns: repeat(90, minmax(0, 1fr));
+  gap: 2px;
+  min-width: 0;
+}
+
+@media (max-width: 600px) {
+  .detail-day-bars {
+    gap: 1px;
+  }
+}
+
+.detail-day-bars .trend-bar {
+  height: 2rem;
+  min-width: 0;
+}
+
+.detail-latency-chart {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem;
+  height: 180px;
+}
+
+.detail-latency-chart svg {
+  width: 100%;
+  height: 100%;
+  border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-latency-line {
+  stroke: var(--primary-solid);
+  stroke-width: 2;
+}
+
+.detail-latency-axis-y {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+.detail-latency-axis-x {
+  display: flex;
+  justify-content: space-between;
+  padding-left: 3.5rem;
+}
+
+.detail-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.4rem 1rem;
+  margin: 0;
+}
+
+.detail-facts dt {
+  color: var(--text-muted);
+}
+
+.detail-facts dd {
+  margin: 0;
+}
+
+@media (max-width: 600px) {
+  .detail-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-facts dd {
+    margin-bottom: 0.4rem;
+  }
+
+  .detail-latency-axis-x {
+    padding-left: 0;
+  }
+}
+
+/* ── Phase 5: accessibility, touch, status glyphs, skeletons ─────────── */
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+a,
+button,
+summary,
+select,
+label,
+input[type="checkbox"],
+input[type="radio"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(var(--rgb-accent), 0.18);
+}
+
+.skip-link {
+  position: absolute;
+  left: 0.75rem;
+  top: -4rem;
+  z-index: 1000;
+  padding: 0.7rem 1rem;
+  border-radius: 10px;
+  background: var(--primary-solid);
+  color: var(--on-primary);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  top: max(0.75rem, env(safe-area-inset-top));
+}
+
+main:focus {
+  outline: none;
+}
+
+/* Status glyphs: shape in addition to color (colorblind friendly). */
+.status-pill::before,
+.history-status-badge::before {
+  margin-right: 0.38em;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.status-pill.status-UP::before,
+.history-status-badge.status-UP::before {
+  content: "\2713";
+}
+
+.status-pill.status-DEGRADED::before,
+.history-status-badge.status-DEGRADED::before {
+  content: "\25B2";
+  font-size: 0.85em;
+}
+
+.status-pill.status-DOWN::before,
+.history-status-badge.status-DOWN::before {
+  content: "\2715";
+}
+
+.status-pill.status-UNKNOWN::before,
+.history-status-badge.status-UNKNOWN::before {
+  content: "?";
+}
+
+.status-pill.status-PAUSED::before,
+.history-status-badge.status-PAUSED::before {
+  content: "\23F8\FE0E";
+}
+
+.attention-item.status-DOWN .attention-status-dot {
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
+
+.live-connection-text::before {
+  margin-right: 0.35em;
+  font-weight: 900;
+}
+
+.live-connection-indicator.is-connected .live-connection-text::before {
+  content: "\2713";
+}
+
+.live-connection-indicator.is-connecting .live-connection-text::before {
+  content: "\2026";
+}
+
+.live-connection-indicator.is-disconnected .live-connection-text::before {
+  content: "\2715";
+}
+
+/* Non-color cue for day/trend bars. */
+.trend-degraded {
+  background-image: repeating-linear-gradient(135deg, transparent 0 3px, rgba(var(--rgb-shadow), 0.28) 3px 5px);
+}
+
+.trend-down {
+  background-image: repeating-linear-gradient(90deg, transparent 0 2px, rgba(var(--rgb-shadow), 0.4) 2px 4px);
+}
+
+/* Loading skeleton */
+@keyframes skeleton-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+.skeleton,
+.trend-detail-latency-chart.is-loading .trend-detail-latency-plot {
+  background-color: rgba(var(--rgb-muted), 0.14);
+  background-image: linear-gradient(90deg, transparent 0%, rgba(var(--rgb-muted), 0.22) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s linear infinite;
+}
+
+.skeleton {
+  display: block;
+  border-radius: 8px;
+  min-height: 1rem;
+}
+
+.trend-detail-latency-chart.is-loading .trend-detail-latency-plot > * {
+  visibility: hidden;
+}
+
+/* Tables on narrow screens */
+.table-wrap {
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+
+.monitor-detail .table-wrap table {
+  min-width: 32rem;
+}
+
+/* Former inline styles */
+.import-card {
+  max-width: 720px;
+}
+
+.import-or-divider {
+  text-align: center;
+  margin: 0;
+}
+
+.form-actions-spaced {
+  margin-top: 1rem;
+}
+
+/* Touch devices: no iOS focus-zoom (>=16px inputs) and >=44px targets */
+@media (pointer: coarse), (max-width: 820px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+@media (pointer: coarse) {
+  .button,
+  .topbar-icon-link,
+  .topbar-hamburger,
+  .modal-close-button,
+  .action-menu-trigger,
+  .admin-nav-link,
+  summary.activity-summary {
+    min-height: 44px;
+  }
+
+  .topbar-icon-link,
+  .topbar-hamburger,
+  .modal-close-button {
+    min-width: 44px;
+  }
+
+  .topbar-hamburger {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .button-small,
+  .board-status-filter .button,
+  .bulk-actions .button {
+    min-height: 44px;
+  }
+
+  input[type="checkbox"]:not(.bulk-select),
+  input[type="radio"] {
+    width: 1.375rem;
+    height: 1.375rem;
+  }
+
+  .checkbox-row,
+  .toggle-row {
+    min-height: 44px;
+  }
+
+  .checkbox-row input[type="checkbox"],
+  .settings-panel .checkbox-row input[type="checkbox"],
+  .settings-panel .toggle-row input[type="checkbox"] {
+    width: 1.375rem;
+    height: 1.375rem;
+  }
+}
+
+/* ── PWA: safe areas (notch / home indicator) ─────────────────────────
+   The app runs with viewport-fit=cover and a translucent status bar, so
+   content extends under the system UI. The topbar paints its own background
+   under the status bar and everything else is inset by the safe-area values.
+   env() evaluates to 0 in regular browsers, so desktop layouts are unchanged. */
+.topbar {
+  padding-top: calc(0.45rem + env(safe-area-inset-top));
+  padding-left: max(0.9rem, env(safe-area-inset-left));
+  padding-right: max(0.9rem, env(safe-area-inset-right));
+}
+
+/* Only the dropdown menu below the desktop breakpoint; on wide screens the
+   actions sit inline and must not be capped (see the min-width: 1100px block). */
+@media (max-width: 1099px) {
+  .topbar-collapsible {
+    right: max(0.9rem, env(safe-area-inset-right));
+    max-width: min(520px, calc(100vw - 1.8rem - env(safe-area-inset-left) - env(safe-area-inset-right)));
+  }
+}
+
+.container {
+  padding-left: max(1.1rem, env(safe-area-inset-left));
+  padding-right: max(1.1rem, env(safe-area-inset-right));
+  padding-bottom: calc(3.2rem + env(safe-area-inset-bottom));
+}
+
+/* Sticky navs sit below the (taller) topbar. */
+.admin-console-nav {
+  top: calc(3.55rem + env(safe-area-inset-top));
+}
+
+.settings-nav {
+  top: calc(3.1rem + 0.65rem + env(safe-area-inset-top));
+}
+
+.bulk-bar {
+  bottom: calc(0.75rem + env(safe-area-inset-bottom));
+}
+
+.board-toast {
+  bottom: calc(1.2rem + env(safe-area-inset-bottom));
+  max-width: calc(100vw - 2rem - env(safe-area-inset-left) - env(safe-area-inset-right));
+}

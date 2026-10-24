@@ -1,0 +1,38 @@
+{{define "dashboard_stats"}}<section id="dashboard-live-stats" class="stats-grid stats-grid-wide">
+  <article class="card stat-card stat-card-primary">
+    <h2>{{index $.Translations "dashboard.stats.monitors_title"}}</h2>
+    <div class="metric">{{.Stats.MonitorCount}}</div>
+  </article>
+  <article class="card stat-card">
+    <h2>{{index $.Translations "dashboard.stats.active_title"}}</h2>
+    <div class="metric">{{.Stats.EnabledMonitorCount}}</div>
+  </article>
+  <article class="card stat-card {{if gt .Stats.OpenIncidentCount 0}}stat-card-incident{{end}}">
+    <h2>{{index $.Translations "dashboard.stats.incidents_title"}}</h2>
+    <div class="metric {{if gt .Stats.OpenIncidentCount 0}}metric-danger{{end}}">{{.Stats.OpenIncidentCount}}</div>
+  </article>
+
+  {{if gt .Stats.OpenIncidentCount 0}}
+  <article class="attention-panel card">
+    <div class="attention-panel-header">
+      <h2>{{index $.Translations "dashboard.attention.title"}}</h2>
+    </div>
+    <div class="attention-list">
+      {{range .MonitorGroups}}
+      {{range .Services}}
+      {{if ne .StatusLabel "UP"}}
+      <div class="attention-item {{.StatusClass}}">
+        <span class="attention-status-dot" aria-hidden="true"></span>
+        <span class="attention-item-main">
+          <strong>{{.Title}}</strong>
+          <span>{{.StatusInfo}}</span>
+        </span>
+        <span class="attention-item-meta">{{len .Monitors}} · {{.StatusLabel}}</span>
+      </div>
+      {{end}}
+      {{end}}
+      {{end}}
+    </div>
+  </article>
+  {{end}}
+</section>{{end}}

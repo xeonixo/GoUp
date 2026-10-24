@@ -1,0 +1,371 @@
+.trend-detail-modal {
+  max-height: calc(100vh - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+}
+
+@media (max-width: 640px) {
+  .topbar-collapsible {
+    left: 0;
+    right: 0;
+    max-width: none;
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    /* Long menus must stay reachable on small screens. */
+    max-height: calc(100dvh - 100% - env(safe-area-inset-bottom));
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .topbar {
+    padding-top: calc(0.9rem + env(safe-area-inset-top));
+    padding-bottom: 0.9rem;
+    padding-left: max(0.9rem, env(safe-area-inset-left));
+    padding-right: max(0.9rem, env(safe-area-inset-right));
+  }
+
+  .container {
+    padding-left: max(0.9rem, env(safe-area-inset-left));
+    padding-right: max(0.9rem, env(safe-area-inset-right));
+    padding-bottom: calc(3rem + env(safe-area-inset-bottom));
+  }
+
+  /* Full-screen modal: keep controls out of the notch and home indicator. */
+  .monitor-modal {
+    padding-top: calc(1rem + env(safe-area-inset-top));
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+
+  .trend-detail-modal {
+    max-height: calc(100vh - 1rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+}
+
+.login-shell {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* ── PWA: refresh button, back link, external-link indicator ─────────── */
+.topbar-refresh {
+  display: none;
+  flex-shrink: 0;
+  cursor: pointer;
+  font-size: 1.1rem;
+}
+
+/* Browsers have their own reload; the button is for the installed app,
+   which has no browser chrome. */
+@media (display-mode: standalone) {
+  .topbar-refresh {
+    display: inline-flex;
+  }
+}
+
+.page-back {
+  margin: 0 0 0.9rem;
+}
+
+.page-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.2rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.page-back-link:hover,
+.page-back-link:focus-visible {
+  color: var(--text);
+}
+
+a[target="_blank"]::after {
+  content: "\2197";
+  display: inline-block;
+  margin-left: 0.2em;
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
+/* Installed app: no rubber-band bounce revealing the page behind the status bar. */
+@media (display-mode: standalone) {
+  html {
+    overscroll-behavior-y: none;
+  }
+}
+
+/* Public status page and status/metrics settings */
+.status-page {
+  display: grid;
+  gap: 1rem;
+  max-width: 48rem;
+  margin: 0 auto;
+}
+
+.status-page-header h1 {
+  margin: 0 0 0.25rem;
+}
+
+.status-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.status-banner-icon::before {
+  font-weight: 900;
+}
+
+.status-banner.is-ok {
+  background: rgba(var(--rgb-ok-bg), 0.9);
+  color: var(--ok-text);
+}
+
+.status-banner.is-ok .status-banner-icon::before {
+  content: "\2713";
+}
+
+.status-banner.is-partial {
+  background: rgba(var(--rgb-warn-bg), 0.9);
+  color: var(--warn-text);
+}
+
+.status-banner.is-partial .status-banner-icon::before {
+  content: "\25B2";
+}
+
+.status-banner.is-down {
+  background: rgba(var(--rgb-bad-bg), 0.9);
+  color: var(--bad-text);
+}
+
+.status-banner.is-down .status-banner-icon::before {
+  content: "\2715";
+}
+
+.status-banner.is-none .status-banner-icon::before {
+  content: "?";
+}
+
+.status-group {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.status-group-title {
+  margin: 0.4rem 0 0;
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+
+.status-item {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.status-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.status-item-name {
+  margin: 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.status-bars {
+  min-width: 0;
+  gap: 1px;
+  grid-auto-columns: minmax(1px, 1fr);
+  height: 1.6rem;
+}
+
+.status-item-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.status-page-footer {
+  text-align: center;
+  font-size: 0.85rem;
+}
+
+.status-admin-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.status-admin-row {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.status-url-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.status-url-row input {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .status-admin-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+  }
+}
+
+/* ── Web Push settings ─────────────────────────────────────────────── */
+.push-panel [hidden] {
+  display: none !important;
+}
+
+.push-status {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--text-soft);
+}
+
+.push-status[data-state="active"] {
+  border-color: var(--success);
+}
+
+.push-status[data-state="warn"] {
+  border-color: var(--warning);
+}
+
+.push-status[data-state="error"] {
+  border-color: var(--danger);
+}
+
+.push-device-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.push-device {
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.push-device-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.push-device-head .button {
+  margin-left: auto;
+}
+
+.push-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin-top: 0.5rem;
+}
+
+/* Maintenance windows: a neutral blue state that is neither healthy nor an outage. */
+.monitor-card.status-MAINTENANCE {
+  border-color: rgba(var(--rgb-accent), 0.34);
+}
+
+.monitor-card.status-MAINTENANCE .monitor-cycle-indicator {
+  border-color: rgba(var(--rgb-accent), 0.3);
+  border-top-color: rgba(var(--rgb-accent), 0.85);
+}
+
+.monitor-diagnostics.status-MAINTENANCE {
+  border-color: rgba(var(--rgb-accent), 0.3);
+  background: rgba(var(--rgb-accent-raised), 0.5);
+}
+
+.status-pill.status-MAINTENANCE,
+.history-status-badge.status-MAINTENANCE {
+  background: rgba(var(--rgb-accent), 0.14);
+  color: var(--primary-solid);
+  border-color: rgba(var(--rgb-accent), 0.38);
+}
+
+.status-pill.status-MAINTENANCE::before,
+.history-status-badge.status-MAINTENANCE::before {
+  content: "\1F527";
+  font-size: 0.85em;
+}
+
+.attention-item.status-MAINTENANCE .attention-status-dot {
+  background: var(--primary-solid);
+  box-shadow: 0 0 0 3px rgba(var(--rgb-accent), 0.14);
+}
+
+.status-banner.is-maintenance {
+  background: rgba(var(--rgb-accent-raised), 0.9);
+  color: var(--text);
+}
+
+.status-banner.is-maintenance .status-banner-icon::before {
+  content: "\1F527";
+}
+
+.maintenance-state {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.maintenance-state-active {
+  background: rgba(var(--rgb-accent), 0.14);
+  border-color: rgba(var(--rgb-accent), 0.38);
+  color: var(--primary-solid);
+}
+
+.maintenance-state-past {
+  color: var(--text-muted);
+}
+
+#maintenance-form fieldset {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.6rem 0.8rem;
+  margin: 0;
+}
+
+#maintenance-form fieldset[hidden] {
+  display: none;
+}
+
+.table-actions {
+  white-space: nowrap;
+}
