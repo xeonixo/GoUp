@@ -275,7 +275,7 @@ func TestShortLocalPasswordsRejected(t *testing.T) {
 
 func TestProviderPolicy(t *testing.T) {
 	yes, no := true, false
-	p := AuthProvider{AllowedEmailDomains: "Example.com, @corp.test", AllowedGroups: "goup-users"}
+	p := AuthProvider{AllowedEmailDomains: "Example.com, @corp.test", AllowedGroups: "goup-users", RequireEmailVerified: true}
 	cases := []struct {
 		name   string
 		claims OIDCClaims
@@ -299,8 +299,21 @@ func TestProviderPolicy(t *testing.T) {
 	if err := open.CheckOIDCAccess(OIDCClaims{Email: "x@y.z"}); err != nil {
 		t.Errorf("no policy and no claim must pass: %v", err)
 	}
-	if err := open.CheckOIDCAccess(OIDCClaims{Email: "x@y.z", EmailVerified: &no}); err == nil {
-		t.Errorf("explicit email_verified=false must be rejected")
+	// Authentik sends email_verified=false by default; that must not block
+	// logins unless the provider requires verified emails.
+	if err := open.CheckOIDCAccess(OIDCClaims{Email: "x@y.z", EmailVerified: &no}); err != nil {
+		t.Errorf("email_verified=false without requirement must pass: %v", err)
+	}
+	domainOnly := AuthProvider{AllowedEmailDomains: "example.com"}
+	if err := domainOnly.CheckOIDCAccess(OIDCClaims{Email: "a@example.com", EmailVerified: &no}); err != nil {
+		t.Errorf("domain policy without verification requirement must pass: %v", err)
+	}
+	if err := domainOnly.CheckOIDCAccess(OIDCClaims{Email: "a@evil.test", EmailVerified: &yes}); err == nil {
+		t.Errorf("wrong domain must be rejected")
+	}
+	strict := AuthProvider{RequireEmailVerified: true}
+	if err := strict.CheckOIDCAccess(OIDCClaims{Email: "x@y.z"}); err == nil {
+		t.Errorf("missing claim must be rejected when verification is required")
 	}
 }
 

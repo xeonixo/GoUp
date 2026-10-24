@@ -129,7 +129,7 @@ func (s *Server) handleSettingsProviderSave(w http.ResponseWriter, r *http.Reque
 
 	_, err := s.controlStore.UpsertAuthProvider(r.Context(), user.TenantID, providerKey, "oidc", displayName, issuerURL, clientID)
 	if err == nil {
-		err = s.controlStore.UpdateAuthProviderPolicy(r.Context(), user.TenantID, providerKey, r.FormValue("default_role"), r.FormValue("allowed_email_domains"), r.FormValue("allowed_groups"))
+		err = s.controlStore.UpdateAuthProviderPolicy(r.Context(), user.TenantID, providerKey, r.FormValue("default_role"), r.FormValue("allowed_email_domains"), r.FormValue("allowed_groups"), r.FormValue("require_email_verified") != "")
 	}
 	if err != nil {
 		s.logger.Error("settings upsert auth provider failed", "tenant_id", user.TenantID, "error", err)

@@ -139,6 +139,9 @@ type AuthProvider struct {
 	DefaultRole         string // role granted to newly provisioned members ("viewer" or "admin")
 	AllowedEmailDomains string // comma/newline separated; empty = any
 	AllowedGroups       string // comma/newline separated; empty = any (matched against the "groups" claim)
+	// RequireEmailVerified rejects identities whose email_verified claim is not true.
+	// Off by default because several IdPs (e.g. Authentik) send email_verified=false.
+	RequireEmailVerified bool
 }
 
 type LocalUser struct {
@@ -1108,7 +1111,7 @@ SELECT EXISTS(
 
 func (s *ControlPlaneStore) GetAuthProvidersByTenant(ctx context.Context, tenantID int64) ([]AuthProvider, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, tenant_id, provider_key, kind, display_name, issuer_url, client_id, enabled, created_at, updated_at, default_role, allowed_email_domains, allowed_groups
+SELECT id, tenant_id, provider_key, kind, display_name, issuer_url, client_id, enabled, created_at, updated_at, default_role, allowed_email_domains, allowed_groups, require_email_verified
 FROM auth_providers
 WHERE tenant_id = ? AND enabled = 1
 ORDER BY created_at ASC
@@ -1122,7 +1125,7 @@ ORDER BY created_at ASC
 	for rows.Next() {
 		var p AuthProvider
 		var enabled int
-		if err := rows.Scan(&p.ID, &p.TenantID, &p.ProviderKey, &p.Kind, &p.DisplayName, &p.IssuerURL, &p.ClientID, &enabled, &p.CreatedAt, &p.UpdatedAt, &p.DefaultRole, &p.AllowedEmailDomains, &p.AllowedGroups); err != nil {
+		if err := rows.Scan(&p.ID, &p.TenantID, &p.ProviderKey, &p.Kind, &p.DisplayName, &p.IssuerURL, &p.ClientID, &enabled, &p.CreatedAt, &p.UpdatedAt, &p.DefaultRole, &p.AllowedEmailDomains, &p.AllowedGroups, &p.RequireEmailVerified); err != nil {
 			return nil, fmt.Errorf("scan auth provider: %w", err)
 		}
 		p.Enabled = enabled == 1
@@ -1138,7 +1141,7 @@ ORDER BY created_at ASC
 // GetAllAuthProvidersByTenant returns all auth providers (enabled and disabled) for a tenant.
 func (s *ControlPlaneStore) GetAllAuthProvidersByTenant(ctx context.Context, tenantID int64) ([]AuthProvider, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, tenant_id, provider_key, kind, display_name, issuer_url, client_id, enabled, created_at, updated_at, default_role, allowed_email_domains, allowed_groups
+SELECT id, tenant_id, provider_key, kind, display_name, issuer_url, client_id, enabled, created_at, updated_at, default_role, allowed_email_domains, allowed_groups, require_email_verified
 FROM auth_providers
 WHERE tenant_id = ?
 ORDER BY created_at ASC
@@ -1152,7 +1155,7 @@ ORDER BY created_at ASC
 	for rows.Next() {
 		var p AuthProvider
 		var enabled int
-		if err := rows.Scan(&p.ID, &p.TenantID, &p.ProviderKey, &p.Kind, &p.DisplayName, &p.IssuerURL, &p.ClientID, &enabled, &p.CreatedAt, &p.UpdatedAt, &p.DefaultRole, &p.AllowedEmailDomains, &p.AllowedGroups); err != nil {
+		if err := rows.Scan(&p.ID, &p.TenantID, &p.ProviderKey, &p.Kind, &p.DisplayName, &p.IssuerURL, &p.ClientID, &enabled, &p.CreatedAt, &p.UpdatedAt, &p.DefaultRole, &p.AllowedEmailDomains, &p.AllowedGroups, &p.RequireEmailVerified); err != nil {
 			return nil, fmt.Errorf("scan auth provider: %w", err)
 		}
 		p.Enabled = enabled == 1
@@ -1210,10 +1213,10 @@ func (s *ControlPlaneStore) GetAuthProvider(ctx context.Context, tenantID int64,
 	var p AuthProvider
 	var enabled int
 	err := s.db.QueryRowContext(ctx, `
-SELECT id, tenant_id, provider_key, kind, display_name, issuer_url, client_id, enabled, created_at, updated_at, default_role, allowed_email_domains, allowed_groups
+SELECT id, tenant_id, provider_key, kind, display_name, issuer_url, client_id, enabled, created_at, updated_at, default_role, allowed_email_domains, allowed_groups, require_email_verified
 FROM auth_providers
 WHERE tenant_id = ? AND provider_key = ?
-`, tenantID, providerKey).Scan(&p.ID, &p.TenantID, &p.ProviderKey, &p.Kind, &p.DisplayName, &p.IssuerURL, &p.ClientID, &enabled, &p.CreatedAt, &p.UpdatedAt, &p.DefaultRole, &p.AllowedEmailDomains, &p.AllowedGroups)
+`, tenantID, providerKey).Scan(&p.ID, &p.TenantID, &p.ProviderKey, &p.Kind, &p.DisplayName, &p.IssuerURL, &p.ClientID, &enabled, &p.CreatedAt, &p.UpdatedAt, &p.DefaultRole, &p.AllowedEmailDomains, &p.AllowedGroups, &p.RequireEmailVerified)
 	if err != nil {
 		return AuthProvider{}, fmt.Errorf("get auth provider: %w", err)
 	}
@@ -1226,10 +1229,10 @@ func (s *ControlPlaneStore) getAuthProviderByID(ctx context.Context, id int64) (
 	var p AuthProvider
 	var enabled int
 	err := s.db.QueryRowContext(ctx, `
-SELECT id, tenant_id, provider_key, kind, display_name, issuer_url, client_id, enabled, created_at, updated_at, default_role, allowed_email_domains, allowed_groups
+SELECT id, tenant_id, provider_key, kind, display_name, issuer_url, client_id, enabled, created_at, updated_at, default_role, allowed_email_domains, allowed_groups, require_email_verified
 FROM auth_providers
 WHERE id = ?
-`, id).Scan(&p.ID, &p.TenantID, &p.ProviderKey, &p.Kind, &p.DisplayName, &p.IssuerURL, &p.ClientID, &enabled, &p.CreatedAt, &p.UpdatedAt, &p.DefaultRole, &p.AllowedEmailDomains, &p.AllowedGroups)
+`, id).Scan(&p.ID, &p.TenantID, &p.ProviderKey, &p.Kind, &p.DisplayName, &p.IssuerURL, &p.ClientID, &enabled, &p.CreatedAt, &p.UpdatedAt, &p.DefaultRole, &p.AllowedEmailDomains, &p.AllowedGroups, &p.RequireEmailVerified)
 	if err != nil {
 		return AuthProvider{}, fmt.Errorf("get auth provider by id: %w", err)
 	}
@@ -1372,6 +1375,7 @@ CREATE TABLE IF NOT EXISTS auth_providers (
 	default_role TEXT NOT NULL DEFAULT 'viewer',
 	allowed_email_domains TEXT NOT NULL DEFAULT '',
 	allowed_groups TEXT NOT NULL DEFAULT '',
+	require_email_verified INTEGER NOT NULL DEFAULT 0,
 	created_at DATETIME NOT NULL,
 	updated_at DATETIME NOT NULL,
 	UNIQUE(tenant_id, provider_key),
@@ -1520,6 +1524,7 @@ func (s *ControlPlaneStore) ensureAuthProviderPolicyColumns(ctx context.Context)
 		{"default_role", `ALTER TABLE auth_providers ADD COLUMN default_role TEXT NOT NULL DEFAULT 'viewer'`},
 		{"allowed_email_domains", `ALTER TABLE auth_providers ADD COLUMN allowed_email_domains TEXT NOT NULL DEFAULT ''`},
 		{"allowed_groups", `ALTER TABLE auth_providers ADD COLUMN allowed_groups TEXT NOT NULL DEFAULT ''`},
+		{"require_email_verified", `ALTER TABLE auth_providers ADD COLUMN require_email_verified INTEGER NOT NULL DEFAULT 0`},
 	}
 	for _, column := range columns {
 		hasColumn, err := s.tableHasColumn(ctx, "auth_providers", column.name)

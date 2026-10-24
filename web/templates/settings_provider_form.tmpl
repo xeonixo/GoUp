@@ -67,6 +67,11 @@
       <input type="text" id="allowed_groups" name="allowed_groups" value="{{.AdminProvider.AllowedGroups}}" placeholder="goup-users" autocomplete="off">
     </div>
 
+    <label class="checkbox-row">
+      <input type="checkbox" name="require_email_verified" {{if .AdminProvider.RequireEmailVerified}}checked{{end}}>
+      <span>{{index $.Translations "admin.provider_form.require_email_verified_label"}}</span>
+    </label>
+
     <div class="form-note">
       {{index $.Translations "admin.provider_form.policy_note"}}
     </div>
