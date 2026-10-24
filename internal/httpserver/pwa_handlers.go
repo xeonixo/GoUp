@@ -71,7 +71,7 @@ func staticFileHandler(fsys fs.FS) http.Handler {
 			w.Header().Set("Cache-Control", "no-cache")
 		}
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
-			if r.URL.Path == "/"+stylesheetURLPath {
+			if strings.TrimPrefix(r.URL.Path, "/") == stylesheetURLPath {
 				etags.serveStylesheet(w, r)
 				return
 			}

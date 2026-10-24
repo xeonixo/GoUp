@@ -31,9 +31,9 @@ func TestStylesheetBundle(t *testing.T) {
 }
 
 func TestStaticStylesheetServedAsBundle(t *testing.T) {
-	h := staticFileHandler(os.DirFS("../../web/static"))
+	h := http.StripPrefix("/static/", staticFileHandler(os.DirFS("../../web/static")))
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/style.css?v="+assetVersion(), nil))
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/static/style.css?v="+assetVersion(), nil))
 	if rec.Code != http.StatusOK || rec.Body.String() != string(stylesheetBundle()) {
 		t.Fatalf("status = %d, body matches bundle = %v", rec.Code, rec.Body.String() == string(stylesheetBundle()))
 	}
@@ -46,8 +46,8 @@ func TestStaticStylesheetServedAsBundle(t *testing.T) {
 }
 
 func TestStaticETagRevalidation(t *testing.T) {
-	h := staticFileHandler(os.DirFS("../../web/static"))
-	for _, p := range []string{"/theme.js", "/style.css"} {
+	h := http.StripPrefix("/static/", staticFileHandler(os.DirFS("../../web/static")))
+	for _, p := range []string{"/static/theme.js", "/static/style.css"} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, p, nil))
 		tag := rec.Header().Get("ETag")
