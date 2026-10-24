@@ -152,8 +152,6 @@ WHERE access_token_fingerprint = ?
 			&item.UpdatedAt,
 			&item.AgentVersion,
 			&agentVersionSeenAt,
-			&item.AgentVersion,
-			&agentVersionSeenAt,
 			&ciphertext,
 		); err != nil {
 			return RemoteNode{}, fmt.Errorf("scan remote node access candidate: %w", err)
