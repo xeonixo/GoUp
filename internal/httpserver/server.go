@@ -26,7 +26,6 @@ type Dependencies struct {
 	TenantStores   *store.TenantStoreManager
 	DefaultTenant  store.Tenant
 	Sessions       *auth.SessionManager
-	OIDC           *auth.OIDCManager
 }
 
 type Server struct {
@@ -39,7 +38,6 @@ type Server struct {
 	tenantStores        *store.TenantStoreManager
 	defaultTenant       store.Tenant
 	sessions            *auth.SessionManager
-	oidc                *auth.OIDCManager
 	dynamicOIDC         *auth.DynamicOIDCManager
 	templates           map[string]*template.Template
 	appMux              http.Handler
@@ -88,7 +86,6 @@ func New(deps Dependencies) (*Server, error) {
 		tenantStores:        deps.TenantStores,
 		defaultTenant:       deps.DefaultTenant,
 		sessions:            deps.Sessions,
-		oidc:                deps.OIDC,
 		dynamicOIDC:         auth.NewDynamicOIDCManager(deps.Config.AllowPrivateIntegrations),
 		templates:           templates,
 		iconAssets:          make(map[string]dashboardIconAsset),

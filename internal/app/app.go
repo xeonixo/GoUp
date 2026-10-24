@@ -103,18 +103,6 @@ func New(ctx context.Context) (*App, error) {
 
 	sessions := auth.NewSessionManager([]byte(sessionKey), cfg.SecureCookies())
 
-	var oidcManager *auth.OIDCManager
-	if cfg.Auth.Mode == config.AuthModeOIDC && hasGlobalOIDC {
-		oidcManager, err = auth.NewOIDCManager(ctx, cfg)
-		if err != nil {
-			if sqliteStore != nil {
-				sqliteStore.Close()
-			}
-			controlStore.Close()
-			return nil, fmt.Errorf("initialize oidc: %w", err)
-		}
-	}
-
 	tenantStores := store.NewTenantStoreManager(controlStore, defaultTenant, sqliteStore)
 
 	// Build one runner per active tenant that has a database.
@@ -141,7 +129,6 @@ func New(ctx context.Context) (*App, error) {
 		TenantStores:   tenantStores,
 		DefaultTenant:  defaultTenant,
 		Sessions:       sessions,
-		OIDC:           oidcManager,
 	})
 	if err != nil {
 		if sqliteStore != nil {
