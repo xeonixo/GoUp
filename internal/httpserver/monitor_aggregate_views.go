@@ -212,6 +212,7 @@ func monitorGroupingTokens(value string) []string {
 		"dns":        {},
 		"udp":        {},
 		"whois":      {},
+		"heartbeat":  {},
 		"tls":        {},
 		"starttls":   {},
 		"monitor":    {},
@@ -274,6 +275,8 @@ func monitorKindLabel(kind monitor.Kind) string {
 		return "UDP"
 	case monitor.KindWhois:
 		return "WHOIS"
+	case monitor.KindHeartbeat:
+		return "Heartbeat"
 	default:
 		return strings.ToUpper(string(kind))
 	}

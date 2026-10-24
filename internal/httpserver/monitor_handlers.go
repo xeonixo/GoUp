@@ -45,7 +45,12 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Ungültiges Intervall"), http.StatusSeeOther)
 		return
 	}
-	timeoutSeconds, err := strconv.Atoi(strings.TrimSpace(r.FormValue("timeout_seconds")))
+	// Heartbeat monitors use the timeout column as grace period, entered in its own field.
+	timeoutFieldName := "timeout_seconds"
+	if strings.EqualFold(strings.TrimSpace(r.FormValue("kind")), string(monitor.KindHeartbeat)) {
+		timeoutFieldName = "heartbeat_grace_seconds"
+	}
+	timeoutSeconds, err := strconv.Atoi(strings.TrimSpace(r.FormValue(timeoutFieldName)))
 	if err != nil {
 		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Ungültiges Timeout"), http.StatusSeeOther)
 		return
@@ -180,6 +185,9 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 	}
 
 	executorKind, executorRef := parseMonitorExecutorSelection(strings.TrimSpace(r.FormValue("executor")))
+	if kind == monitor.KindHeartbeat {
+		executorKind, executorRef = "local", ""
+	}
 	if executorKind == "remote" {
 		tenantID := tenantIDFromRequest(r)
 		if tenantID <= 0 {
@@ -235,9 +243,14 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = appStore.CreateMonitor(r.Context(), params)
+	createdID, err := appStore.CreateMonitor(r.Context(), params)
 	if err != nil {
 		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	if kind == monitor.KindHeartbeat {
+		// The ping URL only exists now: show it on the detail page right away.
+		http.Redirect(w, r, s.tenantAppBase(r)+"monitors/"+strconv.FormatInt(createdID, 10)+"?notice="+url.QueryEscape(strings.ToUpper(string(kind))+"-Monitor angelegt"), http.StatusSeeOther)
 		return
 	}
 

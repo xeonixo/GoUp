@@ -47,7 +47,7 @@ func (s *Server) handlePrettyTenantPath(w http.ResponseWriter, r *http.Request) 
 	slug := strings.TrimSpace(parts[0])
 
 	// Reserve built-in top-level paths for the main mux.
-	if slug == "admin" || slug == "static" || slug == "healthz" || slug == "auth" || slug == "node" || slug == "assets" || slug == "favicon" || slug == "sw.js" || slug == "offline" {
+	if slug == "admin" || slug == "static" || slug == "healthz" || slug == "auth" || slug == "node" || slug == "hb" || slug == "assets" || slug == "favicon" || slug == "sw.js" || slug == "offline" {
 		return false
 	}
 

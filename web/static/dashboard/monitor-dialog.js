@@ -8,6 +8,7 @@ import {
   udpPortField, useHTTPSField, verifyCertField
 } from './dom.js';
 import { monitorCreateTitleFallback, monitorEditTitleFallback, tr } from './i18n.js';
+import { fillHeartbeat, resetHeartbeat } from './monitor-heartbeat.js';
 import { applyKindRules } from './monitor-kind-rules.js';
 import {
   defaultUDPPortForCheck, normalizeDNSRecordType, normalizeUDPCheck, parseDNSTarget,
@@ -101,6 +102,7 @@ export const openCreate = () => {
   notifyField.checked = true;
   if (retryCountField) retryCountField.value = '0';
   if (retryIntervalField) retryIntervalField.value = '0';
+  resetHeartbeat();
   applyKindRules();
   dialog.showModal();
 };
@@ -346,6 +348,7 @@ export const openEdit = (button) => {
   notifyField.checked = button.dataset.notifyOnRecovery === '1';
   if (retryCountField) retryCountField.value = button.dataset.retryCount || '0';
   if (retryIntervalField) retryIntervalField.value = button.dataset.retryInterval || '0';
+  fillHeartbeat(button);
   applyKindRules();
   dialog.showModal();
 };

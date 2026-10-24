@@ -20,7 +20,7 @@ var reservedTenantSlugs = map[string]struct{}{
 	"node": {}, "admin": {}, "static": {}, "auth": {}, "healthz": {}, "assets": {},
 	"api": {}, "metrics": {}, "status": {}, "sw.js": {}, "manifest": {}, "manifest.json": {},
 	"offline": {}, "favicon": {}, "favicon.ico": {}, "robots.txt": {}, "login": {}, "logout": {},
-	"icons": {}, "health": {}, "ready": {}, "readyz": {}, "livez": {}, "setup": {}, "settings": {},
+	"icons": {}, "health": {}, "ready": {}, "readyz": {}, "livez": {}, "setup": {}, "settings": {}, "hb": {},
 }
 
 // IsReservedTenantSlug reports whether slug collides with an application route.

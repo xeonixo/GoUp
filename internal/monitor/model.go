@@ -17,6 +17,8 @@ const (
 	KindDNS   Kind = "dns"
 	KindUDP   Kind = "udp"
 	KindWhois Kind = "whois"
+	// KindHeartbeat is a push monitor: an external job calls a secret URL; silence means down.
+	KindHeartbeat Kind = "heartbeat"
 )
 
 const (
@@ -69,8 +71,14 @@ type Monitor struct {
 	// pending catch-up marker: once the mute is over the runner compares it with the current
 	// status, sends at most one summary notification and clears it.
 	MuteStartStatus Status
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// HeartbeatToken is the secret in the ping URL of a heartbeat monitor (empty for other kinds).
+	HeartbeatToken string
+	// LastHeartbeatAt is when the latest ping arrived; nil until the first one.
+	LastHeartbeatAt *time.Time
+	// LastHeartbeatFailed marks that the latest ping was a /fail call (the job reported an error).
+	LastHeartbeatFailed bool
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 // ValidRemindEveryMinutes lists the reminder intervals the UI offers (0 = off).
@@ -131,6 +139,19 @@ type Snapshot struct {
 	LastResult *Result
 }
 
+// MaxHeartbeatCheckInterval bounds how often the runner evaluates a heartbeat monitor, so an
+// overdue ping is noticed within about a minute even when the expected period is a day.
+const MaxHeartbeatCheckInterval = time.Minute
+
+// ScheduleInterval is the interval at which the runner evaluates the monitor. It equals
+// Interval except for heartbeat monitors, whose Interval is the expected ping period.
+func (m Monitor) ScheduleInterval() time.Duration {
+	if m.Kind == KindHeartbeat && (m.Interval <= 0 || m.Interval > MaxHeartbeatCheckInterval) {
+		return MaxHeartbeatCheckInterval
+	}
+	return m.Interval
+}
+
 func (s Snapshot) IsDue(now time.Time) bool {
 	if !s.Monitor.Enabled {
 		return false
@@ -141,5 +162,5 @@ func (s Snapshot) IsDue(now time.Time) bool {
 	if s.LastResult == nil {
 		return true
 	}
-	return !s.LastResult.CheckedAt.Add(s.Monitor.Interval).After(now)
+	return !s.LastResult.CheckedAt.Add(s.Monitor.ScheduleInterval()).After(now)
 }

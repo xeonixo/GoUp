@@ -73,6 +73,7 @@ func (s *Server) loadDashboardPageData(r *http.Request, appStore *store.Store, t
 		remoteNodes = nil
 	}
 	monitorViews := buildMonitorViews(snapshots, rollups, now, selectedTrend, buildRemoteNodeNameMap(remoteNodes), appStore.MaintenanceSet(r.Context()))
+	s.applyHeartbeatURLs(r, monitorViews)
 	availableGroups := buildAvailableGroups(groupMetadata)
 	availableGroups = mergeAvailableGroups(availableGroups, monitorViews)
 	remoteNodeViews := buildRemoteNodeViews(remoteNodes, now, s.cfg.BaseURL, nil)

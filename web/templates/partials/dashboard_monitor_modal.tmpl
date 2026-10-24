@@ -18,6 +18,7 @@
         <option value="dns">{{index $.Translations "dashboard.modal.type_dns"}}</option>
         <option value="udp">{{index $.Translations "dashboard.modal.type_udp"}}</option>
         <option value="whois">{{index $.Translations "dashboard.modal.type_whois"}}</option>
+        <option value="heartbeat">{{index $.Translations "dashboard.modal.type_heartbeat"}}</option>
       </select>
     </label>
 
@@ -242,9 +243,38 @@
     </label>
 
     <label>
-      <span>{{index $.Translations "dashboard.modal.interval_seconds_label"}}</span>
+      <span id="monitor-interval-label" data-default-text="{{index $.Translations "dashboard.modal.interval_seconds_label"}}" data-heartbeat-text="{{index $.Translations "dashboard.modal.heartbeat_period_label"}}">{{index $.Translations "dashboard.modal.interval_seconds_label"}}</span>
       <input type="number" name="interval_seconds" id="monitor-interval" min="15" value="60" required>
     </label>
+
+    <small class="muted compact" id="monitor-heartbeat-hint" hidden>{{index $.Translations "dashboard.modal.heartbeat_hint"}}</small>
+
+    <label id="heartbeat-grace-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.heartbeat_grace_label"}}</span>
+      <input type="number" name="heartbeat_grace_seconds" id="monitor-heartbeat-grace" min="0" value="300" inputmode="numeric">
+      <small class="muted compact">{{index $.Translations "dashboard.modal.heartbeat_grace_hint"}}</small>
+    </label>
+
+    <small class="muted compact" id="heartbeat-pending-row" hidden>{{index $.Translations "dashboard.modal.heartbeat_url_after_save"}}</small>
+
+    <div class="stack compact-stack heartbeat-info" id="heartbeat-info-row" hidden>
+      <label>
+        <span>{{index $.Translations "dashboard.modal.heartbeat_url_label"}}</span>
+        <input type="text" id="monitor-heartbeat-url" class="heartbeat-copy-field" readonly autocomplete="off" spellcheck="false">
+      </label>
+      <button class="button button-secondary button-small" type="button" data-action="copy" data-copy-target="monitor-heartbeat-url" data-copied-label="{{index $.Translations "dashboard.modal.heartbeat_copied"}}">{{index $.Translations "dashboard.modal.heartbeat_copy"}}</button>
+      <label>
+        <span>{{index $.Translations "dashboard.modal.heartbeat_curl_label"}}</span>
+        <input type="text" id="monitor-heartbeat-curl" class="heartbeat-copy-field" readonly autocomplete="off" spellcheck="false">
+      </label>
+      <button class="button button-secondary button-small" type="button" data-action="copy" data-copy-target="monitor-heartbeat-curl" data-copied-label="{{index $.Translations "dashboard.modal.heartbeat_copied"}}">{{index $.Translations "dashboard.modal.heartbeat_copy"}}</button>
+      <label>
+        <span>{{index $.Translations "dashboard.modal.heartbeat_curl_fail_label"}}</span>
+        <input type="text" id="monitor-heartbeat-curl-fail" class="heartbeat-copy-field" readonly autocomplete="off" spellcheck="false">
+      </label>
+      <button class="button button-secondary button-small" type="button" data-action="copy" data-copy-target="monitor-heartbeat-curl-fail" data-copied-label="{{index $.Translations "dashboard.modal.heartbeat_copied"}}">{{index $.Translations "dashboard.modal.heartbeat_copy"}}</button>
+      <button class="button button-secondary button-small" type="submit" id="monitor-heartbeat-regenerate" formaction="{{$.AppBase}}monitors/heartbeat/regenerate" formnovalidate data-confirm="{{index $.Translations "dashboard.modal.heartbeat_regenerate_confirm"}}">{{index $.Translations "dashboard.modal.heartbeat_regenerate"}}</button>
+    </div>
 
     <label id="expected-status-row" hidden>
       <span>{{index $.Translations "dashboard.modal.expected_http_status_optional"}}</span>

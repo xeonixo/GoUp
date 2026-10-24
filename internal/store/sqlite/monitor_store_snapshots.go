@@ -57,7 +57,10 @@ SELECT
     r.http_status_code,
     r.tls_valid,
     r.tls_not_after,
-    r.tls_days_remaining
+    r.tls_days_remaining,
+    m.heartbeat_token,
+    m.last_heartbeat_at,
+    m.last_heartbeat_ok
 FROM monitors m
 LEFT JOIN monitor_results r ON r.id = (
     SELECT mr.id
@@ -117,7 +120,10 @@ SELECT
     remind_every_minutes,
     last_alert_at,
     created_at,
-    updated_at
+    updated_at,
+    heartbeat_token,
+    last_heartbeat_at,
+    last_heartbeat_ok
 FROM monitors
 ORDER BY sort_order ASC, id ASC
 `)
@@ -142,6 +148,8 @@ ORDER BY sort_order ASC, id ASC
 			mutedUntil           sql.NullTime
 			muteStartStatus      string
 			lastAlertAt          sql.NullTime
+			heartbeatAt          sql.NullTime
+			heartbeatOK          int
 		)
 
 		if err := rows.Scan(
@@ -170,6 +178,9 @@ ORDER BY sort_order ASC, id ASC
 			&lastAlertAt,
 			&item.Monitor.CreatedAt,
 			&item.Monitor.UpdatedAt,
+			&item.Monitor.HeartbeatToken,
+			&heartbeatAt,
+			&heartbeatOK,
 		); err != nil {
 			return nil, fmt.Errorf("scan monitor fallback: %w", err)
 		}
@@ -177,6 +188,8 @@ ORDER BY sort_order ASC, id ASC
 		item.Monitor.MuteStartStatus = monitor.Status(strings.TrimSpace(muteStartStatus))
 		item.Monitor.ConfirmAfter = normalizeConfirmAfter(item.Monitor.ConfirmAfter)
 		item.Monitor.LastAlertAt = nullableTime(lastAlertAt)
+		item.Monitor.LastHeartbeatAt = nullableTime(heartbeatAt)
+		item.Monitor.LastHeartbeatFailed = heartbeatOK == 0
 
 		item.Monitor.Kind = monitor.Kind(kindRaw)
 		if strings.TrimSpace(item.Monitor.ExecutorKind) == "" {

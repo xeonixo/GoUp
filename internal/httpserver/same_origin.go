@@ -160,6 +160,9 @@ func normalizeRefererOrigin(raw string) string {
 // no browser origin, so they are exempt from the same-origin check. Any other
 // /node/... path (e.g. a tenant called "node") is not.
 func isRemoteNodeAPIPath(path string) bool {
+	if isHeartbeatPath(path) {
+		return true
+	}
 	switch path {
 	case "/node/bootstrap", "/node/poll", "/node/report":
 		return true
