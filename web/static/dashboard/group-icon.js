@@ -58,8 +58,7 @@ const updateGroupIconPreview = () => {
       groupIconPreviewFrame.hidden = false;
     }
     if (groupIconPreview) {
-      // codeql[js/xss-through-dom]: src is a blob: URL from URL.createObjectURL(File); img treats SVG as an image (scripts disabled).
-      groupIconPreview.src = objectURL;
+      groupIconPreview.src = objectURL; // codeql[js/xss-through-dom]: blob: URL from URL.createObjectURL(File), not DOM text; <img> does not execute SVG script.
     }
     if (groupIconSelection) {
       groupIconSelection.textContent = tr('groupIconSelectedUpload', 'Selected: custom uploaded icon');

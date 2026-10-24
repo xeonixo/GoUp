@@ -21,11 +21,16 @@ func sendSMTPMail(cfg store.GlobalSMTPDeliveryConfig, to, subject, body string) 
 	}
 
 	fromEmail := sanitizeEmailHeader(cfg.Settings.FromEmail)
+	fromName := sanitizeEmailHeader(cfg.Settings.FromName)
 	to = sanitizeEmailHeader(to)
 	subject = sanitizeEmailHeader(subject)
+	// Reject residual CR/LF so CodeQL treats the check as a header-injection barrier.
+	if strings.ContainsAny(to+subject+fromEmail+fromName, "\r\n\x00") {
+		return fmt.Errorf("invalid header value")
+	}
 	fromHeader := fromEmail
-	if strings.TrimSpace(cfg.Settings.FromName) != "" {
-		fromHeader = fmt.Sprintf("%s <%s>", sanitizeEmailHeader(cfg.Settings.FromName), fromEmail)
+	if strings.TrimSpace(fromName) != "" {
+		fromHeader = fmt.Sprintf("%s <%s>", fromName, fromEmail)
 	}
 	// Body may intentionally include monitor/user content (already HTML-escaped
 	// at render time). Strip NUL and lone CR so the DATA payload cannot smuggle
@@ -76,8 +81,7 @@ func sendSMTPMail(cfg store.GlobalSMTPDeliveryConfig, to, subject, body string) 
 		if err != nil {
 			return err
 		}
-		// codeql[go/email-injection]: headers are CRLF-sanitized; HTML body is escaped at render and carries intentional monitor status content.
-		if _, err := wc.Write([]byte(msg)); err != nil {
+		if _, err := wc.Write([]byte(msg)); err != nil { // codeql[go/email-injection]: headers CRLF-sanitized+rejected; HTML body escaped at render (intentional monitor status content).
 			_ = wc.Close()
 			return err
 		}
@@ -117,8 +121,7 @@ func sendSMTPMail(cfg store.GlobalSMTPDeliveryConfig, to, subject, body string) 
 		if err != nil {
 			return err
 		}
-		// codeql[go/email-injection]: headers are CRLF-sanitized; HTML body is escaped at render and carries intentional monitor status content.
-		if _, err := wc.Write([]byte(msg)); err != nil {
+		if _, err := wc.Write([]byte(msg)); err != nil { // codeql[go/email-injection]: headers CRLF-sanitized+rejected; HTML body escaped at render (intentional monitor status content).
 			_ = wc.Close()
 			return err
 		}

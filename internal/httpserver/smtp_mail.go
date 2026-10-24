@@ -25,11 +25,16 @@ func sendSMTPMail(cfg store.GlobalSMTPDeliveryConfig, to, subject, body string) 
 	}
 
 	fromEmail := sanitizeEmailHeader(cfg.Settings.FromEmail)
+	fromName := sanitizeEmailHeader(cfg.Settings.FromName)
 	to = sanitizeEmailHeader(to)
 	subject = sanitizeEmailHeader(subject)
+	// Reject residual CR/LF so CodeQL treats the check as a header-injection barrier.
+	if strings.ContainsAny(to+subject+fromEmail+fromName, "\r\n\x00") {
+		return fmt.Errorf("invalid header value")
+	}
 	fromHeader := fromEmail
-	if strings.TrimSpace(cfg.Settings.FromName) != "" {
-		fromHeader = fmt.Sprintf("%s <%s>", sanitizeEmailHeader(cfg.Settings.FromName), fromEmail)
+	if strings.TrimSpace(fromName) != "" {
+		fromHeader = fmt.Sprintf("%s <%s>", fromName, fromEmail)
 	}
 	body = strings.ReplaceAll(strings.ReplaceAll(body, "\x00", ""), "\r\n", "\n")
 	body = strings.ReplaceAll(body, "\r", "\n")
@@ -77,8 +82,7 @@ func sendSMTPMail(cfg store.GlobalSMTPDeliveryConfig, to, subject, body string) 
 		if err != nil {
 			return err
 		}
-		// codeql[go/email-injection]: From/To/Subject are CRLF-sanitized; body is fixed app text or password-reset content with sanitized headers.
-		if _, err := wc.Write([]byte(msg)); err != nil {
+		if _, err := wc.Write([]byte(msg)); err != nil { // codeql[go/email-injection]: headers CRLF-sanitized+rejected; body is app text or reset mail using BaseURL (not Host).
 			_ = wc.Close()
 			return err
 		}
@@ -118,8 +122,7 @@ func sendSMTPMail(cfg store.GlobalSMTPDeliveryConfig, to, subject, body string) 
 		if err != nil {
 			return err
 		}
-		// codeql[go/email-injection]: From/To/Subject are CRLF-sanitized; body is fixed app text or password-reset content with sanitized headers.
-		if _, err := wc.Write([]byte(msg)); err != nil {
+		if _, err := wc.Write([]byte(msg)); err != nil { // codeql[go/email-injection]: headers CRLF-sanitized+rejected; body is app text or reset mail using BaseURL (not Host).
 			_ = wc.Close()
 			return err
 		}
