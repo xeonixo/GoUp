@@ -74,27 +74,6 @@ func buildMonitorGroups(appBase string, monitors []monitorView, metadata []store
 	}
 }
 
-func buildMonitorStatusGroup(title string, subtitle string, emptyText string, accentClass string, monitors []monitorView, groupSortOrder map[string]int, groupIcons map[string]string, totalGroups int, appBase string) monitorGroupView {
-	services := buildMonitorServiceGroups(appBase, monitors, groupSortOrder, groupIcons, totalGroups)
-	serviceHint := "Einzelne Dienste"
-	if len(services) > 1 {
-		serviceHint = strconv.Itoa(len(services)) + " Dienstgruppen"
-	}
-	if len(services) == 1 {
-		serviceHint = "1 Dienstgruppe"
-	}
-	return monitorGroupView{
-		Title:       title,
-		Subtitle:    subtitle,
-		EmptyText:   emptyText,
-		AccentClass: accentClass,
-		Monitors:    monitors,
-		Services:    services,
-		Count:       len(monitors),
-		ServiceHint: serviceHint,
-	}
-}
-
 func buildMonitorServiceGroups(appBase string, monitors []monitorView, groupSortOrder map[string]int, groupIcons map[string]string, totalGroups int) []monitorServiceGroupView {
 	if len(monitors) == 0 && len(groupSortOrder) == 0 {
 		return nil

@@ -7,18 +7,6 @@ import (
 	"strings"
 )
 
-func (s *Server) renderDashboardTemplateFragment(name string, data pageData) (string, error) {
-	tmpl, ok := s.templates["dashboard"]
-	if !ok {
-		return "", fmt.Errorf("dashboard template not found")
-	}
-	var out strings.Builder
-	if err := tmpl.ExecuteTemplate(&out, name, data); err != nil {
-		return "", err
-	}
-	return out.String(), nil
-}
-
 func (s *Server) renderDashboardLiveSnapshotResponse(data pageData) (dashboardLiveSnapshotResponse, error) {
 	tmpl, ok := s.templates["dashboard"]
 	if !ok {
