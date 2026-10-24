@@ -343,8 +343,8 @@ main:focus {
 }
 
 /* Only the dropdown menu below the desktop breakpoint; on wide screens the
-   actions sit inline and must not be capped (see the min-width: 1100px block). */
-@media (max-width: 1099px) {
+   actions sit inline and must not be capped (see the min-width: 1280px block). */
+@media (max-width: 1279px) {
   .topbar-collapsible {
     right: max(0.9rem, env(safe-area-inset-right));
     max-width: min(520px, calc(100vw - 1.8rem - env(safe-area-inset-left) - env(safe-area-inset-right)));

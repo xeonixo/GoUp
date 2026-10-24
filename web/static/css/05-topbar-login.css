@@ -148,7 +148,7 @@
 }
 
 /* Wide screens: show the topbar actions inline instead of behind the hamburger. */
-@media (min-width: 1100px) {
+@media (min-width: 1280px) {
   .topbar-hamburger {
     display: none;
   }
@@ -218,6 +218,13 @@
     margin: -1px;
     overflow: hidden;
     clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  /* Inline actions never wrap; below the breakpoint they move into the menu. */
+  .topbar-collapsible .button,
+  .topbar-collapsible .user-pill,
+  .topbar-main .subtitle {
     white-space: nowrap;
   }
 }
