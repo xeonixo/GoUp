@@ -73,10 +73,6 @@ type Notifier struct {
 	adminOnly    bool
 }
 
-func NewNotifier(client *Client, endpointID int64) *Notifier {
-	return &Notifier{client: client, endpointID: endpointID}
-}
-
 func NewTenantNotifier(controlStore *store.ControlPlaneStore, endpointID int64, tenantID int64) *Notifier {
 	return &Notifier{controlStore: controlStore, endpointID: endpointID, tenantID: tenantID}
 }
