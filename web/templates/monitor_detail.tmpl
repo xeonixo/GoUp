@@ -1,6 +1,8 @@
 {{define "content"}}
 {{with .MonitorDetail}}
 <div class="admin-section monitor-detail">
+  {{if $.Notice}}<div class="notice success">{{$.Notice}}</div>{{end}}
+  {{if $.Error}}<div class="notice error">{{$.Error}}</div>{{end}}
   <nav class="admin-nav card">
     <a href="{{$.AppBase}}" class="admin-nav-link">← {{index $.Translations "settings.nav.dashboard"}}</a>
   </nav>
@@ -15,6 +17,32 @@
       <span class="status-pill {{.Monitor.StatusClass}}"{{if .Monitor.InMaintenance}} title="{{.Monitor.MaintenanceTitle}}"{{end}}>{{if .Monitor.InMaintenance}}{{index $.Translations "status.maintenance"}}{{else}}{{.Monitor.StatusLabel}}{{end}}</span>
     </div>
   </div>
+
+  {{if .Monitor.HeartbeatURL}}
+  <section class="card stack heartbeat-info">
+    <h3>{{index $.Translations "monitor_detail.heartbeat_title"}}</h3>
+    <p class="muted compact">{{index $.Translations "monitor_detail.heartbeat_intro"}}</p>
+    <label>
+      <span>{{index $.Translations "dashboard.modal.heartbeat_url_label"}}</span>
+      <input type="text" id="heartbeat-url" class="heartbeat-copy-field" readonly value="{{.Monitor.HeartbeatURL}}">
+    </label>
+    <button class="button button-secondary button-small" type="button" data-action="copy" data-copy-target="heartbeat-url" data-copied-label="{{index $.Translations "dashboard.modal.heartbeat_copied"}}">{{index $.Translations "dashboard.modal.heartbeat_copy"}}</button>
+    <label>
+      <span>{{index $.Translations "dashboard.modal.heartbeat_curl_label"}}</span>
+      <input type="text" id="heartbeat-curl" class="heartbeat-copy-field" readonly value="{{.Monitor.HeartbeatCurl}}">
+    </label>
+    <button class="button button-secondary button-small" type="button" data-action="copy" data-copy-target="heartbeat-curl" data-copied-label="{{index $.Translations "dashboard.modal.heartbeat_copied"}}">{{index $.Translations "dashboard.modal.heartbeat_copy"}}</button>
+    <label>
+      <span>{{index $.Translations "dashboard.modal.heartbeat_curl_fail_label"}}</span>
+      <input type="text" id="heartbeat-curl-fail" class="heartbeat-copy-field" readonly value="{{.Monitor.HeartbeatCurlFail}}">
+    </label>
+    <button class="button button-secondary button-small" type="button" data-action="copy" data-copy-target="heartbeat-curl-fail" data-copied-label="{{index $.Translations "dashboard.modal.heartbeat_copied"}}">{{index $.Translations "dashboard.modal.heartbeat_copy"}}</button>
+    <form method="post" action="{{$.AppBase}}monitors/heartbeat/regenerate" data-confirm="{{index $.Translations "dashboard.modal.heartbeat_regenerate_confirm"}}">
+      <input type="hidden" name="id" value="{{.Monitor.ID}}">
+      <button class="button button-secondary button-small" type="submit">{{index $.Translations "dashboard.modal.heartbeat_regenerate"}}</button>
+    </form>
+  </section>
+  {{end}}
 
   <section class="stats-grid monitor-detail-uptime">
     {{range .Uptime}}

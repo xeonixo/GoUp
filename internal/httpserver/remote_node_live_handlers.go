@@ -22,6 +22,8 @@ type settingsRemoteNodeLiveNode struct {
 	NodeID        string                            `json:"node_id"`
 	Online        bool                              `json:"online"`
 	LastSeenAtRaw string                            `json:"last_seen_at_raw,omitempty"`
+	AgentVersion  string                            `json:"agent_version,omitempty"`
+	VersionState  string                            `json:"version_state,omitempty"`
 	Events        []settingsRemoteNodeLiveNodeEvent `json:"events,omitempty"`
 }
 
@@ -239,6 +241,8 @@ func (s *Server) loadRemoteNodesLiveSnapshot(ctx context.Context, tenantID int64
 			NodeID:        view.NodeID,
 			Online:        view.Online,
 			LastSeenAtRaw: view.LastSeenAtRaw,
+			AgentVersion:  view.AgentVersion,
+			VersionState:  view.VersionState,
 		}
 		if len(view.Events) > 0 {
 			node.Events = make([]settingsRemoteNodeLiveNodeEvent, 0, len(view.Events))
@@ -273,7 +277,7 @@ func parseAdminRemoteNodesTenantID(r *http.Request) (int64, error) {
 func settingsRemoteNodesLiveSignature(snapshot settingsRemoteNodesLiveSnapshotResponse) string {
 	h := sha256.New()
 	for _, node := range snapshot.Nodes {
-		_, _ = fmt.Fprintf(h, "n:%s|%t|%s\n", strings.TrimSpace(node.NodeID), node.Online, strings.TrimSpace(node.LastSeenAtRaw))
+		_, _ = fmt.Fprintf(h, "n:%s|%t|%s|%s|%s\n", strings.TrimSpace(node.NodeID), node.Online, strings.TrimSpace(node.LastSeenAtRaw), node.AgentVersion, node.VersionState)
 		for _, event := range node.Events {
 			_, _ = fmt.Fprintf(h, "e:%s|%s|%s|%s|%s\n",
 				strings.TrimSpace(event.EventLabel),

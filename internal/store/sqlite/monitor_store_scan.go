@@ -139,6 +139,8 @@ func scanMonitorSnapshot(scanner interface{ Scan(dest ...any) error }) (monitor.
 	var tlsValid sql.NullInt64
 	var tlsNotAfter sql.NullTime
 	var tlsDaysRemaining sql.NullInt64
+	var heartbeatAt sql.NullTime
+	var heartbeatOK int
 
 	if err := scanner.Scan(
 		&item.Monitor.ID,
@@ -175,6 +177,9 @@ func scanMonitorSnapshot(scanner interface{ Scan(dest ...any) error }) (monitor.
 		&tlsValid,
 		&tlsNotAfter,
 		&tlsDaysRemaining,
+		&item.Monitor.HeartbeatToken,
+		&heartbeatAt,
+		&heartbeatOK,
 	); err != nil {
 		return monitor.Snapshot{}, fmt.Errorf("scan monitor snapshot: %w", err)
 	}
@@ -198,6 +203,8 @@ func scanMonitorSnapshot(scanner interface{ Scan(dest ...any) error }) (monitor.
 	item.Monitor.MuteStartStatus = monitor.Status(strings.TrimSpace(muteStartStatus))
 	item.Monitor.ConfirmAfter = normalizeConfirmAfter(item.Monitor.ConfirmAfter)
 	item.Monitor.LastAlertAt = nullableTime(lastAlertAt)
+	item.Monitor.LastHeartbeatAt = nullableTime(heartbeatAt)
+	item.Monitor.LastHeartbeatFailed = heartbeatOK == 0
 	if expectedStatusCode.Valid {
 		value := int(expectedStatusCode.Int64)
 		item.Monitor.ExpectedStatusCode = &value

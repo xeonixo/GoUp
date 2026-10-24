@@ -84,6 +84,12 @@ type monitorView struct {
 	CertWarningDays      int
 	ConfirmAfter         int
 	RemindEveryMinutes   int
+	// HeartbeatToken and HeartbeatURL are only set for heartbeat monitors; the URL is filled in
+	// by applyHeartbeatURLs for admin views.
+	HeartbeatToken    string
+	HeartbeatURL      string
+	HeartbeatCurl     string
+	HeartbeatCurlFail string
 	// InMaintenance is true while a maintenance window covers the (enabled) monitor; the status
 	// then reads MAINTENANCE instead of the real result.
 	InMaintenance    bool
@@ -128,6 +134,7 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 			CertWarningDays:      item.Monitor.EffectiveCertWarningDays(),
 			ConfirmAfter:         max(item.Monitor.ConfirmAfter, 1),
 			RemindEveryMinutes:   item.Monitor.RemindEveryMinutes,
+			HeartbeatToken:       item.Monitor.HeartbeatToken,
 		}
 		if view.Muted {
 			view.MutedUntilRaw = item.Monitor.MutedUntil.UTC().Format(time.RFC3339)

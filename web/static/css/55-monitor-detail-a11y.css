@@ -374,3 +374,15 @@ main:focus {
   bottom: calc(1.2rem + env(safe-area-inset-bottom));
   max-width: calc(100vw - 2rem - env(safe-area-inset-left) - env(safe-area-inset-right));
 }
+
+/* Heartbeat (push) monitors: read-only URL and curl snippets with copy buttons. */
+.heartbeat-info {
+  gap: 0.5rem;
+}
+
+.heartbeat-copy-field {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+}

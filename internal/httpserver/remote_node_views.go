@@ -3,6 +3,7 @@ package httpserver
 import (
 	"fmt"
 	store "goup/internal/store/sqlite"
+	"goup/internal/version"
 	"strings"
 	"time"
 )
@@ -12,6 +13,10 @@ type remoteNodeView struct {
 	Name            string
 	LastSeenAt      string
 	LastSeenAtRaw   string
+	AgentVersion    string
+	ServerVersion   string
+	VersionState    string
+	VersionOutdated bool
 	Online          bool
 	HeartbeatWindow string
 	ProvisionURL    string
@@ -43,7 +48,11 @@ func buildRemoteNodeViews(items []store.RemoteNode, now time.Time, baseURL strin
 			Online:          item.IsOnline(now),
 			HeartbeatWindow: fmt.Sprintf("%ds", item.HeartbeatTimeoutSeconds),
 			ProvisionURL:    bootstrapURL,
+			AgentVersion:    item.AgentVersion,
+			ServerVersion:   version.Version,
+			VersionState:    remoteNodeVersionState(item.AgentVersion, version.Version),
 		}
+		view.VersionOutdated = view.VersionState == remoteNodeVersionOutdated
 		if item.LastSeenAt != nil {
 			view.LastSeenAtRaw = item.LastSeenAt.UTC().Format(time.RFC3339)
 			view.LastSeenAt = view.LastSeenAtRaw

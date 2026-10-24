@@ -304,6 +304,13 @@
     if (idField) {
       idField.value = '';
     }
+    // A clone gets its own heartbeat URL after saving.
+    const heartbeatUrl = document.getElementById('monitor-heartbeat-url');
+    if (heartbeatUrl) {
+      heartbeatUrl.value = '';
+    }
+    document.getElementById('heartbeat-info-row')?.setAttribute('hidden', '');
+    document.getElementById('heartbeat-pending-row')?.toggleAttribute('hidden', document.getElementById('monitor-kind')?.value !== 'heartbeat');
     if (nameField) {
       nameField.value = `${nameField.value} ${i18n.copySuffix || '(copy)'}`.trim();
     }

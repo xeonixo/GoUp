@@ -49,6 +49,10 @@ func (s *Server) routes() (http.Handler, error) {
 	mux.HandleFunc("/node/poll", s.handleRemoteNodePoll)
 	mux.HandleFunc("/node/report", s.handleRemoteNodeReport)
 
+	// Public heartbeat (push monitor) ping endpoints: secret token in the URL, no session.
+	mux.HandleFunc("/hb/{tenantSlug}/{token}", s.handleHeartbeatPing)
+	mux.HandleFunc("/hb/{tenantSlug}/{token}/fail", s.handleHeartbeatFail)
+
 	// Control-plane admin routes (separate access mechanism, no tenant session required)
 	mux.HandleFunc("/admin/setup", s.handleAdminSetup)
 	mux.HandleFunc("/admin/access", s.handleAdminAccess)
@@ -59,6 +63,8 @@ func (s *Server) routes() (http.Handler, error) {
 	mux.Handle("/admin/providers", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminProvidersOverview)))
 	mux.Handle("/admin/users", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminUsersOverview)))
 	mux.Handle("/admin/remote-nodes", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminRemoteNodesOverview)))
+	// System health page (read-only)
+	mux.Handle("/admin/system", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSystem)))
 	mux.Handle("/admin/tenants/new", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantForm)))
 	mux.Handle("/admin/tenants/{id}/edit", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantForm)))
 	mux.Handle("/admin/tenants/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantSave)))
@@ -149,6 +155,7 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/icons/search", s.requireAuth(http.HandlerFunc(s.handleSearchDashboardIcons)))
 	mux.Handle("/icons/render", s.requireAuth(http.HandlerFunc(s.handleRenderIcon)))
 	mux.Handle("/monitors/delete", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleDeleteMonitor))))
+	mux.Handle("/monitors/heartbeat/regenerate", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleRegenerateHeartbeatToken))))
 	mux.Handle("/monitors/enabled", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSetMonitorEnabled))))
 	// Literal /monitors/... routes above are more specific and take precedence over this pattern.
 	mux.Handle("/monitors/{id}", s.requireAuth(http.HandlerFunc(s.handleMonitorDetail)))

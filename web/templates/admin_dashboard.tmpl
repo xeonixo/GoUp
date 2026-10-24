@@ -1,12 +1,6 @@
 {{define "content"}}
 <div class="admin-section admin-console">
-  <nav class="admin-nav admin-console-nav card" aria-label="{{index $.Translations "layout.control_plane"}}">
-    <a href="/admin/" class="admin-nav-link is-active">{{index $.Translations "admin.nav.general"}}</a>
-    <a href="/admin/tenants" class="admin-nav-link">{{index $.Translations "admin.nav.tenants"}}</a>
-    <a href="/admin/providers" class="admin-nav-link">{{index $.Translations "admin.nav.providers"}}</a>
-    <a href="/admin/users" class="admin-nav-link">{{index $.Translations "admin.nav.users"}}</a>
-    <a href="/admin/remote-nodes" class="admin-nav-link">{{index $.Translations "admin.nav.remote_nodes"}}</a>
-  </nav>
+  {{template "admin_nav" .}}
 
   <div class="admin-header admin-page-header">
     <div>

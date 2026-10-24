@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	store "goup/internal/store/sqlite"
+	"goup/internal/version"
 	"net/http"
 	"strings"
 	"time"
@@ -289,6 +290,9 @@ func (s *Server) loadAdminRemoteNodeOverviewRows(ctx context.Context) ([]adminRe
 			Name:            node.Name,
 			Online:          node.IsOnline(now),
 			HeartbeatWindow: fmt.Sprintf("%ds", node.HeartbeatTimeoutSeconds),
+			AgentVersion:    node.AgentVersion,
+			ServerVersion:   version.Version,
+			VersionOutdated: remoteNodeVersionState(node.AgentVersion, version.Version) == remoteNodeVersionOutdated,
 		}
 		if node.LastSeenAt != nil {
 			row.LastSeenAtRaw = node.LastSeenAt.UTC().Format(time.RFC3339)

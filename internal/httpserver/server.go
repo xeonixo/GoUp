@@ -12,6 +12,7 @@ import (
 
 	"goup/internal/auth"
 	"goup/internal/config"
+	"goup/internal/monitor"
 	webpushnotify "goup/internal/notify/webpush"
 	store "goup/internal/store/sqlite"
 	"goup/web"
@@ -26,6 +27,8 @@ type Dependencies struct {
 	TenantStores   *store.TenantStoreManager
 	DefaultTenant  store.Tenant
 	Sessions       *auth.SessionManager
+	// RunnerLookup returns the running monitor runner of a tenant (nil if none); used by the system page.
+	RunnerLookup func(tenantID int64) *monitor.Runner
 }
 
 type Server struct {
@@ -64,6 +67,9 @@ type Server struct {
 	resetLimitMu        sync.Mutex
 	resetAttempts       map[string][]time.Time
 	statusCache         statusPageCache
+	startedAt           time.Time
+	runnerFor           func(tenantID int64) *monitor.Runner
+	memCache            systemMemCache
 }
 
 func New(deps Dependencies) (*Server, error) {
@@ -86,6 +92,8 @@ func New(deps Dependencies) (*Server, error) {
 		tenantStores:        deps.TenantStores,
 		defaultTenant:       deps.DefaultTenant,
 		sessions:            deps.Sessions,
+		startedAt:           time.Now().UTC(),
+		runnerFor:           deps.RunnerLookup,
 		dynamicOIDC:         auth.NewDynamicOIDCManager(deps.Config.AllowPrivateIntegrations),
 		templates:           templates,
 		iconAssets:          make(map[string]dashboardIconAsset),

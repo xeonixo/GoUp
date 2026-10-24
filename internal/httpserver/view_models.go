@@ -52,4 +52,7 @@ type adminRemoteNodeOverviewRow struct {
 	LastSeenAt      string
 	LastSeenAtRaw   string
 	HeartbeatWindow string
+	AgentVersion    string
+	ServerVersion   string
+	VersionOutdated bool
 }

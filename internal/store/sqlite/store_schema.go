@@ -40,6 +40,9 @@ func (s *Store) initSchema(ctx context.Context) error {
 	if err := s.ensurePhase2Indexes(ctx); err != nil {
 		return err
 	}
+	if err := s.ensureHeartbeatColumns(ctx); err != nil {
+		return err
+	}
 	if err := s.ensureStatusPageTables(ctx); err != nil {
 		return err
 	}

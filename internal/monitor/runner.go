@@ -21,6 +21,7 @@ type Runner struct {
 	workerSem         chan struct{}
 	scheduleMu        sync.Mutex
 	schedule          map[int64]*monitorScheduleState
+	stats             runnerStats
 }
 
 type monitorScheduleState struct {
@@ -39,14 +40,15 @@ func NewRunner(logger *slog.Logger, store Store, notifiers ...Notifier) *Runner 
 		workers:           4,
 		schedule:          make(map[int64]*monitorScheduleState),
 		checkers: map[Kind]Checker{
-			KindHTTPS: HTTPSChecker{},
-			KindTCP:   TCPChecker{},
-			KindICMP:  ICMPChecker{},
-			KindSMTP:  SMTPChecker{},
-			KindIMAP:  IMAPChecker{},
-			KindDNS:   DNSChecker{},
-			KindUDP:   UDPChecker{},
-			KindWhois: WhoisChecker{},
+			KindHTTPS:     HTTPSChecker{},
+			KindTCP:       TCPChecker{},
+			KindICMP:      ICMPChecker{},
+			KindSMTP:      SMTPChecker{},
+			KindIMAP:      IMAPChecker{},
+			KindDNS:       DNSChecker{},
+			KindUDP:       UDPChecker{},
+			KindWhois:     WhoisChecker{},
+			KindHeartbeat: HeartbeatChecker{},
 		},
 	}
 	r.workerSem = make(chan struct{}, r.workers)
@@ -82,6 +84,10 @@ func (r *Runner) Run(ctx context.Context) {
 }
 
 func (r *Runner) runDueChecks(ctx context.Context) {
+	loopStartedAt := time.Now()
+	startedBefore := r.stats.startedTotal()
+	defer func() { r.stats.recordLoop(loopStartedAt, time.Since(loopStartedAt)) }()
+
 	snapshots, err := r.store.ListMonitorSnapshots(ctx)
 	if err != nil {
 		r.logger.Error("load monitor snapshots failed", "error", err)
@@ -91,12 +97,14 @@ func (r *Runner) runDueChecks(ctx context.Context) {
 	now := time.Now().UTC()
 	dueSnapshots := r.dueSnapshots(snapshots, now)
 	if len(dueSnapshots) == 0 {
+		r.stats.setBacklog(0)
 		return
 	}
 
 	for _, due := range dueSnapshots {
 		r.dispatchSnapshot(ctx, due)
 	}
+	r.stats.setBacklog(len(dueSnapshots) - int(r.stats.startedTotal()-startedBefore))
 }
 
 type dueSnapshot struct {
@@ -120,7 +128,7 @@ func (r *Runner) dueSnapshots(snapshots []Snapshot, now time.Time) []dueSnapshot
 			continue
 		}
 
-		interval := normalizedMonitorInterval(snapshot.Monitor.Interval)
+		interval := normalizedMonitorInterval(snapshot.Monitor.ScheduleInterval())
 		state := r.schedule[monitorID]
 		if state == nil {
 			state = &monitorScheduleState{
@@ -203,11 +211,14 @@ func (r *Runner) dispatchSnapshot(ctx context.Context, due dueSnapshot) {
 		return
 	}
 	state.inFlight = true
-	state.nextDue = due.dueAt.Add(normalizedMonitorInterval(due.snapshot.Monitor.Interval))
+	state.nextDue = due.dueAt.Add(normalizedMonitorInterval(due.snapshot.Monitor.ScheduleInterval()))
 	r.scheduleMu.Unlock()
 
+	r.stats.checkStarted()
+	checkStartedAt := time.Now()
 	go func() {
 		defer func() {
+			r.stats.checkFinished(time.Now(), time.Since(checkStartedAt))
 			<-r.workerSem
 			r.scheduleMu.Lock()
 			if state := r.schedule[due.snapshot.Monitor.ID]; state != nil {

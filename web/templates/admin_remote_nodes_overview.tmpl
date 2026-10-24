@@ -1,12 +1,6 @@
 {{define "content"}}
 <div class="admin-section admin-console">
-  <nav class="admin-nav admin-console-nav card" aria-label="{{index $.Translations "layout.control_plane"}}">
-    <a href="/admin/" class="admin-nav-link">{{index $.Translations "admin.nav.general"}}</a>
-    <a href="/admin/tenants" class="admin-nav-link">{{index $.Translations "admin.nav.tenants"}}</a>
-    <a href="/admin/providers" class="admin-nav-link">{{index $.Translations "admin.nav.providers"}}</a>
-    <a href="/admin/users" class="admin-nav-link">{{index $.Translations "admin.nav.users"}}</a>
-    <a href="/admin/remote-nodes" class="admin-nav-link is-active">{{index $.Translations "admin.nav.remote_nodes"}}</a>
-  </nav>
+  {{template "admin_nav" .}}
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
@@ -26,6 +20,7 @@
           <th scope="col">{{index $.Translations "admin.remote_nodes.node_id_label"}}</th>
           <th scope="col">{{index $.Translations "admin.remote_nodes.status_label"}}</th>
           <th scope="col">{{index $.Translations "admin.remote_nodes.last_seen_label"}}</th>
+          <th scope="col">{{index $.Translations "admin.remote_nodes.version_label"}}</th>
           <th scope="col">{{index $.Translations "admin.remote_nodes.timeout_label"}}</th>
           <th scope="col">{{index $.Translations "admin.remote_nodes.actions_label"}}</th>
         </tr>
@@ -39,6 +34,7 @@
           <td class="break-all"><code>{{.NodeID}}</code></td>
           <td>{{if .Online}}<span class="status-badge status-badge-success">ONLINE</span>{{else}}<span class="status-badge status-badge-muted">OFFLINE</span>{{end}}</td>
           <td>{{if .LastSeenAtRaw}}<span class="js-relative-age" data-utc="{{.LastSeenAtRaw}}">{{.LastSeenAt}}</span>{{else}}—{{end}}</td>
+          <td>{{if .AgentVersion}}<code>{{.AgentVersion}}</code>{{if .VersionOutdated}} <span class="status-badge status-badge-warning" title="{{printf (index $.Translations "admin.remote_nodes.version_outdated_title") .ServerVersion .AgentVersion}}">{{index $.Translations "admin.remote_nodes.version_outdated"}}</span>{{end}}{{else}}—{{end}}</td>
           <td>{{.HeartbeatWindow}}</td>
           <td class="admin-actions-inline">
             <a href="/admin/tenants/{{.TenantID}}/remote-nodes" class="button button-secondary button-small">{{index $.Translations "admin.users.open_tenant"}}</a>
@@ -47,7 +43,7 @@
         {{end}}
         {{else}}
         <tr>
-          <td colspan="7" class="muted admin-empty-row">{{index $.Translations "admin.remote_nodes.no_remote_nodes"}}</td>
+          <td colspan="8" class="muted admin-empty-row">{{index $.Translations "admin.remote_nodes.no_remote_nodes"}}</td>
         </tr>
         {{end}}
       </tbody>

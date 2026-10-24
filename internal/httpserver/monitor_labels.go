@@ -63,7 +63,7 @@ func normalizeTLSMode(kind monitor.Kind, requested monitor.TLSMode) monitor.TLSM
 			return requested
 		}
 		return monitor.TLSModeNone
-	case monitor.KindDNS, monitor.KindWhois:
+	case monitor.KindDNS, monitor.KindWhois, monitor.KindHeartbeat:
 		return monitor.TLSModeNone
 	default:
 		return requested
@@ -86,6 +86,9 @@ func parseMonitorExecutorSelection(raw string) (executorKind string, executorRef
 }
 
 func monitorTargetLabel(item monitor.Monitor) string {
+	if item.Kind == monitor.KindHeartbeat {
+		return heartbeatSubtitle(item)
+	}
 	if item.Kind == monitor.KindDNS {
 		parsed := monitor.ParseDNSTarget(item.Target)
 		parts := make([]string, 0, 3)
