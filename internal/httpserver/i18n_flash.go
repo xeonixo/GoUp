@@ -139,6 +139,7 @@ var flashMessageTranslationKeys = map[string]string{
 	"WebHook-Secret konnte nicht gespeichert werden":                  "flash.webhook_secret_save_failed",
 	"WebHooks konnten nicht geladen werden":                           "flash.webhooks_load_failed",
 	"Ungültige Importdaten":                                           "flash.import_invalid_data",
+	"Heartbeat-URL neu erzeugt":                                       "flash.heartbeat_regenerated",
 	"Keine Monitore ausgewählt":                                       "flash.no_monitors_selected",
 	"Unbekannte Aktion":                                               "flash.unknown_action",
 }

@@ -40,14 +40,15 @@ func NewRunner(logger *slog.Logger, store Store, notifiers ...Notifier) *Runner 
 		workers:           4,
 		schedule:          make(map[int64]*monitorScheduleState),
 		checkers: map[Kind]Checker{
-			KindHTTPS: HTTPSChecker{},
-			KindTCP:   TCPChecker{},
-			KindICMP:  ICMPChecker{},
-			KindSMTP:  SMTPChecker{},
-			KindIMAP:  IMAPChecker{},
-			KindDNS:   DNSChecker{},
-			KindUDP:   UDPChecker{},
-			KindWhois: WhoisChecker{},
+			KindHTTPS:     HTTPSChecker{},
+			KindTCP:       TCPChecker{},
+			KindICMP:      ICMPChecker{},
+			KindSMTP:      SMTPChecker{},
+			KindIMAP:      IMAPChecker{},
+			KindDNS:       DNSChecker{},
+			KindUDP:       UDPChecker{},
+			KindWhois:     WhoisChecker{},
+			KindHeartbeat: HeartbeatChecker{},
 		},
 	}
 	r.workerSem = make(chan struct{}, r.workers)
@@ -127,7 +128,7 @@ func (r *Runner) dueSnapshots(snapshots []Snapshot, now time.Time) []dueSnapshot
 			continue
 		}
 
-		interval := normalizedMonitorInterval(snapshot.Monitor.Interval)
+		interval := normalizedMonitorInterval(snapshot.Monitor.ScheduleInterval())
 		state := r.schedule[monitorID]
 		if state == nil {
 			state = &monitorScheduleState{
@@ -210,7 +211,7 @@ func (r *Runner) dispatchSnapshot(ctx context.Context, due dueSnapshot) {
 		return
 	}
 	state.inFlight = true
-	state.nextDue = due.dueAt.Add(normalizedMonitorInterval(due.snapshot.Monitor.Interval))
+	state.nextDue = due.dueAt.Add(normalizedMonitorInterval(due.snapshot.Monitor.ScheduleInterval()))
 	r.scheduleMu.Unlock()
 
 	r.stats.checkStarted()

@@ -24,14 +24,26 @@ func validateCreateMonitorParams(params CreateMonitorParams) error {
 	if len([]rune(strings.TrimSpace(params.Group))) > 80 {
 		return errors.New("monitor group must not exceed 80 characters")
 	}
-	if params.Interval < 15*time.Second {
-		return errors.New("interval must be at least 15 seconds")
-	}
-	if params.Timeout < 1*time.Second {
-		return errors.New("timeout must be at least 1 second")
-	}
-	if params.Timeout > params.Interval {
-		return errors.New("timeout must not exceed interval")
+	if params.Kind == monitor.KindHeartbeat {
+		if executorKind != "local" {
+			return errors.New("heartbeat monitors always run on the control plane")
+		}
+		if params.Interval < MinHeartbeatPeriod {
+			return errors.New("heartbeat period must be at least 60 seconds")
+		}
+		if params.Timeout < 0 {
+			return errors.New("heartbeat grace period must not be negative")
+		}
+	} else {
+		if params.Interval < 15*time.Second {
+			return errors.New("interval must be at least 15 seconds")
+		}
+		if params.Timeout < 1*time.Second {
+			return errors.New("timeout must be at least 1 second")
+		}
+		if params.Timeout > params.Interval {
+			return errors.New("timeout must not exceed interval")
+		}
 	}
 	if params.RetryCount < 0 || params.RetryCount > 10 {
 		return errors.New("retry count must be between 0 and 10")
@@ -167,6 +179,13 @@ func validateMonitorKindSettings(kind monitor.Kind, target string, tlsMode monit
 		}
 		if tlsMode != "" && tlsMode != monitor.TLSModeNone {
 			return errors.New("WHOIS monitors do not support TLS mode")
+		}
+	case monitor.KindHeartbeat:
+		if strings.TrimSpace(target) != HeartbeatTarget {
+			return errors.New("heartbeat monitors have no target")
+		}
+		if expectedStatusCode != nil {
+			return errors.New("expected HTTP status is only valid for HTTPS monitors")
 		}
 	default:
 		return fmt.Errorf("unsupported monitor kind %q", kind)

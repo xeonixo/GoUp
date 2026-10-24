@@ -6,6 +6,7 @@ import {
   tcpPortField, tlsModeField, udpCheckField, udpFamilyField, udpHostField, udpPortField,
   useHTTPSField, verifyCertField
 } from './dom.js';
+import { initHeartbeatForm } from './monitor-heartbeat.js';
 import { openCreate } from './monitor-dialog.js';
 import { applyKindRules } from './monitor-kind-rules.js';
 import {
@@ -14,6 +15,7 @@ import {
 } from './monitor-target.js';
 
 export function initMonitorForm() {
+  initHeartbeatForm();
   openCreateButton?.addEventListener('click', openCreate);
   cancelButton?.addEventListener('click', () => dialog?.close());
   monitorCloseButton?.addEventListener('click', () => dialog?.close());

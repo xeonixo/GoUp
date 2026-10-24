@@ -103,6 +103,7 @@ func (s *Server) handleMonitorDetail(w http.ResponseWriter, r *http.Request) {
 	curUser := s.currentUser(r)
 	views := buildMonitorViews([]monitor.Snapshot{*snapshot}, rollups, now, supportedTrendRanges[0], nil, appStore.MaintenanceSet(r.Context()))
 
+	s.applyHeartbeatURLs(r, views)
 	detail := &monitorDetailView{
 		Monitor:   views[0],
 		Uptime:    buildUptimeTiles(rollups, now, translations),
@@ -124,6 +125,8 @@ func (s *Server) handleMonitorDetail(w http.ResponseWriter, r *http.Request) {
 		AppBase:       s.tenantAppBase(r),
 		User:          curUser,
 		IsAdmin:       curUser == nil || strings.EqualFold(strings.TrimSpace(curUser.Role), "admin"),
+		Notice:        localizeFlashMessage(translations, r.URL.Query().Get("notice")),
+		Error:         localizeFlashMessage(translations, r.URL.Query().Get("error")),
 		MonitorDetail: detail,
 	})
 }

@@ -17,6 +17,7 @@ import {
   syncHTTPSFamilyMode, syncICMPFamilyMode, syncMailFamilyMode, syncTCPFamilyMode,
   syncUDPFamilyMode, syncUDPPortSuggestion, syncWhoisTargetDisclaimer
 } from './monitor-family-sync.js';
+import { syncHeartbeatRows } from './monitor-heartbeat.js';
 import { normalizeUDPCheck } from './monitor-target.js';
 
 export const applyKindRules = () => {
@@ -32,6 +33,7 @@ export const applyKindRules = () => {
   const isDNS = kind === 'dns';
   const isUDP = kind === 'udp';
   const isWhois = kind === 'whois';
+  const isHeartbeat = kind === 'heartbeat';
   const udpCheckMode = normalizeUDPCheck(udpCheckField?.value);
   const supportsTCPTLSChecks = isTCPMonitor;
   const isHTTPSEnabled = isHTTPMonitor && String(httpSchemeField?.value || 'https').toLowerCase() !== 'http';
@@ -40,7 +42,7 @@ export const applyKindRules = () => {
   const showExpectedText = isHTTPMonitor || isDNS;
 
   if (targetRow) {
-    targetRow.hidden = isTCPMonitor || isHTTPMonitor || isUDP || isMail || isDNS;
+    targetRow.hidden = isTCPMonitor || isHTTPMonitor || isUDP || isMail || isDNS || isHeartbeat;
   }
   if (httpsTargetRow) {
     httpsTargetRow.hidden = !isHTTPMonitor;
@@ -61,7 +63,7 @@ export const applyKindRules = () => {
     udpTargetRow.hidden = !isUDP;
   }
   if (targetField) {
-    targetField.required = !isTCPMonitor && !isHTTPMonitor && !isUDP && !isMail && !isDNS;
+    targetField.required = !isTCPMonitor && !isHTTPMonitor && !isUDP && !isMail && !isDNS && !isHeartbeat;
   }
   if (httpHostField) {
     httpHostField.required = isHTTPMonitor;
@@ -345,4 +347,5 @@ export const applyKindRules = () => {
   }
 
   syncWhoisTargetDisclaimer();
+  syncHeartbeatRows(isHeartbeat);
 };

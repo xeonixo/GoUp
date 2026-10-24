@@ -40,6 +40,7 @@ type UpdateMonitorParams struct {
 }
 
 func (s *Store) CreateMonitor(ctx context.Context, params CreateMonitorParams) (int64, error) {
+	params = normalizeHeartbeatParams(params)
 	if err := validateCreateMonitorParams(params); err != nil {
 		return 0, err
 	}
@@ -53,14 +54,20 @@ func (s *Store) CreateMonitor(ctx context.Context, params CreateMonitorParams) (
 	if err != nil {
 		return 0, err
 	}
+	heartbeatToken := ""
+	if params.Kind == monitor.KindHeartbeat {
+		if heartbeatToken, err = newHeartbeatToken(); err != nil {
+			return 0, err
+		}
+	}
 	result, err := s.db.ExecContext(ctx, `
 INSERT INTO monitors (
 	name, group_name, sort_order, executor_kind, executor_ref, kind, target, interval_seconds, timeout_seconds, enabled,
     tls_mode, expected_status_code, expected_text, notify_on_recovery,
     retry_count, retry_interval_seconds, cert_warning_days, confirm_after, remind_every_minutes,
-    created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, params.Name, strings.TrimSpace(params.Group), nextSortOrder, executorKind, executorRef, string(params.Kind), params.Target, int(params.Interval.Seconds()), int(params.Timeout.Seconds()), boolToInt(params.Enabled), string(params.TLSMode), params.ExpectedStatusCode, strings.TrimSpace(params.ExpectedText), boolToInt(params.NotifyOnRecovery), params.RetryCount, int(params.RetryInterval.Seconds()), normalizeCertWarningDays(params.CertWarningDays), normalizeConfirmAfter(params.ConfirmAfter), params.RemindEveryMinutes, now, now)
+    created_at, updated_at, heartbeat_token
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, params.Name, strings.TrimSpace(params.Group), nextSortOrder, executorKind, executorRef, string(params.Kind), params.Target, int(params.Interval.Seconds()), int(params.Timeout.Seconds()), boolToInt(params.Enabled), string(params.TLSMode), params.ExpectedStatusCode, strings.TrimSpace(params.ExpectedText), boolToInt(params.NotifyOnRecovery), params.RetryCount, int(params.RetryInterval.Seconds()), normalizeCertWarningDays(params.CertWarningDays), normalizeConfirmAfter(params.ConfirmAfter), params.RemindEveryMinutes, now, now, heartbeatToken)
 	if err != nil {
 		return 0, fmt.Errorf("create monitor: %w", err)
 	}
@@ -78,8 +85,16 @@ func (s *Store) UpdateMonitor(ctx context.Context, params UpdateMonitorParams) e
 		return errors.New("monitor id is required")
 	}
 
+	params.CreateMonitorParams = normalizeHeartbeatParams(params.CreateMonitorParams)
 	if err := validateCreateMonitorParams(params.CreateMonitorParams); err != nil {
 		return err
+	}
+	newToken := ""
+	if params.Kind == monitor.KindHeartbeat {
+		var err error
+		if newToken, err = newHeartbeatToken(); err != nil {
+			return err
+		}
 	}
 	executorKind, executorRef := normalizeMonitorExecutor(params.ExecutorKind, params.ExecutorRef)
 
@@ -108,6 +123,7 @@ SET
     cert_warning_days = ?,
     confirm_after = ?,
     remind_every_minutes = ?,
+    heartbeat_token = CASE WHEN ? = 'heartbeat' THEN COALESCE(NULLIF(heartbeat_token, ''), ?) ELSE '' END,
     updated_at = ?
 WHERE id = ?
 `,
@@ -129,6 +145,8 @@ WHERE id = ?
 		normalizeCertWarningDays(params.CertWarningDays),
 		normalizeConfirmAfter(params.ConfirmAfter),
 		params.RemindEveryMinutes,
+		string(params.Kind),
+		newToken,
 		now,
 		params.ID,
 	)

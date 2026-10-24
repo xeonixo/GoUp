@@ -60,6 +60,8 @@ const (
 // upload/import routes may exceed the 1 MiB default.
 func maxBodyBytesForPath(path string) int64 {
 	switch {
+	case isHeartbeatPath(path):
+		return heartbeatBodyLimit
 	case strings.HasSuffix(path, "/monitors/import/preview"), strings.HasSuffix(path, "/monitors/import/confirm"):
 		return importRequestBodyBytes
 	case strings.HasSuffix(path, "/groups/save"):
