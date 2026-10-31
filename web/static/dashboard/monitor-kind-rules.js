@@ -1,5 +1,7 @@
 import {
   dnsHostField, dnsRecordTypeField, dnsServerField, dnsTargetRow, expectedStatusField,
+  sdnsEndpointField, sdnsEndpointHint, sdnsFamilyRow, sdnsHostField, sdnsMethodField, sdnsMethodRow,
+  sdnsRecordTypeField, sdnsTargetRow, sdnsTransportField,
   expectedStatusRow, expectedTextField, expectedTextHintField, expectedTextLabelField,
   expectedTextRow, httpHostField, httpPathField, httpPortField, httpSchemeField,
   httpSkipVerifyField, httpSkipVerifyLabelField, httpSkipVerifyRow, httpsFamilyRow, httpsModeRow,
@@ -14,9 +16,10 @@ import {
   monitorTCPHandshakeFallback, monitorVerifyCertFallback, tr
 } from './i18n.js';
 import {
-  syncHTTPSFamilyMode, syncICMPFamilyMode, syncMailFamilyMode, syncTCPFamilyMode,
+  syncHTTPSFamilyMode, syncICMPFamilyMode, syncMailFamilyMode, syncSDNSFamilyMode, syncTCPFamilyMode,
   syncUDPFamilyMode, syncUDPPortSuggestion, syncWhoisTargetDisclaimer
 } from './monitor-family-sync.js';
+import { normalizeSDNSTransport, sdnsUsesHTTP } from './monitor-target.js';
 import { syncHeartbeatRows } from './monitor-heartbeat.js';
 import { normalizeUDPCheck } from './monitor-target.js';
 
@@ -31,6 +34,7 @@ export const applyKindRules = () => {
   const isICMPMonitor = kind === 'icmp';
   const isMail = kind === 'smtp' || kind === 'imap';
   const isDNS = kind === 'dns';
+  const isSDNS = kind === 'sdns';
   const isUDP = kind === 'udp';
   const isWhois = kind === 'whois';
   const isHeartbeat = kind === 'heartbeat';
@@ -39,10 +43,10 @@ export const applyKindRules = () => {
   const isHTTPSEnabled = isHTTPMonitor && String(httpSchemeField?.value || 'https').toLowerCase() !== 'http';
   const mailTLSSelection = String(tlsModeField?.value || '').toLowerCase();
   const mailEncryptionEnabled = isMail && (mailTLSSelection === 'tls' || mailTLSSelection === 'starttls');
-  const showExpectedText = isHTTPMonitor || isDNS;
+  const showExpectedText = isHTTPMonitor || isDNS || isSDNS;
 
   if (targetRow) {
-    targetRow.hidden = isTCPMonitor || isHTTPMonitor || isUDP || isMail || isDNS || isHeartbeat;
+    targetRow.hidden = isTCPMonitor || isHTTPMonitor || isUDP || isMail || isDNS || isSDNS || isHeartbeat;
   }
   if (httpsTargetRow) {
     httpsTargetRow.hidden = !isHTTPMonitor;
@@ -52,6 +56,9 @@ export const applyKindRules = () => {
   }
   if (dnsTargetRow) {
     dnsTargetRow.hidden = !isDNS;
+  }
+  if (sdnsTargetRow) {
+    sdnsTargetRow.hidden = !isSDNS;
   }
   if (mailTargetRow) {
     mailTargetRow.hidden = !isMail;
@@ -63,7 +70,7 @@ export const applyKindRules = () => {
     udpTargetRow.hidden = !isUDP;
   }
   if (targetField) {
-    targetField.required = !isTCPMonitor && !isHTTPMonitor && !isUDP && !isMail && !isDNS && !isHeartbeat;
+    targetField.required = !isTCPMonitor && !isHTTPMonitor && !isUDP && !isMail && !isDNS && !isSDNS && !isHeartbeat;
   }
   if (httpHostField) {
     httpHostField.required = isHTTPMonitor;
@@ -79,6 +86,12 @@ export const applyKindRules = () => {
   }
   if (dnsHostField) {
     dnsHostField.required = isDNS;
+  }
+  if (sdnsHostField) {
+    sdnsHostField.required = isSDNS;
+  }
+  if (sdnsEndpointField) {
+    sdnsEndpointField.required = isSDNS;
   }
   if (mailHostField) {
     mailHostField.required = isMail;
@@ -233,6 +246,56 @@ export const applyKindRules = () => {
     if (expectedTextHintField) {
       expectedTextHintField.textContent = tr('dnsExpectedHint', 'Comma-separated keywords. All keywords must appear in the resolved DNS records.');
     }
+  } else if (isSDNS) {
+    if (httpSchemeField) {
+      httpSchemeField.value = 'https';
+    }
+    if (httpSkipVerifyField) {
+      httpSkipVerifyField.checked = false;
+    }
+    useHTTPSField.checked = false;
+    verifyCertField.checked = false;
+    tlsModeField.value = 'none';
+    expectedStatusField.value = '';
+    const transport = normalizeSDNSTransport(sdnsTransportField?.value);
+    if (sdnsTransportField && !sdnsTransportField.value) {
+      sdnsTransportField.value = 'doh';
+    }
+    if (sdnsMethodField && !sdnsMethodField.value) {
+      sdnsMethodField.value = 'post';
+    }
+    if (sdnsRecordTypeField && !sdnsRecordTypeField.value) {
+      sdnsRecordTypeField.value = 'mixed';
+    }
+    if (sdnsMethodRow) {
+      sdnsMethodRow.hidden = !sdnsUsesHTTP(transport);
+    }
+    if (sdnsEndpointField) {
+      const placeholder = sdnsEndpointField.dataset[`placeholder${transport === 'doh3' ? 'Doh3' : transport.charAt(0).toUpperCase() + transport.slice(1)}`]
+        || sdnsEndpointField.dataset.placeholderDoh
+        || '';
+      if (placeholder) {
+        sdnsEndpointField.placeholder = placeholder;
+      }
+    }
+    if (sdnsEndpointHint) {
+      const hint = sdnsEndpointHint.dataset[`hint${transport === 'doh3' ? 'Doh3' : transport.charAt(0).toUpperCase() + transport.slice(1)}`]
+        || sdnsEndpointHint.dataset.hintDoh
+        || '';
+      if (hint) {
+        sdnsEndpointHint.textContent = hint;
+      }
+    }
+    if (expectedTextField) {
+      expectedTextField.placeholder = tr('monitorDNSExpectedPlaceholder', '1.2.3.4, 2606:4700:4700::1111');
+    }
+    if (expectedTextLabelField) {
+      expectedTextLabelField.textContent = tr('dnsExpectedOptional', 'Expected DNS keywords (optional)');
+    }
+    if (expectedTextHintField) {
+      expectedTextHintField.textContent = tr('dnsExpectedHint', 'Comma-separated keywords. All keywords must appear in the resolved DNS records.');
+    }
+    syncSDNSFamilyMode();
   } else if (isUDP) {
     if (httpSchemeField) {
       httpSchemeField.value = 'https';
@@ -332,6 +395,12 @@ export const applyKindRules = () => {
   }
   if (!isDNS && dnsTargetRow) {
     dnsTargetRow.hidden = true;
+  }
+  if (!isSDNS && sdnsTargetRow) {
+    sdnsTargetRow.hidden = true;
+  }
+  if (!isSDNS && sdnsFamilyRow) {
+    sdnsFamilyRow.hidden = true;
   }
   if (!isMail && mailFamilyRow) {
     mailFamilyRow.hidden = true;

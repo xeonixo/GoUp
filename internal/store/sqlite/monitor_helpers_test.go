@@ -39,6 +39,27 @@ func TestValidateCreateMonitorParams(t *testing.T) {
 		{"timeout too short", copy(func(p *CreateMonitorParams) { p.Timeout = 0 }), true},
 		{"timeout exceeds interval", copy(func(p *CreateMonitorParams) { p.Timeout = 90 * time.Second }), true},
 		{"group too long", copy(func(p *CreateMonitorParams) { p.Group = string(make([]byte, 81)) }), true},
+		{"valid secure dns", copy(func(p *CreateMonitorParams) {
+			p.Kind = monitor.KindSDNS
+			p.Target = "example.com|a|https://dns.example/dns-query/client-id"
+			p.TLSMode = "doh"
+			p.ExpectedText = "192.0.2.1"
+		}), false},
+		{"secure dns dot ipv6", copy(func(p *CreateMonitorParams) {
+			p.Kind = monitor.KindSDNS
+			p.Target = "example.com|aaaa|dns.google"
+			p.TLSMode = "dot_ipv6"
+		}), false},
+		{"secure dns rejects http url", copy(func(p *CreateMonitorParams) {
+			p.Kind = monitor.KindSDNS
+			p.Target = "example.com|a|http://dns.example/dns-query"
+			p.TLSMode = "doh"
+		}), true},
+		{"secure dns rejects unknown mode", copy(func(p *CreateMonitorParams) {
+			p.Kind = monitor.KindSDNS
+			p.Target = "example.com|a|https://dns.example/dns-query"
+			p.TLSMode = "starttls"
+		}), true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

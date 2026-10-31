@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"net"
+	"net/netip"
 	"sync/atomic"
 	"time"
 
@@ -28,4 +29,13 @@ func SetAllowPrivateTargets(allow bool) {
 // on the resolved peer address (so DNS rebinding and redirects are covered).
 func newMonitorDialer(timeout time.Duration) *net.Dialer {
 	return netguard.NewDialer(timeout, allowPrivateTargets.Load())
+}
+
+// monitorAllowsIP reports whether a resolved peer address may be contacted.
+func monitorAllowsIP(ip net.IP) bool {
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return false
+	}
+	return netguard.Allowed(addr.Unmap(), allowPrivateTargets.Load())
 }

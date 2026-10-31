@@ -2,16 +2,16 @@ import {
   cancelButton, dialog, dnsHostField, dnsRecordTypeField, dnsServerField, httpHostField,
   httpPathField, httpPortField, httpSchemeField, httpSkipVerifyField, httpsFamilyField,
   icmpFamilyField, kindField, mailFamilyField, mailHostField, mailPortField, mailVerifyField,
-  monitorCloseButton, monitorForm, openCreateButton, targetField, tcpFamilyField, tcpHostField,
-  tcpPortField, tlsModeField, udpCheckField, udpFamilyField, udpHostField, udpPortField,
-  useHTTPSField, verifyCertField
+  monitorCloseButton, monitorForm, openCreateButton, sdnsEndpointField, sdnsFamilyField, sdnsTransportField,
+  targetField, tcpFamilyField, tcpHostField, tcpPortField, tlsModeField, udpCheckField, udpFamilyField,
+  udpHostField, udpPortField, useHTTPSField, verifyCertField
 } from './dom.js';
 import { initHeartbeatForm } from './monitor-heartbeat.js';
 import { openCreate } from './monitor-dialog.js';
 import { applyKindRules } from './monitor-kind-rules.js';
 import {
   composeDNSTarget, composeHTTPSMonitorTarget, defaultUDPPortForCheck, formatHostPort, isLiteralIP,
-  normalizeUDPCheck
+  normalizeUDPCheck, sdnsEndpointHost
 } from './monitor-target.js';
 
 export function initMonitorForm() {
@@ -60,6 +60,21 @@ export function initMonitorForm() {
   dnsServerField?.addEventListener('input', () => {
     if (kindField?.value === 'dns' && targetField) {
       targetField.value = composeDNSTarget();
+    }
+  });
+  sdnsTransportField?.addEventListener('change', () => {
+    if (kindField?.value === 'sdns') {
+      applyKindRules();
+    }
+  });
+  sdnsEndpointField?.addEventListener('input', () => {
+    if (kindField?.value === 'sdns') {
+      applyKindRules();
+    }
+  });
+  sdnsFamilyField?.addEventListener('change', () => {
+    if (kindField?.value === 'sdns') {
+      applyKindRules();
     }
   });
   mailHostField?.addEventListener('input', () => {
@@ -143,6 +158,15 @@ export function initMonitorForm() {
     }
   });
   monitorForm?.addEventListener('submit', (event) => {
+    if (kindField?.value === 'sdns') {
+      if (sdnsFamilyField && sdnsEndpointField) {
+        const host = sdnsEndpointHost(sdnsTransportField?.value, sdnsEndpointField.value);
+        if (!host || isLiteralIP(host)) {
+          sdnsFamilyField.value = 'dual';
+        }
+      }
+      return;
+    }
     if (kindField?.value === 'dns') {
       const normalizedTarget = composeDNSTarget();
       if (!normalizedTarget) {

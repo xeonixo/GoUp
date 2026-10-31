@@ -63,6 +63,11 @@ func normalizeTLSMode(kind monitor.Kind, requested monitor.TLSMode) monitor.TLSM
 			return requested
 		}
 		return monitor.TLSModeNone
+	case monitor.KindSDNS:
+		if monitor.IsValidSDNSMode(requested) {
+			return requested
+		}
+		return monitor.ComposeSDNSMode(monitor.SDNSTransportDoH, monitor.SDNSMethodPOST, true, monitor.TCPAddressFamilyDual)
 	case monitor.KindDNS, monitor.KindWhois, monitor.KindHeartbeat:
 		return monitor.TLSModeNone
 	default:
@@ -119,6 +124,24 @@ func monitorTargetLabel(item monitor.Monitor) string {
 		}
 		if parsed.Server != "" {
 			parts = append(parts, "via "+parsed.Server)
+		}
+		if len(parts) > 0 {
+			return strings.Join(parts, " · ")
+		}
+		return item.Target
+	}
+	if item.Kind == monitor.KindSDNS {
+		parsed := monitor.ParseSDNSTarget(item.Target)
+		parts := make([]string, 0, 4)
+		if parsed.Name != "" {
+			parts = append(parts, parsed.Name)
+		}
+		parts = append(parts, sdnsRecordLabel(parsed.RecordType))
+		if parsed.Endpoint != "" {
+			parts = append(parts, "via "+parsed.Endpoint)
+		}
+		if parsed.SNI != "" {
+			parts = append(parts, "SNI "+parsed.SNI)
 		}
 		if len(parts) > 0 {
 			return strings.Join(parts, " · ")
@@ -226,8 +249,65 @@ func monitorTLSModeLabel(item monitor.Monitor) string {
 			}
 		}
 		return kindLabel
+	case monitor.KindSDNS:
+		parsed := monitor.ParseSDNSTarget(item.Target)
+		host := monitor.SDNSEndpointHost(monitor.SDNSTransportOf(item.TLSMode), parsed.Endpoint)
+		return sdnsModeLabel(item.TLSMode, host)
 	default:
 		return ""
+	}
+}
+
+func sdnsRecordLabel(recordType monitor.DNSRecordType) string {
+	switch monitor.NormalizeDNSRecordType(string(recordType)) {
+	case monitor.DNSRecordTypeA:
+		return "A"
+	case monitor.DNSRecordTypeAAAA:
+		return "AAAA"
+	case monitor.DNSRecordTypeCNAME:
+		return "CNAME"
+	case monitor.DNSRecordTypeMX:
+		return "MX"
+	case monitor.DNSRecordTypeTXT:
+		return "TXT"
+	case monitor.DNSRecordTypeNS:
+		return "NS"
+	case monitor.DNSRecordTypeSRV:
+		return "SRV"
+	case monitor.DNSRecordTypeCAA:
+		return "CAA"
+	case monitor.DNSRecordTypeSOA:
+		return "SOA"
+	default:
+		return "A+AAAA"
+	}
+}
+
+func sdnsModeLabel(mode monitor.TLSMode, endpointHost string) string {
+	settingsTransport := monitor.SDNSTransportOf(mode)
+	raw := strings.ToLower(strings.TrimSpace(string(mode)))
+	label := settingsTransport.Label()
+	if settingsTransport.UsesHTTP() {
+		if strings.Contains(raw, "_get") {
+			label += " GET"
+		} else {
+			label += " POST"
+		}
+	}
+	if strings.Contains(raw, "_insecure") {
+		label += " (selfsigned)"
+	}
+	host := strings.Trim(strings.TrimSpace(endpointHost), "[]")
+	if host == "" || isLiteralIPAddress(host) {
+		return label
+	}
+	switch {
+	case strings.HasSuffix(raw, "_ipv4"):
+		return label + " · IPv4"
+	case strings.HasSuffix(raw, "_ipv6"):
+		return label + " · IPv6"
+	default:
+		return label + " · Dual Stack"
 	}
 }
 

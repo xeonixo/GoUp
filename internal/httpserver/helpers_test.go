@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"goup/internal/config"
+	"goup/internal/monitor"
 )
 
 func TestNormalizeOriginSimple(t *testing.T) {
@@ -125,6 +126,20 @@ func TestEqualStringSlicesEqual(t *testing.T) {
 func TestEqualStringSlicesDifferent(t *testing.T) {
 	if equalStringSlices([]string{"a", "b"}, []string{"b", "a"}) {
 		t.Errorf("different order should not be equal")
+	}
+}
+
+func TestSecureDNSCreatedNoticeLocalizes(t *testing.T) {
+	notice := monitorCreatedNotice(monitor.KindSDNS)
+	if notice != "Secure DNS-Monitor angelegt" {
+		t.Fatalf("notice = %q", notice)
+	}
+	translations := map[string]string{"flash.monitor_created": "{kind} monitor created"}
+	if got := localizeFlashMessage(translations, notice); got != "Secure DNS monitor created" {
+		t.Fatalf("secure dns flash = %q", got)
+	}
+	if got := localizeFlashMessage(translations, monitorCreatedNotice(monitor.KindHTTPS)); got != "HTTPS monitor created" {
+		t.Fatalf("https flash = %q", got)
 	}
 }
 

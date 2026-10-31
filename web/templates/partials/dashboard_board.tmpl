@@ -209,13 +209,13 @@
             </div>
             <div class="monitor-metric">
               <span class="muted">{{index $.Translations "dashboard.monitor.result"}}</span>
-              <strong>{{if eq .KindValue "https"}}{{if .HTTPStatusCode}}HTTP {{.HTTPStatusCode}}{{else}}{{if .InMaintenance}}{{index $.Translations "status.maintenance"}}{{else}}{{.StatusLabel}}{{end}}{{end}}{{else}}{{if .InMaintenance}}{{index $.Translations "status.maintenance"}}{{else}}{{.StatusLabel}}{{end}}{{end}}</strong>
+              <strong>{{if eq .KindValue "https" "sdns"}}{{if .HTTPStatusCode}}HTTP {{.HTTPStatusCode}}{{else}}{{if .InMaintenance}}{{index $.Translations "status.maintenance"}}{{else}}{{.StatusLabel}}{{end}}{{end}}{{else}}{{if .InMaintenance}}{{index $.Translations "status.maintenance"}}{{else}}{{.StatusLabel}}{{end}}{{end}}</strong>
             </div>
             <div class="monitor-metric">
               <span class="muted">{{index $.Translations "dashboard.trend_detail.last_check"}}</span>
               <strong>{{if .LastCheckedAtRaw}}<time class="client-time" datetime="{{.LastCheckedAtRaw}}" data-format="relative-age">{{.LastCheckedAt}}</time>{{else}}—{{end}}</strong>
             </div>
-            {{if eq .KindValue "https" "tcp" "smtp" "imap"}}
+            {{if eq .KindValue "https" "tcp" "smtp" "imap" "sdns"}}
             <div class="monitor-metric">
               <span class="muted">{{index $.Translations "dashboard.monitor.certificate"}}</span>
               <strong>{{if .TLSNotAfterRaw}}<time class="client-time" datetime="{{.TLSNotAfterRaw}}" data-format="minute">{{.TLSNotAfter}}</time>{{else}}—{{end}}</strong>

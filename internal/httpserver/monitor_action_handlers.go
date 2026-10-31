@@ -189,6 +189,8 @@ func checkerForMonitorKind(kind monitor.Kind) (monitor.Checker, bool) {
 		return monitor.IMAPChecker{}, true
 	case monitor.KindDNS:
 		return monitor.DNSChecker{}, true
+	case monitor.KindSDNS:
+		return monitor.SDNSChecker{}, true
 	case monitor.KindUDP:
 		return monitor.UDPChecker{}, true
 	case monitor.KindWhois:

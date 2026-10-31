@@ -12,6 +12,14 @@ import (
 	"time"
 )
 
+func monitorCreatedNotice(kind monitor.Kind) string {
+	label := strings.ToUpper(string(kind))
+	if kind == monitor.KindSDNS {
+		label = "Secure DNS"
+	}
+	return label + "-Monitor angelegt"
+}
+
 func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -71,7 +79,7 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 		}
 		expectedStatusCode = &value
 	}
-	if kind == monitor.KindHTTPS || kind == monitor.KindDNS || kind == monitor.KindUDP {
+	if kind == monitor.KindHTTPS || kind == monitor.KindDNS || kind == monitor.KindUDP || kind == monitor.KindSDNS {
 		expectedText = strings.TrimSpace(r.FormValue("expected_text"))
 	}
 
@@ -165,6 +173,27 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 			tlsMode = monitor.TLSModeNone
 		}
 	}
+	if kind == monitor.KindSDNS {
+		sdnsHost := strings.TrimSpace(r.FormValue("sdns_host"))
+		sdnsRecordType := monitor.NormalizeDNSRecordType(strings.TrimSpace(r.FormValue("sdns_record_type")))
+		sdnsEndpoint := strings.TrimSpace(r.FormValue("sdns_endpoint"))
+		sdnsSNI := strings.TrimSpace(r.FormValue("sdns_sni"))
+		if sdnsHost != "" || sdnsEndpoint != "" || sdnsSNI != "" {
+			target = monitor.ComposeSDNSTarget(sdnsHost, sdnsRecordType, sdnsEndpoint, sdnsSNI)
+		}
+		transport := monitor.NormalizeSDNSTransport(r.FormValue("sdns_transport"))
+		method := monitor.NormalizeSDNSMethod(r.FormValue("sdns_method"))
+		skipCert := strings.EqualFold(r.FormValue("sdns_skip_cert"), "on") || r.FormValue("sdns_skip_cert") == "1" || strings.EqualFold(r.FormValue("sdns_skip_cert"), "true")
+		family := monitor.TCPAddressFamilyDual
+		endpointHost := monitor.SDNSEndpointHost(transport, sdnsEndpoint)
+		if endpointHost != "" && !isLiteralIPAddress(endpointHost) {
+			family = monitor.NormalizeTCPAddressFamily(strings.TrimSpace(r.FormValue("sdns_family")))
+		}
+		if normalizedTarget, normalizeErr := monitor.NormalizeSDNSTarget(target, transport); normalizeErr == nil {
+			target = normalizedTarget
+		}
+		tlsMode = monitor.ComposeSDNSMode(transport, method, !skipCert, family)
+	}
 	if kind == monitor.KindUDP {
 		udpHost := strings.TrimSpace(r.FormValue("udp_host"))
 		udpPort := strings.TrimSpace(r.FormValue("udp_port"))
@@ -250,9 +279,9 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 	}
 	if kind == monitor.KindHeartbeat {
 		// The ping URL only exists now: show it on the detail page right away.
-		http.Redirect(w, r, s.tenantAppBase(r)+"monitors/"+strconv.FormatInt(createdID, 10)+"?notice="+url.QueryEscape(strings.ToUpper(string(kind))+"-Monitor angelegt"), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"monitors/"+strconv.FormatInt(createdID, 10)+"?notice="+url.QueryEscape(monitorCreatedNotice(kind)), http.StatusSeeOther)
 		return
 	}
 
-	http.Redirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape(strings.ToUpper(string(kind))+"-Monitor angelegt"), http.StatusSeeOther)
+	http.Redirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape(monitorCreatedNotice(kind)), http.StatusSeeOther)
 }

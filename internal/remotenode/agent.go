@@ -170,6 +170,7 @@ func (a *Agent) runCheck(ctx context.Context, item assignedMonitorSpec, schedule
 		monitor.KindSMTP:  monitor.SMTPChecker{},
 		monitor.KindIMAP:  monitor.IMAPChecker{},
 		monitor.KindDNS:   monitor.DNSChecker{},
+		monitor.KindSDNS:  monitor.SDNSChecker{},
 		monitor.KindUDP:   monitor.UDPChecker{},
 		monitor.KindWhois: monitor.WhoisChecker{},
 	}
