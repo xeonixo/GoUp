@@ -2,11 +2,12 @@
 
 import {
   httpHostField, httpsFamilyField, httpsFamilyRow, icmpFamilyField, icmpFamilyRow, kindField,
-  mailFamilyField, mailFamilyRow, mailHostField, targetField, targetWarnField, tcpFamilyField,
+  mailFamilyField, mailFamilyRow, mailHostField, sdnsEndpointField, sdnsFamilyField, sdnsFamilyRow,
+  sdnsTransportField, targetField, targetWarnField, tcpFamilyField,
   tcpFamilyRow, tcpHostField, tlsModeField, udpCheckField, udpFamilyField, udpFamilyRow,
   udpHostField, udpPortField
 } from './dom.js';
-import { defaultUDPPortForCheck, isLiteralIP } from './monitor-target.js';
+import { defaultUDPPortForCheck, isLiteralIP, sdnsEndpointHost } from './monitor-target.js';
 
 export const syncICMPFamilyMode = () => {
   if (!icmpFamilyRow || !icmpFamilyField) {
@@ -99,6 +100,23 @@ export const syncUDPPortSuggestion = () => {
   udpPortField.placeholder = suggestedPort;
   if (!String(udpPortField.value || '').trim()) {
     udpPortField.value = suggestedPort;
+  }
+};
+
+export const syncSDNSFamilyMode = () => {
+  if (!sdnsFamilyRow || !sdnsFamilyField) {
+    return;
+  }
+  const isSDNSMonitor = kindField?.value === 'sdns';
+  if (!isSDNSMonitor) {
+    sdnsFamilyRow.hidden = true;
+    return;
+  }
+  const host = sdnsEndpointHost(sdnsTransportField?.value, sdnsEndpointField?.value);
+  const requiresFamily = host !== '' && !isLiteralIP(host);
+  sdnsFamilyRow.hidden = !requiresFamily;
+  if (!requiresFamily) {
+    sdnsFamilyField.value = 'dual';
   }
 };
 

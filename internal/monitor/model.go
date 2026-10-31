@@ -15,6 +15,8 @@ const (
 	KindSMTP  Kind = "smtp"
 	KindIMAP  Kind = "imap"
 	KindDNS   Kind = "dns"
+	// KindSDNS is encrypted DNS: DNS over HTTPS, DNS over TLS, DNS over QUIC, and DNS over HTTP/3.
+	KindSDNS  Kind = "sdns"
 	KindUDP   Kind = "udp"
 	KindWhois Kind = "whois"
 	// KindHeartbeat is a push monitor: an external job calls a secret URL; silence means down.

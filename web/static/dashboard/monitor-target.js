@@ -77,6 +77,78 @@ export const parseDNSTarget = (value) => {
   };
 };
 
+export const normalizeSDNSTransport = (value) => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'dot' || raw === 'doq' || raw === 'doh3') {
+    return raw;
+  }
+  return 'doh';
+};
+
+export const sdnsUsesHTTP = (transport) => {
+  const normalized = normalizeSDNSTransport(transport);
+  return normalized === 'doh' || normalized === 'doh3';
+};
+
+export const parseSDNSMode = (value) => {
+  let raw = String(value || '').trim().toLowerCase();
+  let family = 'dual';
+  if (raw.endsWith('_ipv4')) {
+    family = 'ipv4';
+    raw = raw.slice(0, -5);
+  } else if (raw.endsWith('_ipv6')) {
+    family = 'ipv6';
+    raw = raw.slice(0, -5);
+  } else if (raw.endsWith('_dual')) {
+    family = 'dual';
+    raw = raw.slice(0, -5);
+  }
+  const skipCert = raw.endsWith('_insecure');
+  if (skipCert) {
+    raw = raw.slice(0, -'_insecure'.length);
+  }
+  let method = 'post';
+  if (raw.endsWith('_get')) {
+    method = 'get';
+    raw = raw.slice(0, -4);
+  } else if (raw.endsWith('_post')) {
+    method = 'post';
+    raw = raw.slice(0, -5);
+  }
+  return {
+    transport: normalizeSDNSTransport(raw),
+    method,
+    skipCert,
+    family
+  };
+};
+
+export const parseSDNSTarget = (value) => {
+  const parts = String(value || '').split('|');
+  return {
+    host: String(parts[0] || '').trim(),
+    recordType: normalizeDNSRecordType(parts[1]),
+    endpoint: String(parts[2] || '').trim(),
+    sni: String(parts.slice(3).join('|') || '').trim()
+  };
+};
+
+export const sdnsEndpointHost = (transport, endpoint) => {
+  const raw = String(endpoint || '').trim();
+  if (!raw) {
+    return '';
+  }
+  if (sdnsUsesHTTP(transport)) {
+    try {
+      return new URL(raw).hostname;
+    } catch (_) {
+      return '';
+    }
+  }
+  const withoutScheme = raw.replace(/^(tls|dot|quic|doq):\/\//i, '');
+  return parseHostPort(withoutScheme).host;
+};
+
 export const composeDNSTarget = () => {
   const host = String(dnsHostField?.value || '').trim();
   if (!host) {

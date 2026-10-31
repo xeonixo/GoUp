@@ -3,16 +3,17 @@ import {
   expectedTextField, groupField, httpHostField, httpPathField, httpPortField, httpSchemeField,
   httpSkipVerifyField, httpsFamilyField, icmpFamilyField, idField, intervalField, kindField,
   mailFamilyField, mailHostField, mailPortField, mailVerifyField, monitorExecutorField, nameField,
-  notifyField, retryCountField, retryIntervalField, targetField, tcpFamilyField, tcpHostField,
-  tcpPortField, timeoutField, title, tlsModeField, udpCheckField, udpFamilyField, udpHostField,
-  udpPortField, useHTTPSField, verifyCertField
+  notifyField, retryCountField, retryIntervalField, sdnsEndpointField, sdnsFamilyField, sdnsHostField,
+  sdnsMethodField, sdnsRecordTypeField, sdnsSNIField, sdnsSkipCertField, sdnsTransportField, targetField,
+  tcpFamilyField, tcpHostField, tcpPortField, timeoutField, title, tlsModeField, udpCheckField,
+  udpFamilyField, udpHostField, udpPortField, useHTTPSField, verifyCertField
 } from './dom.js';
 import { monitorCreateTitleFallback, monitorEditTitleFallback, tr } from './i18n.js';
 import { fillHeartbeat, resetHeartbeat } from './monitor-heartbeat.js';
 import { applyKindRules } from './monitor-kind-rules.js';
 import {
   defaultUDPPortForCheck, normalizeDNSRecordType, normalizeUDPCheck, parseDNSTarget,
-  parseHTTPURLTarget, parseHostPort
+  parseHTTPURLTarget, parseHostPort, parseSDNSMode, parseSDNSTarget
 } from './monitor-target.js';
 
 export const openCreate = () => {
@@ -76,6 +77,30 @@ export const openCreate = () => {
   }
   if (dnsServerField) {
     dnsServerField.value = '';
+  }
+  if (sdnsHostField) {
+    sdnsHostField.value = '';
+  }
+  if (sdnsRecordTypeField) {
+    sdnsRecordTypeField.value = 'mixed';
+  }
+  if (sdnsTransportField) {
+    sdnsTransportField.value = 'doh';
+  }
+  if (sdnsMethodField) {
+    sdnsMethodField.value = 'post';
+  }
+  if (sdnsEndpointField) {
+    sdnsEndpointField.value = '';
+  }
+  if (sdnsSNIField) {
+    sdnsSNIField.value = '';
+  }
+  if (sdnsSkipCertField) {
+    sdnsSkipCertField.checked = false;
+  }
+  if (sdnsFamilyField) {
+    sdnsFamilyField.value = 'dual';
   }
   if (mailHostField) {
     mailHostField.value = '';
@@ -239,6 +264,59 @@ export const openEdit = (button) => {
     }
     if (dnsServerField) {
       dnsServerField.value = '';
+    }
+  }
+  if (monitorKind === 'sdns') {
+    const parsedTarget = parseSDNSTarget(rawTarget);
+    const parsedMode = parseSDNSMode(button.dataset.tlsMode || 'doh');
+    if (sdnsHostField) {
+      sdnsHostField.value = parsedTarget.host;
+    }
+    if (sdnsRecordTypeField) {
+      sdnsRecordTypeField.value = normalizeDNSRecordType(parsedTarget.recordType);
+    }
+    if (sdnsTransportField) {
+      sdnsTransportField.value = parsedMode.transport;
+    }
+    if (sdnsMethodField) {
+      sdnsMethodField.value = parsedMode.method;
+    }
+    if (sdnsEndpointField) {
+      sdnsEndpointField.value = parsedTarget.endpoint;
+    }
+    if (sdnsSNIField) {
+      sdnsSNIField.value = parsedTarget.sni;
+    }
+    if (sdnsSkipCertField) {
+      sdnsSkipCertField.checked = parsedMode.skipCert;
+    }
+    if (sdnsFamilyField) {
+      sdnsFamilyField.value = parsedMode.family;
+    }
+  } else {
+    if (sdnsHostField) {
+      sdnsHostField.value = '';
+    }
+    if (sdnsRecordTypeField) {
+      sdnsRecordTypeField.value = 'mixed';
+    }
+    if (sdnsTransportField) {
+      sdnsTransportField.value = 'doh';
+    }
+    if (sdnsMethodField) {
+      sdnsMethodField.value = 'post';
+    }
+    if (sdnsEndpointField) {
+      sdnsEndpointField.value = '';
+    }
+    if (sdnsSNIField) {
+      sdnsSNIField.value = '';
+    }
+    if (sdnsSkipCertField) {
+      sdnsSkipCertField.checked = false;
+    }
+    if (sdnsFamilyField) {
+      sdnsFamilyField.value = 'dual';
     }
   }
   if (monitorKind === 'smtp' || monitorKind === 'imap') {

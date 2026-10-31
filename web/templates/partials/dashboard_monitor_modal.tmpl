@@ -16,6 +16,7 @@
         <option value="smtp">{{index $.Translations "dashboard.modal.type_smtp"}}</option>
         <option value="imap">{{index $.Translations "dashboard.modal.type_imap"}}</option>
         <option value="dns">{{index $.Translations "dashboard.modal.type_dns"}}</option>
+        <option value="sdns">{{index $.Translations "dashboard.modal.type_sdns"}}</option>
         <option value="udp">{{index $.Translations "dashboard.modal.type_udp"}}</option>
         <option value="whois">{{index $.Translations "dashboard.modal.type_whois"}}</option>
         <option value="heartbeat">{{index $.Translations "dashboard.modal.type_heartbeat"}}</option>
@@ -147,6 +148,81 @@
         <input type="text" id="monitor-dns-server" name="dns_server" placeholder="{{index $.Translations "dashboard.modal.dns_server_placeholder"}}" autocomplete="off" spellcheck="false">
       </label>
       <small class="muted compact">{{index $.Translations "dashboard.modal.dns_server_hint"}}</small>
+    </label>
+
+    <label id="sdns-target-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.sdns_target_label"}}</span>
+      <div class="inline-grid">
+        <label>
+          <span>{{index $.Translations "dashboard.modal.sdns_query_label"}}</span>
+          <input type="text" id="monitor-sdns-host" name="sdns_host" placeholder="{{index $.Translations "dashboard.modal.dns_host_placeholder"}}" autocomplete="off" spellcheck="false">
+        </label>
+        <label class="field-compact">
+          <span>{{index $.Translations "dashboard.modal.dns_record_type_label"}}</span>
+          <select id="monitor-sdns-record-type" name="sdns_record_type">
+            <option value="mixed">{{index $.Translations "dashboard.modal.dns_record_type_mixed"}}</option>
+            <option value="a">{{index $.Translations "dashboard.modal.dns_record_type_a"}}</option>
+            <option value="aaaa">{{index $.Translations "dashboard.modal.dns_record_type_aaaa"}}</option>
+            <option value="cname">{{index $.Translations "dashboard.modal.dns_record_type_cname"}}</option>
+            <option value="mx">{{index $.Translations "dashboard.modal.dns_record_type_mx"}}</option>
+            <option value="txt">{{index $.Translations "dashboard.modal.dns_record_type_txt"}}</option>
+            <option value="ns">{{index $.Translations "dashboard.modal.dns_record_type_ns"}}</option>
+            <option value="srv">{{index $.Translations "dashboard.modal.dns_record_type_srv"}}</option>
+            <option value="caa">{{index $.Translations "dashboard.modal.dns_record_type_caa"}}</option>
+            <option value="soa">{{index $.Translations "dashboard.modal.dns_record_type_soa"}}</option>
+          </select>
+        </label>
+      </div>
+      <div class="inline-grid">
+        <label>
+          <span>{{index $.Translations "dashboard.modal.sdns_transport_label"}}</span>
+          <select id="monitor-sdns-transport" name="sdns_transport">
+            <option value="doh">{{index $.Translations "dashboard.modal.sdns_transport_doh"}}</option>
+            <option value="dot">{{index $.Translations "dashboard.modal.sdns_transport_dot"}}</option>
+            <option value="doq">{{index $.Translations "dashboard.modal.sdns_transport_doq"}}</option>
+            <option value="doh3">{{index $.Translations "dashboard.modal.sdns_transport_doh3"}}</option>
+          </select>
+        </label>
+        <label id="sdns-method-row">
+          <span>{{index $.Translations "dashboard.modal.sdns_method_label"}}</span>
+          <select id="monitor-sdns-method" name="sdns_method">
+            <option value="post">{{index $.Translations "dashboard.modal.sdns_method_post"}}</option>
+            <option value="get">{{index $.Translations "dashboard.modal.sdns_method_get"}}</option>
+          </select>
+        </label>
+      </div>
+      <label>
+        <span>{{index $.Translations "dashboard.modal.sdns_endpoint_label"}}</span>
+        <input type="text" id="monitor-sdns-endpoint" name="sdns_endpoint" placeholder="https://dns.example/dns-query/client-id" autocomplete="off" spellcheck="false"
+          data-placeholder-doh="https://dns.example/dns-query/client-id"
+          data-placeholder-dot="dns.example or 1.1.1.1"
+          data-placeholder-doq="dns.example or 1.1.1.1"
+          data-placeholder-doh3="https://dns.example/dns-query/client-id">
+      </label>
+      <small class="muted compact" id="sdns-endpoint-hint"
+        data-hint-doh="{{index $.Translations "dashboard.modal.sdns_endpoint_hint_doh"}}"
+        data-hint-dot="{{index $.Translations "dashboard.modal.sdns_endpoint_hint_dot"}}"
+        data-hint-doq="{{index $.Translations "dashboard.modal.sdns_endpoint_hint_doq"}}"
+        data-hint-doh3="{{index $.Translations "dashboard.modal.sdns_endpoint_hint_doh3"}}">{{index $.Translations "dashboard.modal.sdns_endpoint_hint_doh"}}</small>
+      <label>
+        <span>{{index $.Translations "dashboard.modal.sdns_sni_label"}}</span>
+        <input type="text" id="monitor-sdns-sni" name="sdns_sni" placeholder="cloudflare-dns.com" autocomplete="off" spellcheck="false">
+      </label>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.sdns_sni_hint"}}</small>
+      <label id="sdns-skip-verify-row" class="checkbox-row">
+        <input type="checkbox" id="monitor-sdns-skip-cert" name="sdns_skip_cert">
+        <span>{{index $.Translations "dashboard.modal.skip_cert_checkbox"}}</span>
+      </label>
+    </label>
+
+    <label id="sdns-family-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.ip_family_hostname_only"}}</span>
+      <select id="monitor-sdns-family" name="sdns_family">
+        <option value="ipv4">IPv4</option>
+        <option value="ipv6">IPv6</option>
+        <option value="dual" selected>Dual Stack (IPv4 + IPv6)</option>
+      </select>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.sdns_family_hint"}}</small>
     </label>
 
     <label id="https-mode-row" class="checkbox-row" hidden>

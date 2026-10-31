@@ -29,7 +29,7 @@ It is a good fit if you want:
 
 | Area | Details |
 |---|---|
-| Monitor types | HTTPS, HTTP, TCP, ICMP (ping), SMTP, IMAP, DNS, UDP, WHOIS |
+| Monitor types | HTTPS, HTTP, TCP, ICMP (ping), SMTP, IMAP, DNS, secure DNS (DoH, DoT, DoQ, DoH3), UDP, WHOIS |
 | TLS inspection | Certificate validity, expiry date, remaining lifetime |
 | Notifications | Email via SMTP, Matrix, signed Webhooks, and Web Push |
 | Outage reminders | Optional per-monitor reminder (15 min to 24 h) while a monitor stays down; see [Outage reminders](#outage-reminders) |
@@ -38,7 +38,7 @@ It is a good fit if you want:
 | Multi-tenancy | Isolated tenants with their own monitor data and auth configuration |
 | Admin UI | Manage tenants, auth providers, users, SMTP settings, webhooks, remote nodes, and security settings |
 | Remote execution | Run checks from remote nodes in other networks using outbound-only HTTPS |
-| Networking | IPv4, IPv6, and dual-stack support for selected monitor types |
+| Networking | IPv4, IPv6, and dual-stack support for selected monitor types, including encrypted DNS |
 | Operations | Single main process, SQLite, Docker image for `amd64` and `arm64` |
 
 ---
@@ -288,6 +288,7 @@ For an OIDC provider such as Authentik:
 | `smtp` | `host:port` | `mail.example.com:587` |
 | `imap` | `host:port` | `mail.example.com:993` |
 | `dns` | Hostname | `example.com` |
+| `sdns` | `name\|type\|endpoint\|sni` | `example.com\|a\|https://dns.example/dns-query/client-id` |
 | `udp` | `host:port` | `ntp.example.com:123` |
 | `whois` | Domain name | `example.com` |
 
@@ -299,13 +300,35 @@ Additional behavior:
 
 ### IPv4, IPv6, and dual-stack
 
-For `https`, `tcp`, `icmp`, and `udp`, the UI can select the IP family when a hostname is used:
+For `https`, `tcp`, `icmp`, `udp`, and secure DNS (`sdns`), the UI can select the IP family when a hostname is used:
 
 - `IPv4`
 - `IPv6`
 - `Dual Stack`
 
 When the target is already a literal IP address, no family selection is required.
+
+Secure DNS checks a hostname on IPv4 and IPv6 in parallel when dual stack is selected. Both families up is up, one family up is degraded, both down is down. A literal resolver address is contacted on that address only.
+
+### Secure DNS (DoH, DoT, DoQ, DoH3)
+
+`sdns` monitors resolve a name through an encrypted resolver and can require the answer to contain keywords, the same way a plain DNS monitor does. The certificate on the encrypted session is recorded and can mark the monitor degraded before it expires.
+
+| Transport | Mode prefix | Default port | What is checked |
+|---|---|---|---|
+| DNS over HTTPS (RFC 8484) | `doh` | 443 | HTTP/1.1 or HTTP/2 |
+| DNS over TLS (RFC 7858) | `dot` | 853 | TLS, ALPN `dot` |
+| DNS over QUIC (RFC 9250) | `doq` | 853 | QUIC, ALPN `doq` |
+| DNS over HTTP/3 | `doh3` | 443 | HTTP/3, same DNS message as DoH |
+
+DoH and DoH3 support both request styles from RFC 8484:
+
+- `POST` sends the DNS wire message as `application/dns-message`
+- `GET` puts those same bytes in the `dns` query parameter, base64url-encoded without padding
+
+The resolver URL is used as entered, including a client id in the path (`https://dns.example/dns-query/<client-id>`). An empty path becomes `/dns-query`.
+
+Stored target form is `name|recordType|endpoint|sni`. The TLS server name is optional and is meant for resolvers you dial by IP whose certificate is issued to a hostname. Address family and certificate verification live in `tls_mode`, for example `doh_get_ipv6` or `dot_insecure`.
 
 ### HTTP and HTTPS input model
 

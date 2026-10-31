@@ -58,8 +58,8 @@ func validateCreateMonitorParams(params CreateMonitorParams) error {
 		return errors.New("reminder interval must be one of 0, 15, 30, 60, 120, 240, 720 or 1440 minutes")
 	}
 	expectedText := strings.TrimSpace(params.ExpectedText)
-	if expectedText != "" && params.Kind != monitor.KindHTTPS && params.Kind != monitor.KindDNS && params.Kind != monitor.KindUDP {
-		return errors.New("expected value is only valid for HTTPS, DNS and UDP monitors")
+	if expectedText != "" && params.Kind != monitor.KindHTTPS && params.Kind != monitor.KindDNS && params.Kind != monitor.KindUDP && params.Kind != monitor.KindSDNS {
+		return errors.New("expected value is only valid for HTTPS, DNS, secure DNS and UDP monitors")
 	}
 	return validateMonitorKindSettings(params.Kind, params.Target, params.TLSMode, params.ExpectedStatusCode)
 }
@@ -155,6 +155,16 @@ func validateMonitorKindSettings(kind monitor.Kind, target string, tlsMode monit
 		}
 		if tlsMode != "" && tlsMode != monitor.TLSModeNone {
 			return errors.New("DNS monitors do not support TLS mode")
+		}
+	case monitor.KindSDNS:
+		if !monitor.IsValidSDNSMode(tlsMode) {
+			return errors.New("secure DNS monitors support doh, dot, doq or doh3")
+		}
+		if _, err := monitor.NormalizeSDNSTarget(target, monitor.SDNSTransportOf(tlsMode)); err != nil {
+			return err
+		}
+		if expectedStatusCode != nil {
+			return errors.New("expected HTTP status is only valid for HTTPS monitors")
 		}
 	case monitor.KindUDP:
 		if _, _, err := net.SplitHostPort(strings.TrimSpace(target)); err != nil {

@@ -224,6 +224,7 @@ Implemented middleware controls include:
 - SMTP
 - IMAP
 - DNS
+- Secure DNS (`sdns`): DNS over HTTPS (GET and POST), DNS over TLS, DNS over QUIC, DNS over HTTP/3, with IPv4/IPv6/dual-stack and certificate expiry
 - UDP
 - WHOIS
 
@@ -231,7 +232,7 @@ Implemented middleware controls include:
 
 - TLS metadata extraction (validity, expiration, remaining days)
 - Expected HTTP status code and expected text checks
-- Dual-stack network handling in selected checkers
+- Dual-stack network handling in selected checkers, including secure DNS (parallel IPv4 and IPv6; one family failing is degraded)
 - SMTP/IMAP TLS and STARTTLS paths
 - Result + state event persistence and transition-triggered notifications
 

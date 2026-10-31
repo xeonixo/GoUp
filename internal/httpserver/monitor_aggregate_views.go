@@ -210,6 +210,11 @@ func monitorGroupingTokens(value string) []string {
 		"smtp":       {},
 		"imap":       {},
 		"dns":        {},
+		"sdns":       {},
+		"doh":        {},
+		"dot":        {},
+		"doq":        {},
+		"doh3":       {},
 		"udp":        {},
 		"whois":      {},
 		"heartbeat":  {},
@@ -271,6 +276,8 @@ func monitorKindLabel(kind monitor.Kind) string {
 		return "IMAP"
 	case monitor.KindDNS:
 		return "DNS"
+	case monitor.KindSDNS:
+		return "Secure DNS"
 	case monitor.KindUDP:
 		return "UDP"
 	case monitor.KindWhois:

@@ -17,7 +17,7 @@ const defaultUILanguage = "en"
 var (
 	adminAccessWaitPattern     = regexp.MustCompile(`^Zu viele Versuche\. Bitte (\d+) Minuten warten\.$`)
 	localLoginWaitPattern      = regexp.MustCompile(`^Zu viele Fehlversuche\. Bitte in (\d+) Minute\(n\) erneut versuchen$`)
-	monitorCreatedPattern      = regexp.MustCompile(`^([A-Z]+)-Monitor angelegt$`)
+	monitorCreatedPattern      = regexp.MustCompile(`^([A-Z][A-Za-z0-9 ()]*)-Monitor angelegt$`)
 	remoteNodeCreatedPattern   = regexp.MustCompile(`^Remote-Node erstellt\.\s+(REMOTE_NODE_ID=.*)$`)
 	bootstrapKeyRotatedPattern = regexp.MustCompile(`^Bootstrap-Key rotiert\.\s+(REMOTE_NODE_ID=.*)$`)
 	monitorsImportedPattern    = regexp.MustCompile(`^(\d+) Monitor\(e\) importiert$`)
