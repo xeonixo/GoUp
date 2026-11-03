@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"path/filepath"
+	"strings"
 )
 
 // ensurePhase2Columns adds the data-quality columns: rollup unknown/maintenance counters,
@@ -38,6 +40,53 @@ WHERE total_checks > up_checks + down_checks + degraded_checks
 		}
 	}
 	return nil
+}
+
+// ensureMonitorResultLatestIndex keeps latest-result lookups on a single index
+// seek. The hot queries are `WHERE monitor_id = ? ORDER BY checked_at DESC, id DESC LIMIT n`
+// (every check, and every monitor on each scheduler pass and dashboard refresh).
+// The previous index stopped at checked_at, so SQLite sorted every historical
+// row of that monitor into a temporary btree — a full read of the history,
+// spilled to disk, several times a second.
+//
+// Existing databases already have idx_monitor_results_monitor_checked_at.
+// Build the replacement first, then drop the redundant one so inserts do not
+// maintain both.
+func (s *Store) ensureMonitorResultLatestIndex(ctx context.Context) error {
+	var name string
+	err := s.db.QueryRowContext(ctx, `
+SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_monitor_results_latest'
+`).Scan(&name)
+	if err == sql.ErrNoRows {
+		// The one-time build sorts the whole history. The default container
+		// mounts /tmp as a 64MB tmpfs, which cannot hold that spill, so put
+		// the temporary files next to the database.
+		s.useDatabaseDirForTempFiles(ctx)
+		if _, err := s.db.ExecContext(ctx, `
+CREATE INDEX idx_monitor_results_latest
+ON monitor_results(monitor_id, checked_at DESC, id DESC)`); err != nil {
+			return fmt.Errorf("create latest monitor result index: %w", err)
+		}
+	} else if err != nil {
+		return fmt.Errorf("check latest monitor result index: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `DROP INDEX IF EXISTS idx_monitor_results_monitor_checked_at`); err != nil {
+		return fmt.Errorf("drop redundant monitor result index: %w", err)
+	}
+	return nil
+}
+
+// useDatabaseDirForTempFiles points SQLite's temporary files at the database
+// directory. Failures are ignored: the pragma is deprecated, and a small
+// database can still be indexed in the default temporary directory.
+func (s *Store) useDatabaseDirForTempFiles(ctx context.Context) {
+	path, err := mainDatabaseFile(ctx, s.db)
+	if err != nil || strings.TrimSpace(path) == "" {
+		return
+	}
+	dir := filepath.Dir(path)
+	quoted := "'" + strings.ReplaceAll(dir, "'", "''") + "'"
+	_, _ = s.db.ExecContext(ctx, `PRAGMA temp_store_directory = `+quoted)
 }
 
 func (s *Store) ensurePhase2Indexes(ctx context.Context) error {

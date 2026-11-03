@@ -10,6 +10,9 @@ func (s *Store) initSchema(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("initialize schema: %w", err)
 	}
+	if err := s.ensureMonitorResultLatestIndex(ctx); err != nil {
+		return err
+	}
 	if err := s.ensureMonitorGroupColumn(ctx); err != nil {
 		return err
 	}
@@ -147,9 +150,6 @@ CREATE TABLE IF NOT EXISTS monitor_results (
     in_maintenance INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY(monitor_id) REFERENCES monitors(id) ON DELETE CASCADE
 );
-
-CREATE INDEX IF NOT EXISTS idx_monitor_results_monitor_checked_at
-ON monitor_results(monitor_id, checked_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_monitor_results_checked_at
 ON monitor_results(checked_at);
