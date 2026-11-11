@@ -153,7 +153,7 @@ Important notes:
 
 - The tenant slug becomes part of the URL.
 - GoUp does not require a built-in `default` tenant.
-- After creating a new tenant, restart the container so the monitor runner for that tenant starts.
+- New tenants are picked up automatically by the runner reconcile loop (about every 30 seconds); a restart is not required.
 
 ### 6. Add monitors
 
@@ -675,13 +675,15 @@ docs/                   Architecture notes and project documentation
 
 Shipped since the early architecture notes (see [docs/improvements.md](docs/improvements.md) for the full prioritized backlog):
 
-- [x] Public status page (`/{slug}/status`)
+- [x] Public status page (`/{slug}/status`) with branding, incidents, and optional token access
 - [x] Additional monitor types (DNS, SDNS, UDP, WHOIS, heartbeat, and more)
-- [ ] Operator role and finer permissions
-- [ ] Notification routing and quiet hours
-- [ ] Versioned JSON API (`/api/v1`)
-- [ ] Remote-node token grace and mTLS
+- [x] Operator role (`admin` / `operator` / `viewer`)
+- [x] Notification routing and quiet hours
+- [x] Versioned JSON API (`/api/v1`) with scoped bearer tokens
+- [x] Remote-node previous-token grace and failed-auth rate limits
 - [x] Online backup and secret rekey
+- [ ] Remote-node mTLS (Tier 3)
+- [ ] HTTPS assertion upgrades / reports / maintenance TZ (Tier 2)
 
 ---
 
