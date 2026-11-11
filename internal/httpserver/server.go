@@ -108,6 +108,7 @@ func New(deps Dependencies) (*Server, error) {
 		usedResetTokens:     make(map[string]time.Time),
 	}
 	s.resetAttempts = make(map[string][]time.Time)
+	s.loadPersistedRateLimitAttempts(context.Background())
 	s.announceSetupToken(context.Background())
 	s.appMux = s.buildAppMux()
 	s.handler, err = s.routes()
