@@ -175,7 +175,7 @@
   "dashboard.modal.dns_record_type_soa": "SOA",
   "dashboard.modal.dns_server_label": "DNS Server (optional)",
   "dashboard.modal.dns_server_placeholder": "1.1.1.1 oder 2606:4700:4700::1111",
-  "dashboard.modal.dns_server_hint": "Leer lassen, um den System-Resolver zu verwenden. Optional mit Port, z. B. 1.1.1.1:53.",
+  "dashboard.modal.dns_server_hint": "Leer lassen, um den System-Resolver zu verwenden. Optional mit Port, z. B. 1.1.1.1:53. NS-Checks fragen die Parent-Zone autoritativ ab, damit rekursive TTL-Caches Nameserver-Änderungen nicht verstecken.",
   "dashboard.modal.sdns_target_label": "Verschlüsseltes DNS",
   "dashboard.modal.sdns_query_label": "Name zum Auflösen",
   "dashboard.modal.sdns_transport_label": "Transport",

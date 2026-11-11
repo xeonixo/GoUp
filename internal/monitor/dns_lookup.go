@@ -62,28 +62,6 @@ func lookupDNSTXT(ctx context.Context, resolver *net.Resolver, host string) ([]s
 	return results, nil
 }
 
-func lookupDNSNS(ctx context.Context, resolver *net.Resolver, host string) ([]string, error) {
-	records, err := resolver.LookupNS(ctx, host)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]string, 0, len(records))
-	seen := make(map[string]struct{}, len(records))
-	for _, record := range records {
-		trimmed := strings.TrimSpace(strings.TrimSuffix(record.Host, "."))
-		if trimmed == "" {
-			continue
-		}
-		if _, ok := seen[trimmed]; ok {
-			continue
-		}
-		seen[trimmed] = struct{}{}
-		results = append(results, trimmed)
-	}
-	sort.Strings(results)
-	return results, nil
-}
-
 func lookupDNSSRV(ctx context.Context, resolver *net.Resolver, host string) ([]string, error) {
 	service, proto, name := parseSRVHost(host)
 	_, records, err := resolver.LookupSRV(ctx, service, proto, name)

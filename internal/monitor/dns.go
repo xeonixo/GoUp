@@ -40,7 +40,7 @@ func (c DNSChecker) Check(ctx context.Context, item Monitor) Result {
 		}
 	}
 
-	lookupResult, err := lookupDNSAddresses(resolveCtx, resolver, target)
+	lookupResult, err := lookupDNSAddresses(resolveCtx, resolver, target, timeout)
 	latency := time.Since(start)
 	if err != nil {
 		resolverLabel := "system resolver"
@@ -87,6 +87,9 @@ func (c DNSChecker) Check(ctx context.Context, item Monitor) Result {
 	}
 
 	message := fmt.Sprintf("Resolved %s: %s", dnsRecordTypeLabel(target.RecordType), strings.Join(lookupResult.records, ", "))
+	if NormalizeDNSRecordType(string(target.RecordType)) == DNSRecordTypeNS {
+		message += " (authoritative)"
+	}
 	if target.Server != "" {
 		message += fmt.Sprintf(" via %s", target.Server)
 	}
@@ -100,10 +103,13 @@ func (c DNSChecker) Check(ctx context.Context, item Monitor) Result {
 	}
 }
 
-func lookupDNSAddresses(ctx context.Context, resolver *net.Resolver, target DNSTarget) (dnsLookupResult, error) {
+func lookupDNSAddresses(ctx context.Context, resolver *net.Resolver, target DNSTarget, timeout time.Duration) (dnsLookupResult, error) {
 	host := strings.TrimSpace(target.Host)
 	if host == "" {
 		return dnsLookupResult{}, fmt.Errorf("missing hostname")
+	}
+	if timeout <= 0 {
+		timeout = 10 * time.Second
 	}
 	switch NormalizeDNSRecordType(string(target.RecordType)) {
 	case DNSRecordTypeA:
@@ -122,16 +128,16 @@ func lookupDNSAddresses(ctx context.Context, resolver *net.Resolver, target DNST
 		records, err := lookupDNSTXT(ctx, resolver, host)
 		return dnsLookupResult{records: records}, err
 	case DNSRecordTypeNS:
-		records, err := lookupDNSNS(ctx, resolver, host)
+		records, err := lookupDNSNS(ctx, host, target.Server, timeout)
 		return dnsLookupResult{records: records}, err
 	case DNSRecordTypeSRV:
 		records, err := lookupDNSSRV(ctx, resolver, host)
 		return dnsLookupResult{records: records}, err
 	case DNSRecordTypeCAA:
-		records, err := lookupDNSCAA(ctx, host, target.Server, 10*time.Second)
+		records, err := lookupDNSCAA(ctx, host, target.Server, timeout)
 		return dnsLookupResult{records: records}, err
 	case DNSRecordTypeSOA:
-		records, err := lookupDNSSOA(ctx, host, target.Server, 10*time.Second)
+		records, err := lookupDNSSOA(ctx, host, target.Server, timeout)
 		return dnsLookupResult{records: records}, err
 	default:
 		ipv4, err4 := lookupDNSAddressesByNetwork(ctx, resolver, host, "ip4")
