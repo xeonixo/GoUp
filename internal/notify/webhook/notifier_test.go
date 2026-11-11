@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -27,11 +28,19 @@ func (s stubStore) ListWebhookEndpoints(context.Context) ([]store.WebhookEndpoin
 }
 
 type stubSecrets struct {
-	secret string
+	secret   string
+	previous string
+	expires  *time.Time
 }
 
-func (s stubSecrets) GetTenantNotificationEndpointSecret(context.Context, int64, int64, string) (string, error) {
-	return s.secret, nil
+func (s stubSecrets) GetTenantNotificationEndpointSigningSecrets(context.Context, int64, int64, string) (store.TenantNotificationEndpointSigningSecrets, error) {
+	out := store.TenantNotificationEndpointSigningSecrets{Current: s.secret}
+	if strings.TrimSpace(s.previous) != "" {
+		out.Previous = s.previous
+		out.PreviousExpiresAt = s.expires
+		out.PreviousGraceActive = s.expires == nil || !s.expires.Before(time.Now().UTC())
+	}
+	return out, nil
 }
 
 func TestValidateTargetURL(t *testing.T) {
@@ -271,6 +280,60 @@ func TestNotifyAllSkipsUnmatchedRoutes(t *testing.T) {
 	}
 	if len(results) != 0 {
 		t.Fatalf("expected all routes filtered, got %+v", results)
+	}
+}
+
+func TestVerifySignatureAcceptsCurrentOrPreviousDuringGrace(t *testing.T) {
+	timestamp := "2026-05-05T12:00:00Z"
+	body := []byte(`{"ok":true}`)
+	current := "current-secret-value"
+	previous := "previous-secret-value"
+	expires := time.Now().UTC().Add(time.Hour)
+
+	secrets := store.TenantNotificationEndpointSigningSecrets{
+		Current:             current,
+		Previous:            previous,
+		PreviousExpiresAt:   &expires,
+		PreviousGraceActive: true,
+	}
+	if err := VerifySignature(secrets, timestamp, body, signPayload(current, timestamp, body)); err != nil {
+		t.Fatalf("current secret should verify: %v", err)
+	}
+	if err := VerifySignature(secrets, timestamp, body, signPayload(previous, timestamp, body)); err != nil {
+		t.Fatalf("previous secret should verify during grace: %v", err)
+	}
+	if err := VerifySignature(secrets, timestamp, body, signPayload("other", timestamp, body)); !errors.Is(err, ErrInvalidSignature) {
+		t.Fatalf("unexpected secret err=%v", err)
+	}
+
+	expired := time.Now().UTC().Add(-time.Minute)
+	expiredSecrets := store.TenantNotificationEndpointSigningSecrets{
+		Current:             current,
+		Previous:            previous,
+		PreviousExpiresAt:   &expired,
+		PreviousGraceActive: false,
+	}
+	if err := VerifySignature(expiredSecrets, timestamp, body, signPayload(previous, timestamp, body)); !errors.Is(err, ErrInvalidSignature) {
+		t.Fatalf("expired previous should be rejected, err=%v", err)
+	}
+}
+
+func TestGenerateAndValidateSigningSecret(t *testing.T) {
+	secret, err := GenerateSigningSecret()
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if !strings.HasPrefix(secret, signingSecretPrefix) {
+		t.Fatalf("unexpected prefix: %q", secret)
+	}
+	if err := ValidateSigningSecret(secret); err != nil {
+		t.Fatalf("generated secret should validate: %v", err)
+	}
+	if err := ValidateSigningSecret("short"); err == nil {
+		t.Fatalf("expected short secret to be rejected")
+	}
+	if err := ValidateSigningSecret("1234567890123456"); err != nil {
+		t.Fatalf("16-char secret should pass: %v", err)
 	}
 }
 

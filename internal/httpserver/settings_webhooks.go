@@ -20,7 +20,10 @@ func (s *Server) handleSettingsWebhooks(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	s.renderSettingsWebhooks(w, r, "", strings.TrimSpace(r.URL.Query().Get("notice")), strings.TrimSpace(r.URL.Query().Get("error")))
+}
 
+func (s *Server) renderSettingsWebhooks(w http.ResponseWriter, r *http.Request, newSecret, notice, errText string) {
 	user := s.currentUser(r)
 	if user == nil || user.TenantID <= 0 {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -62,11 +65,16 @@ func (s *Server) handleSettingsWebhooks(w http.ResponseWriter, r *http.Request) 
 		User:                  user,
 		AdminTenant:           tenant,
 		AdminWebhookEndpoints: endpoints,
+		NewWebhookSecret:      newSecret,
 		AppBase:               s.tenantAppBase(r),
-		Notice:                strings.TrimSpace(r.URL.Query().Get("notice")),
-		Error:                 strings.TrimSpace(r.URL.Query().Get("error")),
+		Notice:                notice,
+		Error:                 errText,
 		SettingsMode:          true,
 	})
+}
+
+func (s *Server) webhooksRedirect(w http.ResponseWriter, r *http.Request, kind, message string) {
+	http.Redirect(w, r, s.tenantAppBase(r)+"settings/webhooks?"+kind+"="+url.QueryEscape(message), http.StatusSeeOther)
 }
 
 func (s *Server) handleSettingsWebhooksSave(w http.ResponseWriter, r *http.Request) {
@@ -87,7 +95,7 @@ func (s *Server) handleSettingsWebhooksSave(w http.ResponseWriter, r *http.Reque
 	appStore, err := s.appStore(r)
 	if err != nil {
 		s.logger.Error("settings webhooks resolve tenant store failed", "tenant_id", user.TenantID, "error", err)
-		http.Redirect(w, r, s.tenantAppBase(r)+"settings/webhooks?error="+url.QueryEscape("WebHooks konnten nicht geladen werden"), http.StatusSeeOther)
+		s.webhooksRedirect(w, r, "error", "WebHooks konnten nicht geladen werden")
 		return
 	}
 
@@ -95,6 +103,7 @@ func (s *Server) handleSettingsWebhooksSave(w http.ResponseWriter, r *http.Reque
 	name := strings.TrimSpace(r.FormValue("name"))
 	targetURL := strings.TrimSpace(r.FormValue("url"))
 	secret := strings.TrimSpace(r.FormValue("secret"))
+	generateSecret := r.FormValue("generate_secret") == "1" || r.FormValue("generate_secret") == "on"
 	timeoutSeconds, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("timeout_seconds")))
 	enabled := r.FormValue("enabled") == "on"
 	if timeoutSeconds <= 0 {
@@ -104,11 +113,27 @@ func (s *Server) handleSettingsWebhooksSave(w http.ResponseWriter, r *http.Reque
 		timeoutSeconds = 30
 	}
 	if _, err := webhooknotify.ValidateTargetURL(targetURL); err != nil {
-		http.Redirect(w, r, s.tenantAppBase(r)+"settings/webhooks?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		s.webhooksRedirect(w, r, "error", err.Error())
 		return
 	}
-	if endpointID <= 0 && secret == "" {
-		http.Redirect(w, r, s.tenantAppBase(r)+"settings/webhooks?error="+url.QueryEscape("Signing-Secret ist erforderlich"), http.StatusSeeOther)
+
+	revealedSecret := ""
+	if generateSecret {
+		generated, genErr := webhooknotify.GenerateSigningSecret()
+		if genErr != nil {
+			s.logger.Error("settings webhooks generate secret failed", "tenant_id", user.TenantID, "error", genErr)
+			s.webhooksRedirect(w, r, "error", "WebHook-Secret konnte nicht erzeugt werden")
+			return
+		}
+		secret = generated
+		revealedSecret = generated
+	} else if secret != "" {
+		if err := webhooknotify.ValidateSigningSecret(secret); err != nil {
+			s.webhooksRedirect(w, r, "error", err.Error())
+			return
+		}
+	} else if endpointID <= 0 {
+		s.webhooksRedirect(w, r, "error", "Signing-Secret ist erforderlich")
 		return
 	}
 
@@ -122,13 +147,13 @@ func (s *Server) handleSettingsWebhooksSave(w http.ResponseWriter, r *http.Reque
 	})
 	if err != nil {
 		s.logger.Error("settings webhooks save endpoint failed", "tenant_id", user.TenantID, "endpoint_id", endpointID, "error", err)
-		http.Redirect(w, r, s.tenantAppBase(r)+"settings/webhooks?error="+url.QueryEscape("WebHook konnte nicht gespeichert werden"), http.StatusSeeOther)
+		s.webhooksRedirect(w, r, "error", "WebHook konnte nicht gespeichert werden")
 		return
 	}
 	if secret != "" {
 		if err := s.controlStore.SaveTenantNotificationEndpointSecret(r.Context(), user.TenantID, id, webhooknotify.NotificationKind, secret); err != nil {
 			s.logger.Error("settings webhooks save secret failed", "tenant_id", user.TenantID, "endpoint_id", id, "error", err)
-			http.Redirect(w, r, s.tenantAppBase(r)+"settings/webhooks?error="+url.QueryEscape("WebHook-Secret konnte nicht gespeichert werden"), http.StatusSeeOther)
+			s.webhooksRedirect(w, r, "error", "WebHook-Secret konnte nicht gespeichert werden")
 			return
 		}
 	}
@@ -136,8 +161,15 @@ func (s *Server) handleSettingsWebhooksSave(w http.ResponseWriter, r *http.Reque
 	if endpointID > 0 {
 		action = "tenant.webhook.update"
 	}
+	if generateSecret && endpointID > 0 {
+		action = "tenant.webhook.secret_rotate"
+	}
 	s.writeAudit(r, action, "tenant", user.TenantID, fmt.Sprintf("endpoint_id=%d name=%s", id, name))
-	http.Redirect(w, r, s.tenantAppBase(r)+"settings/webhooks?notice="+url.QueryEscape("WebHook gespeichert"), http.StatusSeeOther)
+	if revealedSecret != "" {
+		s.renderSettingsWebhooks(w, r, revealedSecret, s.settingsFlash(r, "settings.webhooks.secret_created", "Webhook saved. Copy the signing secret now; it will not be shown again."), "")
+		return
+	}
+	s.webhooksRedirect(w, r, "notice", "WebHook gespeichert")
 }
 
 func (s *Server) handleSettingsWebhookDelete(w http.ResponseWriter, r *http.Request) {
@@ -152,26 +184,26 @@ func (s *Server) handleSettingsWebhookDelete(w http.ResponseWriter, r *http.Requ
 	}
 	endpointID, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("id")), 10, 64)
 	if err != nil || endpointID <= 0 {
-		http.Redirect(w, r, s.tenantAppBase(r)+"settings/webhooks?error="+url.QueryEscape("Ungültiger WebHook"), http.StatusSeeOther)
+		s.webhooksRedirect(w, r, "error", "Ungültiger WebHook")
 		return
 	}
 	appStore, err := s.appStore(r)
 	if err != nil {
-		http.Redirect(w, r, s.tenantAppBase(r)+"settings/webhooks?error="+url.QueryEscape("WebHooks konnten nicht geladen werden"), http.StatusSeeOther)
+		s.webhooksRedirect(w, r, "error", "WebHooks konnten nicht geladen werden")
 		return
 	}
 	if err := appStore.DeleteWebhookEndpoint(r.Context(), endpointID); err != nil {
 		if err != sql.ErrNoRows {
 			s.logger.Warn("settings webhooks delete endpoint failed", "tenant_id", user.TenantID, "endpoint_id", endpointID, "error", err)
 		}
-		http.Redirect(w, r, s.tenantAppBase(r)+"settings/webhooks?error="+url.QueryEscape("WebHook konnte nicht gelöscht werden"), http.StatusSeeOther)
+		s.webhooksRedirect(w, r, "error", "WebHook konnte nicht gelöscht werden")
 		return
 	}
 	if err := s.controlStore.DeleteTenantNotificationEndpointSecret(r.Context(), user.TenantID, endpointID, webhooknotify.NotificationKind); err != nil {
 		s.logger.Warn("settings webhooks delete secret failed", "tenant_id", user.TenantID, "endpoint_id", endpointID, "error", err)
 	}
 	s.writeAudit(r, "tenant.webhook.delete", "tenant", user.TenantID, fmt.Sprintf("endpoint_id=%d", endpointID))
-	http.Redirect(w, r, s.tenantAppBase(r)+"settings/webhooks?notice="+url.QueryEscape("WebHook gelöscht"), http.StatusSeeOther)
+	s.webhooksRedirect(w, r, "notice", "WebHook gelöscht")
 }
 
 func (s *Server) handleSettingsWebhookTest(w http.ResponseWriter, r *http.Request) {
@@ -186,12 +218,12 @@ func (s *Server) handleSettingsWebhookTest(w http.ResponseWriter, r *http.Reques
 	}
 	endpointID, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("id")), 10, 64)
 	if err != nil || endpointID <= 0 {
-		http.Redirect(w, r, s.tenantAppBase(r)+"settings/webhooks?error="+url.QueryEscape("Ungültiger WebHook"), http.StatusSeeOther)
+		s.webhooksRedirect(w, r, "error", "Ungültiger WebHook")
 		return
 	}
 	appStore, err := s.appStore(r)
 	if err != nil {
-		http.Redirect(w, r, s.tenantAppBase(r)+"settings/webhooks?error="+url.QueryEscape("WebHooks konnten nicht geladen werden"), http.StatusSeeOther)
+		s.webhooksRedirect(w, r, "error", "WebHooks konnten nicht geladen werden")
 		return
 	}
 	tenantSlug := strings.TrimSpace(user.TenantSlug)
@@ -206,11 +238,11 @@ func (s *Server) handleSettingsWebhookTest(w http.ResponseWriter, r *http.Reques
 	defer cancel()
 	if err := notifier.SendTest(ctx, endpointID, tenantSlug); err != nil {
 		s.logger.Warn("settings webhooks test failed", "tenant_id", user.TenantID, "endpoint_id", endpointID, "error", err)
-		http.Redirect(w, r, s.tenantAppBase(r)+"settings/webhooks?error="+url.QueryEscape("Testversand fehlgeschlagen: "+err.Error()), http.StatusSeeOther)
+		s.webhooksRedirect(w, r, "error", "Testversand fehlgeschlagen: "+err.Error())
 		return
 	}
 	s.writeAudit(r, "tenant.webhook.test", "tenant", user.TenantID, fmt.Sprintf("endpoint_id=%d", endpointID))
-	http.Redirect(w, r, s.tenantAppBase(r)+"settings/webhooks?notice="+url.QueryEscape("Testversand erfolgreich"), http.StatusSeeOther)
+	s.webhooksRedirect(w, r, "notice", "Testversand erfolgreich")
 }
 
 func parseWebhookRouteForm(r *http.Request) route.Route {

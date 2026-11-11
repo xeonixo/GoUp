@@ -139,6 +139,8 @@ CREATE TABLE IF NOT EXISTS tenant_notification_endpoint_secrets (
 	endpoint_id INTEGER NOT NULL,
 	kind TEXT NOT NULL,
 	secret_ciphertext TEXT NOT NULL DEFAULT '',
+	previous_secret_ciphertext TEXT NOT NULL DEFAULT '',
+	previous_secret_expires_at DATETIME,
 	created_at DATETIME NOT NULL,
 	updated_at DATETIME NOT NULL,
 	PRIMARY KEY (tenant_id, endpoint_id, kind),
@@ -178,6 +180,9 @@ func (s *ControlPlaneStore) initSchema(ctx context.Context) error {
 		return err
 	}
 	if err := s.ensureAPITokensTable(ctx); err != nil {
+		return err
+	}
+	if err := s.ensureTenantNotificationEndpointPreviousSecretColumns(ctx); err != nil {
 		return err
 	}
 	if err := s.ensureLocalCredentialsTenantScoped(ctx); err != nil {

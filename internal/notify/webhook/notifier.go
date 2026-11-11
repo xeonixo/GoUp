@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -28,14 +29,21 @@ const (
 	TestEventType    = "test_notification_webhook"
 	defaultTimeout   = 10 * time.Second
 	maxTimeout       = 30 * time.Second
+
+	// MinSigningSecretLength is the minimum accepted length for pasted webhook secrets.
+	MinSigningSecretLength = 16
+	signingSecretPrefix    = "goup_wh_"
+	signingSecretRandBytes = 32
 )
+
+var ErrInvalidSignature = errors.New("invalid webhook signature")
 
 type tenantWebhookStore interface {
 	ListWebhookEndpoints(ctx context.Context) ([]store.WebhookEndpoint, error)
 }
 
 type tenantWebhookSecretStore interface {
-	GetTenantNotificationEndpointSecret(ctx context.Context, tenantID, endpointID int64, kind string) (string, error)
+	GetTenantNotificationEndpointSigningSecrets(ctx context.Context, tenantID, endpointID int64, kind string) (store.TenantNotificationEndpointSigningSecrets, error)
 }
 
 type Notifier struct {
@@ -173,12 +181,15 @@ func (n *Notifier) deliverToEndpoint(ctx context.Context, endpoint store.Webhook
 	if err != nil {
 		return err
 	}
-	secret, err := n.controlStore.GetTenantNotificationEndpointSecret(ctx, n.tenantID, endpoint.ID, NotificationKind)
+	secrets, err := n.controlStore.GetTenantNotificationEndpointSigningSecrets(ctx, n.tenantID, endpoint.ID, NotificationKind)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return fmt.Errorf("webhook signing secret is not configured")
 		}
 		return fmt.Errorf("load webhook signing secret: %w", err)
+	}
+	if strings.TrimSpace(secrets.Current) == "" {
+		return fmt.Errorf("webhook signing secret is not configured")
 	}
 	payload, err := json.Marshal(buildPayload(eventType, n.tenantID, endpoint.ID, transition, n.now()))
 	if err != nil {
@@ -195,7 +206,7 @@ func (n *Notifier) deliverToEndpoint(ctx context.Context, endpoint store.Webhook
 	req.Header.Set("X-GoUp-Tenant-ID", fmt.Sprintf("%d", n.tenantID))
 	req.Header.Set("X-GoUp-Endpoint-ID", fmt.Sprintf("%d", endpoint.ID))
 	req.Header.Set("X-GoUp-Timestamp", timestamp)
-	req.Header.Set("X-GoUp-Signature", signPayload(secret, timestamp, payload))
+	req.Header.Set("X-GoUp-Signature", signPayload(secrets.Current, timestamp, payload))
 
 	client := n.newHTTPClient(timeoutDuration(endpoint.TimeoutSeconds))
 	resp, err := client.Do(req)
@@ -294,6 +305,53 @@ func signPayload(secret, timestamp string, payload []byte) string {
 	mac.Write([]byte("."))
 	mac.Write(payload)
 	return "v1=" + hex.EncodeToString(mac.Sum(nil))
+}
+
+// GenerateSigningSecret returns a high-entropy signing secret. Callers must reveal it once;
+// only the ciphertext is stored afterward.
+func GenerateSigningSecret() (string, error) {
+	raw := make([]byte, signingSecretRandBytes)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("generate webhook signing secret: %w", err)
+	}
+	return signingSecretPrefix + hex.EncodeToString(raw), nil
+}
+
+// ValidateSigningSecret enforces a minimum length for user-pasted secrets.
+func ValidateSigningSecret(secret string) error {
+	secret = strings.TrimSpace(secret)
+	if secret == "" {
+		return fmt.Errorf("signing secret is required")
+	}
+	if len(secret) < MinSigningSecretLength {
+		return fmt.Errorf("signing secret must be at least %d characters", MinSigningSecretLength)
+	}
+	return nil
+}
+
+// VerifySignature accepts an HMAC signed with the current secret, or with the previous
+// secret while dual-secret rotate grace is active.
+func VerifySignature(secrets store.TenantNotificationEndpointSigningSecrets, timestamp string, payload []byte, signature string) error {
+	signature = strings.TrimSpace(signature)
+	if signature == "" || !strings.HasPrefix(signature, "v1=") {
+		return ErrInvalidSignature
+	}
+	candidates := make([]string, 0, 2)
+	if strings.TrimSpace(secrets.Current) != "" {
+		candidates = append(candidates, secrets.Current)
+	}
+	now := time.Now().UTC()
+	if secrets.PreviousGraceActive && strings.TrimSpace(secrets.Previous) != "" {
+		if secrets.PreviousExpiresAt == nil || !secrets.PreviousExpiresAt.Before(now) {
+			candidates = append(candidates, secrets.Previous)
+		}
+	}
+	for _, secret := range candidates {
+		if hmac.Equal([]byte(signature), []byte(signPayload(secret, timestamp, payload))) {
+			return nil
+		}
+	}
+	return ErrInvalidSignature
 }
 
 func timeoutDuration(seconds int) time.Duration {

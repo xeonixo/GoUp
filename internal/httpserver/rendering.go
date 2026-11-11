@@ -57,6 +57,7 @@ type pageData struct {
 	AdminLocalUser                    store.LocalUser
 	AdminRemoteNodeRows               []adminRemoteNodeOverviewRow
 	AdminWebhookEndpoints             []store.WebhookEndpoint
+	NewWebhookSecret                  string
 	ProfileUser                       store.TenantUser
 	ProfileNotify                     store.UserNotificationSettings
 	PushDevices                       []pushDeviceView
