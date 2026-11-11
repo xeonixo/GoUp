@@ -17,6 +17,7 @@ import (
 
 	"goup/internal/monitor"
 	"goup/internal/netguard"
+	"goup/internal/notify/route"
 	store "goup/internal/store/sqlite"
 )
 
@@ -93,11 +94,15 @@ func (n *Notifier) NotifyAll(ctx context.Context, transition monitor.Transition)
 
 	results := make([]monitor.FanoutDeliveryResult, 0, len(endpoints))
 	activeCount := 0
+	now := n.now()
 	for _, endpoint := range endpoints {
 		if !endpoint.Enabled {
 			continue
 		}
 		activeCount++
+		if !endpointRouteMatches(endpoint, transition, now) {
+			continue
+		}
 		results = append(results, monitor.FanoutDeliveryResult{
 			EndpointID: endpoint.ID,
 			Error:      n.deliverToEndpoint(ctx, endpoint, transition, eventTypeFor(transition)),
@@ -119,10 +124,24 @@ func (n *Notifier) NotifyEndpoint(ctx context.Context, endpointID int64, transit
 	}
 	for _, endpoint := range endpoints {
 		if endpoint.ID == endpointID && endpoint.Enabled {
+			if !endpointRouteMatches(endpoint, transition, n.now()) {
+				return nil
+			}
 			return n.deliverToEndpoint(ctx, endpoint, transition, eventTypeFor(transition))
 		}
 	}
 	return fmt.Errorf("webhook endpoint %d not found", endpointID)
+}
+
+func endpointRouteMatches(endpoint store.WebhookEndpoint, transition monitor.Transition, now time.Time) bool {
+	rt := endpoint.Route
+	if endpoint.ConfigJSON != "" {
+		if parsed, err := route.Parse([]byte(endpoint.ConfigJSON)); err == nil {
+			rt = parsed
+		}
+	}
+	severity := route.SeverityOf(string(transition.Previous), string(transition.Current), transition.Reminder)
+	return rt.Matches(transition.Monitor.Group, transition.Monitor.ID, severity, now)
 }
 
 // eventTypeFor names the delivery: reminders for ongoing outages are a distinct event.

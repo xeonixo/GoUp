@@ -47,6 +47,41 @@
       <input type="checkbox" name="enabled" checked>
       <span>{{index $.Translations "settings.webhooks.enabled"}}</span>
     </label>
+    <div class="inline-grid">
+      <label>
+        <span>{{index $.Translations "settings.webhooks.route_groups"}}</span>
+        <input type="text" name="route_groups" placeholder="prod, edge">
+      </label>
+      <label>
+        <span>{{index $.Translations "settings.webhooks.route_monitor_ids"}}</span>
+        <input type="text" name="route_monitor_ids" placeholder="1, 2, 3">
+      </label>
+    </div>
+    <fieldset class="stack compact-form">
+      <legend>{{index $.Translations "settings.webhooks.route_severities"}}</legend>
+      <label class="toggle-row"><input type="checkbox" name="route_severities" value="down"><span>{{index $.Translations "settings.webhooks.route_severity_down"}}</span></label>
+      <label class="toggle-row"><input type="checkbox" name="route_severities" value="degraded"><span>{{index $.Translations "settings.webhooks.route_severity_degraded"}}</span></label>
+      <label class="toggle-row"><input type="checkbox" name="route_severities" value="recovery"><span>{{index $.Translations "settings.webhooks.route_severity_recovery"}}</span></label>
+      <label class="toggle-row"><input type="checkbox" name="route_severities" value="reminder"><span>{{index $.Translations "settings.webhooks.route_severity_reminder"}}</span></label>
+    </fieldset>
+    <label class="toggle-row">
+      <input type="checkbox" name="quiet_hours_enabled">
+      <span>{{index $.Translations "settings.webhooks.route_quiet_hours_enabled"}}</span>
+    </label>
+    <div class="inline-grid">
+      <label>
+        <span>{{index $.Translations "settings.webhooks.route_quiet_hours_tz"}}</span>
+        <input type="text" name="quiet_hours_tz" placeholder="Europe/Berlin">
+      </label>
+      <label>
+        <span>{{index $.Translations "settings.webhooks.route_quiet_hours_start"}}</span>
+        <input type="text" name="quiet_hours_start" placeholder="22:00" pattern="[0-2][0-9]:[0-5][0-9]">
+      </label>
+      <label>
+        <span>{{index $.Translations "settings.webhooks.route_quiet_hours_end"}}</span>
+        <input type="text" name="quiet_hours_end" placeholder="07:00" pattern="[0-2][0-9]:[0-5][0-9]">
+      </label>
+    </div>
     <div class="form-actions">
       <button type="submit" class="button">{{index $.Translations "settings.webhooks.create_button"}}</button>
     </div>
@@ -95,6 +130,26 @@
               <div class="inline-grid">
                 <input type="number" name="timeout_seconds" min="1" max="30" value="{{.TimeoutSeconds}}" required>
                 <input type="password" name="secret" placeholder="{{index $.Translations "settings.webhooks.secret_rotate_placeholder"}}">
+              </div>
+              <div class="inline-grid">
+                <input type="text" name="route_groups" value="{{.Route.GroupsCSV}}" placeholder="prod, edge">
+                <input type="text" name="route_monitor_ids" value="{{.Route.MonitorIDsCSV}}" placeholder="1, 2, 3">
+              </div>
+              <fieldset class="stack compact-form">
+                <legend>{{index $.Translations "settings.webhooks.route_severities"}}</legend>
+                <label class="toggle-row"><input type="checkbox" name="route_severities" value="down" {{if .Route.HasSeverity "down"}}checked{{end}}><span>{{index $.Translations "settings.webhooks.route_severity_down"}}</span></label>
+                <label class="toggle-row"><input type="checkbox" name="route_severities" value="degraded" {{if .Route.HasSeverity "degraded"}}checked{{end}}><span>{{index $.Translations "settings.webhooks.route_severity_degraded"}}</span></label>
+                <label class="toggle-row"><input type="checkbox" name="route_severities" value="recovery" {{if .Route.HasSeverity "recovery"}}checked{{end}}><span>{{index $.Translations "settings.webhooks.route_severity_recovery"}}</span></label>
+                <label class="toggle-row"><input type="checkbox" name="route_severities" value="reminder" {{if .Route.HasSeverity "reminder"}}checked{{end}}><span>{{index $.Translations "settings.webhooks.route_severity_reminder"}}</span></label>
+              </fieldset>
+              <label class="toggle-row">
+                <input type="checkbox" name="quiet_hours_enabled" {{if .Route.QuietHours}}checked{{end}}>
+                <span>{{index $.Translations "settings.webhooks.route_quiet_hours_enabled"}}</span>
+              </label>
+              <div class="inline-grid">
+                <input type="text" name="quiet_hours_tz" value="{{if .Route.QuietHours}}{{.Route.QuietHours.TZ}}{{end}}" placeholder="Europe/Berlin">
+                <input type="text" name="quiet_hours_start" value="{{if .Route.QuietHours}}{{.Route.QuietHours.Start}}{{end}}" placeholder="22:00" pattern="[0-2][0-9]:[0-5][0-9]">
+                <input type="text" name="quiet_hours_end" value="{{if .Route.QuietHours}}{{.Route.QuietHours.End}}{{end}}" placeholder="07:00" pattern="[0-2][0-9]:[0-5][0-9]">
               </div>
               <div class="admin-actions-inline">
                 <label class="toggle-row">

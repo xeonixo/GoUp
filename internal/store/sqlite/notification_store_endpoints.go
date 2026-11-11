@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"goup/internal/notify/route"
 )
 
 type WebhookEndpoint struct {
@@ -16,13 +18,16 @@ type WebhookEndpoint struct {
 	URL              string
 	TimeoutSeconds   int
 	SecretConfigured bool
+	Route            route.Route
+	ConfigJSON       string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
 
 type webhookEndpointConfig struct {
-	URL            string `json:"url"`
-	TimeoutSeconds int    `json:"timeout_seconds"`
+	URL            string       `json:"url"`
+	TimeoutSeconds int          `json:"timeout_seconds"`
+	Route          *route.Route `json:"route,omitempty"`
 }
 
 func (s *Store) EnsureSystemNotificationEndpoint(ctx context.Context, kind, name, configJSON string, enabled bool) (int64, error) {
@@ -40,14 +45,13 @@ func (s *Store) EnsureSystemNotificationEndpoint(ctx context.Context, kind, name
 	var (
 		id            int64
 		currentEnable int
-		currentConfig string
 	)
 	err := s.db.QueryRowContext(ctx, `
-SELECT id, enabled, config_json
+SELECT id, enabled
 FROM notification_endpoints
 WHERE kind = ? AND name = ?
 LIMIT 1
-`, kind, name).Scan(&id, &currentEnable, &currentConfig)
+`, kind, name).Scan(&id, &currentEnable)
 	if err != nil {
 		if err != sql.ErrNoRows {
 			return 0, fmt.Errorf("lookup notification endpoint: %w", err)
@@ -68,21 +72,53 @@ VALUES (?, ?, ?, ?, ?, ?)
 	}
 
 	// Callers ensure these endpoints on every notifier build (e.g. each remote
-	// node report); skip the write when nothing changed.
-	if currentEnable == boolToInt(enabled) && currentConfig == configJSON {
+	// node report). Preserve config_json so route settings survive ensure calls
+	// that pass a placeholder "{}".
+	if currentEnable == boolToInt(enabled) {
 		return id, nil
 	}
 
 	_, err = s.db.ExecContext(ctx, `
 UPDATE notification_endpoints
-SET enabled = ?, config_json = ?, updated_at = ?
+SET enabled = ?, updated_at = ?
 WHERE id = ?
-`, boolToInt(enabled), configJSON, now, id)
+`, boolToInt(enabled), now, id)
 	if err != nil {
 		return 0, fmt.Errorf("update notification endpoint: %w", err)
 	}
 
 	return id, nil
+}
+
+// GetNotificationEndpointConfigJSON returns config_json for the first endpoint of kind.
+// Missing endpoints yield "{}".
+func (s *Store) GetNotificationEndpointConfigJSON(ctx context.Context, kind string) (string, error) {
+	kind = strings.TrimSpace(kind)
+	if kind == "" {
+		return "", fmt.Errorf("notification endpoint kind is required")
+	}
+	var configJSON string
+	err := s.db.QueryRowContext(ctx, `
+SELECT config_json
+FROM notification_endpoints
+WHERE kind = ?
+ORDER BY id ASC
+LIMIT 1
+`, kind).Scan(&configJSON)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "{}", nil
+		}
+		if isMalformedSQLiteError(err) {
+			return "{}", nil
+		}
+		return "", fmt.Errorf("load notification endpoint config: %w", err)
+	}
+	configJSON = strings.TrimSpace(configJSON)
+	if configJSON == "" {
+		return "{}", nil
+	}
+	return configJSON, nil
 }
 
 func (s *Store) ListWebhookEndpoints(ctx context.Context) ([]WebhookEndpoint, error) {
@@ -114,7 +150,8 @@ ORDER BY name COLLATE NOCASE ASC, id ASC
 			}
 			return nil, fmt.Errorf("scan webhook endpoint: %w", err)
 		}
-		if err := json.Unmarshal([]byte(strings.TrimSpace(configJSON)), &cfg); err != nil {
+		item.ConfigJSON = strings.TrimSpace(configJSON)
+		if err := json.Unmarshal([]byte(item.ConfigJSON), &cfg); err != nil {
 			cfg = webhookEndpointConfig{}
 		}
 		item.Enabled = enabled == 1
@@ -122,6 +159,9 @@ ORDER BY name COLLATE NOCASE ASC, id ASC
 		item.TimeoutSeconds = cfg.TimeoutSeconds
 		if item.TimeoutSeconds <= 0 {
 			item.TimeoutSeconds = 10
+		}
+		if parsed, err := route.Parse([]byte(item.ConfigJSON)); err == nil {
+			item.Route = parsed
 		}
 		items = append(items, item)
 	}
@@ -146,10 +186,15 @@ func (s *Store) UpsertWebhookEndpoint(ctx context.Context, endpoint WebhookEndpo
 	if endpoint.TimeoutSeconds <= 0 {
 		endpoint.TimeoutSeconds = 10
 	}
-	configJSONBytes, err := json.Marshal(webhookEndpointConfig{
+	cfg := webhookEndpointConfig{
 		URL:            endpoint.URL,
 		TimeoutSeconds: endpoint.TimeoutSeconds,
-	})
+	}
+	routeCopy := endpoint.Route
+	if len(routeCopy.Groups) > 0 || len(routeCopy.MonitorIDs) > 0 || len(routeCopy.Severities) > 0 || routeCopy.QuietHours != nil {
+		cfg.Route = &routeCopy
+	}
+	configJSONBytes, err := json.Marshal(cfg)
 	if err != nil {
 		return 0, fmt.Errorf("marshal webhook endpoint config: %w", err)
 	}
