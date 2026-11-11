@@ -9,13 +9,19 @@ import (
 	"time"
 )
 
+const (
+	listMonitorResultsDefaultLimit = 50
+	listMonitorResultsMaxLimit     = 500
+)
+
 // ListMonitorResults returns a monitor's most recent raw results, newest first.
 func (s *Store) ListMonitorResults(ctx context.Context, monitorID int64, limit int) ([]monitor.Result, error) {
-	if limit <= 0 {
-		limit = 50
+	safeLimit := listMonitorResultsDefaultLimit
+	if limit > 0 {
+		safeLimit = limit
 	}
-	if limit > 500 {
-		limit = 500
+	if safeLimit > listMonitorResultsMaxLimit {
+		safeLimit = listMonitorResultsMaxLimit
 	}
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, monitor_id, checked_at, status, latency_ms, message,
@@ -24,7 +30,7 @@ FROM monitor_results
 WHERE monitor_id = ?
 ORDER BY checked_at DESC, id DESC
 LIMIT ?
-`, monitorID, limit)
+`, monitorID, safeLimit)
 	if err != nil {
 		if isMalformedSQLiteError(err) {
 			return []monitor.Result{}, nil
@@ -32,7 +38,8 @@ LIMIT ?
 		return nil, fmt.Errorf("list monitor results: %w", err)
 	}
 	defer rows.Close()
-	items := make([]monitor.Result, 0, limit)
+	// Cap capacity with a constant so allocation size is not derived from request input.
+	items := make([]monitor.Result, 0, listMonitorResultsMaxLimit)
 	for rows.Next() {
 		var (
 			item             monitor.Result
