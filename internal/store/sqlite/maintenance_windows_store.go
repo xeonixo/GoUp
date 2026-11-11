@@ -122,6 +122,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		return 0, fmt.Errorf("commit maintenance create: %w", err)
 	}
 	s.invalidateMaintenanceCache()
+	s.bumpDashboardRevision()
 	return id, nil
 }
 
@@ -157,6 +158,7 @@ WHERE id = ?
 		return fmt.Errorf("commit maintenance update: %w", err)
 	}
 	s.invalidateMaintenanceCache()
+	s.bumpDashboardRevision()
 	return nil
 }
 
@@ -173,6 +175,7 @@ func (s *Store) DeleteMaintenanceWindow(ctx context.Context, id int64) error {
 		return sql.ErrNoRows
 	}
 	s.invalidateMaintenanceCache()
+	s.bumpDashboardRevision()
 	return nil
 }
 

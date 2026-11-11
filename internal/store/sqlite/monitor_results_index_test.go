@@ -87,7 +87,10 @@ SELECT status FROM monitor_results WHERE monitor_id = ? ORDER BY checked_at DESC
 	assertLatestResultSeek(t, statusPlan)
 
 	snapshotPlan := explainQueryPlan(t, st, monitorSnapshotSelect+`ORDER BY m.sort_order ASC, m.id ASC`)
-	assertLatestResultSeek(t, snapshotPlan)
+	joined := strings.Join(snapshotPlan, "\n")
+	if strings.Contains(joined, "monitor_results") {
+		t.Fatalf("snapshot query must read denormalized last_* columns, not monitor_results:\n%s", joined)
+	}
 }
 
 // assertLatestResultSeek fails when finding the newest rows sorts or scans

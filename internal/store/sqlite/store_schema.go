@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 )
 
 func (s *Store) initSchema(ctx context.Context) error {
@@ -28,6 +29,9 @@ func (s *Store) initSchema(ctx context.Context) error {
 	if err := s.ensureMonitorGroupIconColumn(ctx); err != nil {
 		return err
 	}
+	if err := s.syncMonitorGroups(ctx); err != nil {
+		return err
+	}
 	if err := s.ensureMonitorRetryColumns(ctx); err != nil {
 		return err
 	}
@@ -41,6 +45,15 @@ func (s *Store) initSchema(ctx context.Context) error {
 		return err
 	}
 	if err := s.ensurePhase2Indexes(ctx); err != nil {
+		return err
+	}
+	if err := s.ensureMonitorLatestResultColumns(ctx); err != nil {
+		return err
+	}
+	if err := s.ensureMonitorDailyRollupsTable(ctx); err != nil {
+		return err
+	}
+	if _, err := s.ensureDailyRollupBackfill(ctx, time.Now().UTC()); err != nil {
 		return err
 	}
 	if err := s.ensureHeartbeatColumns(ctx); err != nil {

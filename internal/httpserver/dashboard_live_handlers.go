@@ -118,6 +118,10 @@ func (s *Server) handleDashboardLive(w http.ResponseWriter, r *http.Request) {
 	defer pingTicker.Stop()
 	defer pollTicker.Stop()
 
+	lastRevision := appStore.DashboardRevision()
+	pollsSinceForcedReload := 0
+	const forceReloadEveryPolls = 15 // ~60s: catch control-plane changes (e.g. remote nodes)
+
 	for {
 		select {
 		case <-r.Context().Done():
@@ -137,6 +141,14 @@ func (s *Server) handleDashboardLive(w http.ResponseWriter, r *http.Request) {
 				_ = conn.WriteJSON(map[string]string{"type": "session_expired"})
 				return
 			}
+			pollsSinceForcedReload++
+			currentRevision := appStore.DashboardRevision()
+			if currentRevision == lastRevision && pollsSinceForcedReload < forceReloadEveryPolls {
+				continue
+			}
+			pollsSinceForcedReload = 0
+			lastRevision = currentRevision
+
 			nextData, dataErr := s.loadDashboardPageData(r, appStore, trendValue, "", "")
 			if dataErr != nil {
 				s.logger.Warn("load dashboard live data failed", "error", dataErr)

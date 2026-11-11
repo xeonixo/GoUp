@@ -90,6 +90,7 @@ UPDATE monitors SET last_heartbeat_at = ?, last_heartbeat_ok = ? WHERE id = ?`,
 		at.UTC(), boolToInt(ok), monitorID); err != nil {
 		return fmt.Errorf("record heartbeat: %w", err)
 	}
+	s.bumpDashboardRevision()
 	return nil
 }
 

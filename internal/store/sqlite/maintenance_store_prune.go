@@ -83,6 +83,36 @@ WHERE hour_bucket < ?
 	return deleted, nil
 }
 
+func (s *Store) pruneDailyRollupsIfDue(ctx context.Context, now time.Time) (int64, error) {
+	due, err := s.shouldRunAfter(ctx, lastDailyRollupRetentionRun, retentionRunInterval, now)
+	if err != nil {
+		return 0, fmt.Errorf("check daily rollup retention schedule: %w", err)
+	}
+	if !due {
+		return 0, nil
+	}
+
+	cutoff := now.AddDate(0, 0, -dailyRollupRetentionDays)
+	result, err := s.db.ExecContext(ctx, `
+DELETE FROM monitor_daily_rollups
+WHERE day_bucket < ?
+`, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("delete expired daily rollups: %w", err)
+	}
+
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("read deleted daily rollup rows: %w", err)
+	}
+
+	if err := s.setSetting(ctx, lastDailyRollupRetentionRun, now.Format(time.RFC3339Nano)); err != nil {
+		return 0, fmt.Errorf("store daily rollup retention run timestamp: %w", err)
+	}
+
+	return deleted, nil
+}
+
 func (s *Store) pruneEventsIfDue(ctx context.Context, now time.Time, opts MaintenanceOptions) (int64, int64, error) {
 	due, err := s.shouldRunAfter(ctx, lastEventRetentionRunSetting, retentionRunInterval, now)
 	if err != nil {

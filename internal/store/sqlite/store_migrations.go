@@ -102,6 +102,7 @@ func (s *Store) ensurePhase2Indexes(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_notification_events_monitor_created ON notification_events(monitor_id, created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_notification_events_created ON notification_events(created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_incidents_monitor ON incidents(monitor_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_incidents_open ON incidents(monitor_id) WHERE resolved_at IS NULL`,
 	} {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("create index: %w", err)

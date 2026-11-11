@@ -30,12 +30,12 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) loadDashboardPageData(r *http.Request, appStore *store.Store, trendValue string, noticeText string, errorText string) (pageData, error) {
-	stats, err := appStore.DashboardStats(r.Context())
+	snapshots, err := appStore.ListMonitorSnapshots(r.Context())
 	if err != nil {
 		return pageData{}, err
 	}
 
-	snapshots, err := appStore.ListMonitorSnapshots(r.Context())
+	stats, err := appStore.DashboardStatsFromSnapshots(r.Context(), snapshots)
 	if err != nil {
 		return pageData{}, err
 	}
@@ -60,7 +60,12 @@ func (s *Server) loadDashboardPageData(r *http.Request, appStore *store.Store, t
 	now := time.Now().UTC()
 	selectedTrend := parseTrendRange(strings.TrimSpace(trendValue))
 	trendSince := trendRangeStart(now, selectedTrend)
-	rollups, err := appStore.ListMonitorHourlyRollupsSince(r.Context(), trendSince)
+	var rollups []store.MonitorHourlyRollup
+	if selectedTrend.Step == "hour" {
+		rollups, err = appStore.ListMonitorHourlyRollupsSince(r.Context(), trendSince)
+	} else {
+		rollups, err = appStore.ListMonitorDailyRollupsSince(r.Context(), trendSince)
+	}
 	if err != nil {
 		s.logger.Warn("load monitor trends failed", "error", err)
 		rollups = nil
