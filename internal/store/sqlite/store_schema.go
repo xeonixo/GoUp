@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
 )
 
 func (s *Store) initSchema(ctx context.Context) error {
@@ -53,9 +52,8 @@ func (s *Store) initSchema(ctx context.Context) error {
 	if err := s.ensureMonitorDailyRollupsTable(ctx); err != nil {
 		return err
 	}
-	if _, err := s.ensureDailyRollupBackfill(ctx, time.Now().UTC()); err != nil {
-		return err
-	}
+	// Daily rollup backfill runs in RunMaintenance, not during Open(), so large
+	// existing result histories cannot stall container startup/healthchecks.
 	if err := s.ensureHeartbeatColumns(ctx); err != nil {
 		return err
 	}
