@@ -29,18 +29,20 @@ type Agent struct {
 	assignments map[int64]assignedMonitorSpec
 }
 
-func New(cfg Config, logger *slog.Logger) *Agent {
+func New(cfg Config, logger *slog.Logger) (*Agent, error) {
+	httpClient, err := newHTTPClient(cfg)
+	if err != nil {
+		return nil, err
+	}
 	return &Agent{
 		cfg:         cfg,
 		logger:      logger,
 		workerSem:   make(chan struct{}, 4),
 		schedule:    make(map[int64]*remoteScheduleState),
 		assignments: make(map[int64]assignedMonitorSpec),
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		httpClient:  httpClient,
 		pollSeconds: cfg.InitialPollSeconds,
-	}
+	}, nil
 }
 
 func (a *Agent) Run(ctx context.Context) error {

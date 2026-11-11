@@ -128,7 +128,7 @@ Offener Fokus danach: **Tier 3** (u. a. Remote-Node-mTLS).
 
 | Thema | Begründung |
 |---|---|
-| **mTLS für Remote Nodes** | Explizit geplant in [remote-node/README.md](../remote-node/README.md); optionale Client-Certs, CA-Env, Verify auf `/node/*`. Hoher Ops-Aufwand; nach Token-Grace (T1.5). |
+| **mTLS für Remote Nodes** | Umgesetzt (optional): `GOUP_REMOTE_NODE_MTLS_CA_FILE` / `GOUP_REMOTE_NODE_MTLS_REQUIRE` + Agent `REMOTE_NODE_TLS_*`; Verify auf `/node/*`, additiv zu Token-Auth. Siehe [remote-node/README.md](../remote-node/README.md). |
 | gRPC-Health / Prometheus-Query-Monitore | Höhere Dependencies; widerspricht stdlib-first in architecture.md |
 | Browser/Script-Checks (Playwright) | RAM/Prozess-Kosten kollidieren mit Single-Process-Ziel |
 | Process-Level-Metrics, JSON-Logs, Request-IDs | Nützlich für große Installationen; nicht blocker für Self-Host-MVP-Plus *(teilweise umgesetzt: `GOUP_LOG_FORMAT`, request IDs, `/admin/system/metrics`)* |
@@ -167,6 +167,7 @@ Kurzform für die öffentliche README (siehe auch Root-[README.md](../README.md)
 - [x] Operator role and finer permissions *(T1.1)*
 - [x] Notification routing and quiet hours *(T1.2)*
 - [x] Versioned JSON API (`/api/v1`) *(T1.4)*
-- [x] Remote-node token grace *(T1.5)*; mTLS bleibt Tier 3
+- [x] Remote-node token grace *(T1.5)*
+- [x] Remote-node mTLS *(Tier 3)*
 - [x] Online backup and secret rekey *(T1.6)*
 - [x] Tier 2 parity/ops items *(T2.1–T2.9)*

@@ -56,6 +56,18 @@ type Config struct {
 	// AuditRetentionDays is how long control-plane audit_events are kept
 	// (GOUP_AUDIT_RETENTION_DAYS, default 90).
 	AuditRetentionDays int
+
+	// TLSCertFile / TLSKeyFile optionally enable HTTPS listen via
+	// ListenAndServeTLS (GOUP_TLS_CERT_FILE / GOUP_TLS_KEY_FILE). Required for
+	// in-process mTLS client-cert verification on /node/*.
+	TLSCertFile string
+	TLSKeyFile  string
+	// RemoteNodeMTLSCAFile is a PEM CA bundle used to verify remote-node client
+	// certificates (GOUP_REMOTE_NODE_MTLS_CA_FILE). Empty disables mTLS.
+	RemoteNodeMTLSCAFile string
+	// RemoteNodeMTLSRequire requires a verified client certificate on
+	// /node/bootstrap|poll|report when true (GOUP_REMOTE_NODE_MTLS_REQUIRE).
+	RemoteNodeMTLSRequire bool
 }
 
 type AuthConfig struct {
@@ -88,6 +100,10 @@ func Load() (Config, error) {
 		MonitorAllowPrivate:      envBoolOrDefault("GOUP_MONITOR_ALLOW_PRIVATE", true),
 		AllowPrivateIntegrations: envBoolOrDefault("GOUP_ALLOW_PRIVATE_INTEGRATIONS", false),
 		AuditRetentionDays:       envIntOrDefault("GOUP_AUDIT_RETENTION_DAYS", 90),
+		TLSCertFile:              strings.TrimSpace(os.Getenv("GOUP_TLS_CERT_FILE")),
+		TLSKeyFile:               strings.TrimSpace(os.Getenv("GOUP_TLS_KEY_FILE")),
+		RemoteNodeMTLSCAFile:     strings.TrimSpace(os.Getenv("GOUP_REMOTE_NODE_MTLS_CA_FILE")),
+		RemoteNodeMTLSRequire:    envBoolOrDefault("GOUP_REMOTE_NODE_MTLS_REQUIRE", false),
 		Auth: AuthConfig{
 			Mode: AuthMode(envOrDefault("GOUP_AUTH_MODE", string(AuthModeDisabled))),
 			OIDC: OIDCConfig{
@@ -166,6 +182,12 @@ func validate(cfg Config) error {
 	case "", LogFormatText, LogFormatJSON:
 	default:
 		return fmt.Errorf("unsupported GOUP_LOG_FORMAT %q (want text or json)", cfg.LogFormat)
+	}
+	if (cfg.TLSCertFile == "") != (cfg.TLSKeyFile == "") {
+		return errors.New("GOUP_TLS_CERT_FILE and GOUP_TLS_KEY_FILE must be set together")
+	}
+	if cfg.RemoteNodeMTLSRequire && cfg.RemoteNodeMTLSCAFile == "" {
+		return errors.New("GOUP_REMOTE_NODE_MTLS_REQUIRE=true requires GOUP_REMOTE_NODE_MTLS_CA_FILE")
 	}
 
 	switch cfg.Auth.Mode {

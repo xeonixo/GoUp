@@ -11,7 +11,10 @@ import (
 
 func TestUpdateAssignmentsSeedsCascadedDueFromInterval(t *testing.T) {
 	now := time.Date(2026, 5, 11, 10, 0, 0, 0, time.UTC)
-	agent := New(Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	agent, err := New(Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	assigned := []assignedMonitorSpec{
 		{ID: 42, IntervalSeconds: 60, TimeoutSeconds: 5, Kind: string(monitor.KindHTTPS)},
 	}
@@ -30,7 +33,10 @@ func TestUpdateAssignmentsSeedsCascadedDueFromInterval(t *testing.T) {
 
 func TestDueAssignmentsUsesPerMonitorInterval(t *testing.T) {
 	now := time.Date(2026, 5, 11, 10, 0, 0, 0, time.UTC)
-	agent := New(Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	agent, err := New(Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	agent.assignments[1] = assignedMonitorSpec{ID: 1, IntervalSeconds: 60}
 	agent.schedule[1] = &remoteScheduleState{nextDue: now}
 

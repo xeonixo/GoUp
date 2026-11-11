@@ -98,7 +98,7 @@ func (s *Server) routes() (http.Handler, error) {
 	mux.Handle("/admin/settings/smtp/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSMTPSettingsSave)))
 	mux.Handle("/admin/settings/smtp/test", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSMTPSettingsTest)))
 
-	return s.withRequestID(s.logging(s.securityHeaders(s.limitRequestBody(s.requireSameOrigin(mux))))), nil
+	return s.withRequestID(s.logging(s.securityHeaders(s.limitRequestBody(s.requireRemoteNodeMTLS(s.requireSameOrigin(mux)))))), nil
 }
 
 func serveEmbeddedFile(fsys fs.FS, fileName string) http.HandlerFunc {

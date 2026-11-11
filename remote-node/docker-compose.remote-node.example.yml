@@ -8,6 +8,10 @@ services:
       - REMOTE_NODE_ID=rn_replace_me
       - REMOTE_NODE_BOOTSTRAP_KEY=replace_me
       - REMOTE_NODE_POLL_SECONDS=20
+      # Optional mTLS client certificate for the control plane:
+      # - REMOTE_NODE_TLS_CERT_FILE=/certs/node.crt
+      # - REMOTE_NODE_TLS_KEY_FILE=/certs/node.key
+      # - REMOTE_NODE_TLS_CA_FILE=/certs/server-ca.crt
     # Drop every capability except NET_RAW (needed for ICMP monitors; the binary
     # carries cap_net_raw as a file capability).
     cap_drop:

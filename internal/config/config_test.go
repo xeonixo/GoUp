@@ -12,6 +12,31 @@ func validConfig() Config {
 		SessionKey:           "session-key-1234567890-abcdefghijkl",
 		SSOSecretKey:         "sso-secret-key-123456-abcdefghijklmn",
 		ControlPlaneAdminKey: "admin-cookie-key-123456-abcdefghijklm",
+		Auth:                 AuthConfig{Mode: AuthModeDisabled},
+	}
+}
+
+func TestValidateRemoteNodeMTLSRequireNeedsCA(t *testing.T) {
+	cfg := validConfig()
+	cfg.RemoteNodeMTLSRequire = true
+	if err := validate(cfg); err == nil {
+		t.Fatalf("expected error when require=true without CA file")
+	}
+	cfg.RemoteNodeMTLSCAFile = "/tmp/ca.pem"
+	if err := validate(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateTLSCertKeyPair(t *testing.T) {
+	cfg := validConfig()
+	cfg.TLSCertFile = "/tmp/cert.pem"
+	if err := validate(cfg); err == nil {
+		t.Fatalf("expected error when only cert file is set")
+	}
+	cfg.TLSKeyFile = "/tmp/key.pem"
+	if err := validate(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
