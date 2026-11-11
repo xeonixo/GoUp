@@ -106,19 +106,21 @@ flowchart LR
 
 ---
 
-## 3. Tier 2 — Competitive Parity / Ops-Komfort
+## 3. Tier 2 — Competitive Parity / Ops-Komfort (**umgesetzt**)
 
-| ID | Thema | Severity | Kernidee | Code-Anker |
+| ID | Thema | Severity | Kernidee | Status |
 |---|---|---|---|---|
-| T2.1 | HTTPS-Assertions | Medium | Method/Headers/Body, JSONPath auf Response, optional TLS-only-Check (Cert ohne HTTP-Semantik) | `internal/monitor/https.go`, TLS-Helper |
-| T2.2 | Remote-Node UX | Medium | Online-Badge in Executor-Dropdown, Warnung bei Offline-Assign, Bulk-Reassign nach Gruppe, Dashboard-Filter „Node X“ | `dashboard_monitor_modal.tmpl`, `remote_nodes.go`, Settings-Remote-Nodes |
-| T2.3 | Reports / SLA | Medium | Periode: Uptime je Monitor/Gruppe, Incident-Count, MTTR; CSV-Export; optional Weekly-Digest an Admins | `trend_views.go`, Incident-Store, History-Handler |
-| T2.4 | Maintenance TZ / Monthly | Medium | Zeitzone statt nur UTC, monatliche Recurrence, .ics-Export, Vorankündigung N Stunden auf Statusseite | `maintenance.go`, Settings-Maintenance-UI |
-| T2.5 | Status-Subscriptions | Medium | Double-opt-in E-Mail und/oder Atom/RSS öffentlicher Incidents (getrennt von Operator-Alerts) | `status_page.go` |
-| T2.6 | Webhook-Secret-Rotate | Medium | Server-generiertes Signing-Secret, Dual-Secret-Grace bei Rotation; Min-Entropie / Reveal-once | `internal/notify/webhook`, Settings-Webhook-UI |
-| T2.7 | Deep Health + Audit-Retention | Medium | `/readyz`: Control-Plane **und** Tenant-Stores, Runner-Heartbeat; Audit prune/export (CSV/JSON) | `routes.go`, `control_plane_audit.go`, Admin-Dashboard |
-| T2.8 | Docker Remote-Node Harden | Medium | Example-Compose an Server-Niveau: `cap_drop: ALL`, `read_only`, tmpfs, non-root | `remote-node/docker-compose.remote-node.example.yml` |
-| T2.9 | SSRF Align | Medium | `webhook.ValidateTargetURL` an `netguard.ValidateURL` angleichen (localhost / `.localhost`); optional private Webhooks getrennt von Monitor-Policy | `internal/netguard`, Webhook-Validatoren |
+| T2.1 | HTTPS-Assertions | Medium | Method/Headers/Body, JSONPath, TLS-only-Check | done |
+| T2.2 | Remote-Node UX | Medium | Online-Badge, Offline-Warnung, Bulk-Reassign, Node-Filter | done |
+| T2.3 | Reports / SLA | Medium | Uptime/Incidents/MTTR + CSV-Export | done |
+| T2.4 | Maintenance TZ / Monthly | Medium | IANA-TZ, monatliche Recurrence, .ics, Announce-Lead | done |
+| T2.5 | Status-Subscriptions | Medium | Atom/RSS-Feed + E-Mail Double-Opt-in | done |
+| T2.6 | Webhook-Secret-Rotate | Medium | Server-generiertes Secret + Dual-Secret-Grace | done |
+| T2.7 | Deep Health + Audit-Retention | Medium | `/readyz`, Audit-Prune/Export | done |
+| T2.8 | Docker Remote-Node Harden | Medium | Compose: `cap_drop` / `read_only` / tmpfs | done |
+| T2.9 | SSRF Align | Medium | Webhook-URL-Validierung via netguard | done |
+
+Offener Fokus danach: **Tier 3** (u. a. Remote-Node-mTLS).
 
 ---
 
@@ -161,9 +163,10 @@ flowchart LR
 Kurzform für die öffentliche README (siehe auch Root-[README.md](../README.md)):
 
 - [x] Public status page *(inkl. Branding / Incident-Historie / optionale Auth — T1.3)*
-- [x] Additional monitor types *(weitere Assertions → T2.1)*
+- [x] Additional monitor types *(HTTPS-Assertions T2.1)*
 - [x] Operator role and finer permissions *(T1.1)*
 - [x] Notification routing and quiet hours *(T1.2)*
 - [x] Versioned JSON API (`/api/v1`) *(T1.4)*
 - [x] Remote-node token grace *(T1.5)*; mTLS bleibt Tier 3
 - [x] Online backup and secret rekey *(T1.6)*
+- [x] Tier 2 parity/ops items *(T2.1–T2.9)*

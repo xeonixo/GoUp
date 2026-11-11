@@ -686,8 +686,10 @@ Shipped since the early architecture notes (see [docs/improvements.md](docs/impr
 - [x] Versioned JSON API (`/api/v1`) with scoped bearer tokens
 - [x] Remote-node previous-token grace and failed-auth rate limits
 - [x] Online backup and secret rekey
+- [x] HTTPS assertions (method/headers/JSONPath/TLS-only), reports/SLA, maintenance TZ
+- [x] Remote-node assignment UX, status feed/subscriptions, webhook secret rotate
+- [x] `/readyz`, audit retention/export, SSRF align, hardened remote-node compose
 - [ ] Remote-node mTLS (Tier 3)
-- [ ] HTTPS assertion upgrades / reports / maintenance TZ (Tier 2)
 
 ---
 
