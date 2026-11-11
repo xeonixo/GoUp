@@ -197,6 +197,10 @@ func checkerForMonitorKind(kind monitor.Kind) (monitor.Checker, bool) {
 		return monitor.WhoisChecker{}, true
 	case monitor.KindHeartbeat:
 		return monitor.HeartbeatChecker{}, true
+	case monitor.KindPrometheus:
+		return monitor.PrometheusChecker{}, true
+	case monitor.KindGRPC:
+		return monitor.GRPCChecker{}, true
 	default:
 		return nil, false
 	}

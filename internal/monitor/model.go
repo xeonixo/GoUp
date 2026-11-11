@@ -21,6 +21,10 @@ const (
 	KindWhois Kind = "whois"
 	// KindHeartbeat is a push monitor: an external job calls a secret URL; silence means down.
 	KindHeartbeat Kind = "heartbeat"
+	// KindPrometheus queries the Prometheus HTTP API (/api/v1/query) and asserts the result.
+	KindPrometheus Kind = "prometheus"
+	// KindGRPC dials a gRPC endpoint and calls grpc.health.v1.Health/Check.
+	KindGRPC Kind = "grpc"
 )
 
 const (
@@ -66,7 +70,15 @@ type Monitor struct {
 	// JSONPathExpected is the expected value at JSONPath. When empty, only existence is checked.
 	JSONPathExpected string
 	// CheckMode selects HTTPS check semantics: "http" (default) or "tls" (certificate only).
-	CheckMode        string
+	CheckMode string
+	// PromQuery is the PromQL expression for prometheus monitors (stored in config_json).
+	PromQuery string
+	// PromExpectedValue is the numeric threshold for prometheus monitors (stored in config_json).
+	PromExpectedValue string
+	// PromComparison is gt/gte/lt/lte/eq for prometheus monitors (stored in config_json).
+	PromComparison string
+	// GRPCService is the optional service name for grpc health checks (stored in config_json).
+	GRPCService      string
 	NotifyOnRecovery bool
 	RetryCount       int
 	RetryInterval    time.Duration

@@ -197,5 +197,8 @@ func (s *ControlPlaneStore) initSchema(ctx context.Context) error {
 	if err := s.ensureUserIdentitiesTenantScoped(ctx); err != nil {
 		return err
 	}
+	if err := s.ensureRateLimitAttemptsTable(ctx); err != nil {
+		return err
+	}
 	return nil
 }

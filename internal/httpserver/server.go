@@ -108,6 +108,7 @@ func New(deps Dependencies) (*Server, error) {
 		usedResetTokens:     make(map[string]time.Time),
 	}
 	s.resetAttempts = make(map[string][]time.Time)
+	s.loadPersistedRateLimitAttempts(context.Background())
 	s.announceSetupToken(context.Background())
 	s.appMux = s.buildAppMux()
 	s.handler, err = s.routes()
@@ -128,9 +129,29 @@ func (s *Server) Run(ctx context.Context) error {
 		IdleTimeout:       120 * time.Second,
 	}
 
+	mtlsCfg, err := BuildRemoteNodeMTLSServerTLSConfig(s.cfg.RemoteNodeMTLSCAFile, s.cfg.RemoteNodeMTLSRequire)
+	if err != nil {
+		return err
+	}
+	if mtlsCfg != nil {
+		srv.TLSConfig = mtlsCfg
+		if s.cfg.TLSCertFile == "" || s.cfg.TLSKeyFile == "" {
+			s.logger.Warn("remote-node mTLS CA configured without GOUP_TLS_CERT_FILE/GOUP_TLS_KEY_FILE; client certificate verification only applies when GoUp terminates TLS")
+		} else {
+			s.logger.Info("remote-node mTLS client certificate verification enabled",
+				"require", s.cfg.RemoteNodeMTLSRequire,
+				"ca_file", s.cfg.RemoteNodeMTLSCAFile,
+			)
+		}
+	}
+
 	errCh := make(chan error, 1)
 	go s.runSecurityStateSweeper(ctx)
 	go func() {
+		if s.cfg.TLSCertFile != "" && s.cfg.TLSKeyFile != "" {
+			errCh <- srv.ListenAndServeTLS(s.cfg.TLSCertFile, s.cfg.TLSKeyFile)
+			return
+		}
 		errCh <- srv.ListenAndServe()
 	}()
 

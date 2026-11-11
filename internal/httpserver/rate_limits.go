@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	store "goup/internal/store/sqlite"
 )
 
 func (s *Server) localLoginKey(r *http.Request, tenantID int64, loginName string) string {
@@ -30,28 +32,27 @@ func (s *Server) localLoginAllowed(key string, now time.Time) (bool, time.Durati
 
 func (s *Server) registerLocalLoginFailure(key string, now time.Time) {
 	s.localLoginMu.Lock()
-	defer s.localLoginMu.Unlock()
-
 	attempt := s.localLoginAttempts[key]
 	if attempt.WindowStart.IsZero() || now.Sub(attempt.WindowStart) > localLoginWindow {
 		attempt = localLoginAttempt{Failures: 1, WindowStart: now}
-		s.localLoginAttempts[key] = attempt
-		return
-	}
-
-	attempt.Failures++
-	if attempt.Failures >= localLoginMaxFailures {
-		attempt.Failures = 0
-		attempt.WindowStart = now
-		attempt.LockedUntil = now.Add(localLoginLockout)
+	} else {
+		attempt.Failures++
+		if attempt.Failures >= localLoginMaxFailures {
+			attempt.Failures = 0
+			attempt.WindowStart = now
+			attempt.LockedUntil = now.Add(localLoginLockout)
+		}
 	}
 	s.localLoginAttempts[key] = attempt
+	s.localLoginMu.Unlock()
+	s.persistRateLimitAttempt(store.RateLimitKindLocalLogin, key, attempt)
 }
 
 func (s *Server) clearLocalLoginAttempts(key string) {
 	s.localLoginMu.Lock()
-	defer s.localLoginMu.Unlock()
 	delete(s.localLoginAttempts, key)
+	s.localLoginMu.Unlock()
+	s.deletePersistedRateLimitAttempt(key)
 }
 
 func (s *Server) adminAccessKey(r *http.Request) string {
@@ -76,26 +77,27 @@ func (s *Server) adminAccessAllowed(key string, now time.Time) (bool, time.Durat
 
 func (s *Server) registerAdminAccessFailure(key string, now time.Time) {
 	s.adminAccessMu.Lock()
-	defer s.adminAccessMu.Unlock()
 	attempt := s.adminAccessAttempts[key]
 	if attempt.WindowStart.IsZero() || now.Sub(attempt.WindowStart) > adminAccessWindow {
 		attempt = localLoginAttempt{Failures: 1, WindowStart: now}
-		s.adminAccessAttempts[key] = attempt
-		return
-	}
-	attempt.Failures++
-	if attempt.Failures >= adminAccessMaxFailures {
-		attempt.Failures = 0
-		attempt.WindowStart = now
-		attempt.LockedUntil = now.Add(adminAccessLockout)
+	} else {
+		attempt.Failures++
+		if attempt.Failures >= adminAccessMaxFailures {
+			attempt.Failures = 0
+			attempt.WindowStart = now
+			attempt.LockedUntil = now.Add(adminAccessLockout)
+		}
 	}
 	s.adminAccessAttempts[key] = attempt
+	s.adminAccessMu.Unlock()
+	s.persistRateLimitAttempt(store.RateLimitKindAdminAccess, key, attempt)
 }
 
 func (s *Server) clearAdminAccessAttempts(key string) {
 	s.adminAccessMu.Lock()
-	defer s.adminAccessMu.Unlock()
 	delete(s.adminAccessAttempts, key)
+	s.adminAccessMu.Unlock()
+	s.deletePersistedRateLimitAttempt(key)
 }
 
 func (s *Server) bootstrapAttemptKey(r *http.Request, nodeID string) string {
@@ -124,24 +126,25 @@ func (s *Server) bootstrapAllowed(key string, now time.Time) (bool, time.Duratio
 
 func (s *Server) registerBootstrapFailure(key string, now time.Time) {
 	s.bootstrapMu.Lock()
-	defer s.bootstrapMu.Unlock()
 	attempt := s.bootstrapAttempts[key]
 	if attempt.WindowStart.IsZero() || now.Sub(attempt.WindowStart) > bootstrapWindow {
 		attempt = localLoginAttempt{Failures: 1, WindowStart: now}
-		s.bootstrapAttempts[key] = attempt
-		return
-	}
-	attempt.Failures++
-	if attempt.Failures >= bootstrapMaxFailures {
-		attempt.Failures = 0
-		attempt.WindowStart = now
-		attempt.LockedUntil = now.Add(bootstrapLockout)
+	} else {
+		attempt.Failures++
+		if attempt.Failures >= bootstrapMaxFailures {
+			attempt.Failures = 0
+			attempt.WindowStart = now
+			attempt.LockedUntil = now.Add(bootstrapLockout)
+		}
 	}
 	s.bootstrapAttempts[key] = attempt
+	s.bootstrapMu.Unlock()
+	s.persistRateLimitAttempt(store.RateLimitKindBootstrap, key, attempt)
 }
 
 func (s *Server) clearBootstrapAttempts(key string) {
 	s.bootstrapMu.Lock()
-	defer s.bootstrapMu.Unlock()
 	delete(s.bootstrapAttempts, key)
+	s.bootstrapMu.Unlock()
+	s.deletePersistedRateLimitAttempt(key)
 }

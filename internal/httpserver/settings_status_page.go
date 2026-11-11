@@ -29,21 +29,24 @@ type apiTokenView struct {
 
 // statusPageAdminView backs the "Status page & metrics" settings page.
 type statusPageAdminView struct {
-	Enabled          bool
-	Title            string
-	Description      string
-	LogoRef          string
-	HasLogo          bool
-	BrandColor       string
-	HideGoUpFooter   bool
-	NoIndex          bool
-	AccessMode       string
-	HasAccessToken   bool
-	AnnounceHours    int
-	Monitors         []statusPageAdminMonitorView
-	PublicURL        string
-	MetricsURL       string
-	Tokens           []apiTokenView
+	Enabled         bool
+	Title           string
+	Description     string
+	LogoRef         string
+	HasLogo         bool
+	BrandColor      string
+	HideGoUpFooter  bool
+	NoIndex         bool
+	AccessMode      string
+	HasAccessToken  bool
+	AnnounceHours   int
+	CustomCSS       string
+	CustomDomain    string
+	CustomDomainURL string
+	Monitors        []statusPageAdminMonitorView
+	PublicURL       string
+	MetricsURL      string
+	Tokens          []apiTokenView
 	// NewToken is only set in the response to a token creation; it is never stored in plain text.
 	NewToken string
 	// NewAccessToken is the status-page gate token shown once after enable/regenerate.
@@ -93,6 +96,7 @@ func (s *Server) loadStatusPageAdminView(r *http.Request, tenantID int64) (*stat
 	for _, item := range selected {
 		selectedNames[item.MonitorID] = item.DisplayName
 	}
+	customDomain := store.NormalizeStatusPageCustomDomain(settings.CustomDomain)
 	view := &statusPageAdminView{
 		Enabled:        settings.Enabled,
 		Title:          settings.Title,
@@ -105,8 +109,13 @@ func (s *Server) loadStatusPageAdminView(r *http.Request, tenantID int64) (*stat
 		AccessMode:     settings.AccessMode,
 		HasAccessToken: strings.TrimSpace(settings.AccessTokenHash) != "",
 		AnnounceHours:  store.NormalizeAnnounceHours(settings.AnnounceHours),
+		CustomCSS:      store.SanitizeStatusPageCustomCSS(settings.CustomCSS),
+		CustomDomain:   customDomain,
 		PublicURL:      s.publicTenantURL(r, "status"),
 		MetricsURL:     s.publicTenantURL(r, "metrics"),
+	}
+	if customDomain != "" {
+		view.CustomDomainURL = "https://" + customDomain + "/"
 	}
 	for _, snap := range snapshots {
 		display, isSelected := selectedNames[snap.Monitor.ID]
@@ -268,6 +277,8 @@ func (s *Server) handleSettingsStatusPageSave(w http.ResponseWriter, r *http.Req
 		AccessTokenHash: accessHash,
 		NoIndex:         r.FormValue("noindex") == "on",
 		AnnounceHours:   announceHours,
+		CustomCSS:       r.FormValue("custom_css"),
+		CustomDomain:    r.FormValue("custom_domain"),
 	}
 	if err := appStore.SaveStatusPageSettings(r.Context(), settings, monitors); err != nil {
 		s.logger.Error("settings status page save failed", "tenant_id", user.TenantID, "error", err)

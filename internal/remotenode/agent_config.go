@@ -14,6 +14,13 @@ type Config struct {
 	NodeID             string
 	BootstrapKey       string
 	InitialPollSeconds int
+	// TLSCertFile / TLSKeyFile are an optional client certificate for mTLS to
+	// the control plane (REMOTE_NODE_TLS_CERT_FILE / REMOTE_NODE_TLS_KEY_FILE).
+	TLSCertFile string
+	TLSKeyFile  string
+	// TLSCAFile optionally overrides the system trust store for verifying the
+	// control-plane server certificate (REMOTE_NODE_TLS_CA_FILE).
+	TLSCAFile string
 }
 
 func LoadConfigFromEnv() (Config, error) {
@@ -22,6 +29,9 @@ func LoadConfigFromEnv() (Config, error) {
 		NodeID:             strings.TrimSpace(os.Getenv("REMOTE_NODE_ID")),
 		BootstrapKey:       strings.TrimSpace(os.Getenv("REMOTE_NODE_BOOTSTRAP_KEY")),
 		InitialPollSeconds: 20,
+		TLSCertFile:        strings.TrimSpace(os.Getenv("REMOTE_NODE_TLS_CERT_FILE")),
+		TLSKeyFile:         strings.TrimSpace(os.Getenv("REMOTE_NODE_TLS_KEY_FILE")),
+		TLSCAFile:          strings.TrimSpace(os.Getenv("REMOTE_NODE_TLS_CA_FILE")),
 	}
 	if cfg.ControlPlaneURL == "" || cfg.NodeID == "" || cfg.BootstrapKey == "" {
 		return Config{}, errors.New("REMOTE_NODE_CONTROL_PLANE_URL, REMOTE_NODE_ID und REMOTE_NODE_BOOTSTRAP_KEY müssen gesetzt sein")
@@ -29,6 +39,9 @@ func LoadConfigFromEnv() (Config, error) {
 	allowInsecure := envTrue(os.Getenv("GOUP_REMOTE_NODE_ALLOW_INSECURE"))
 	if err := validateControlPlaneURLSecurity(cfg.ControlPlaneURL, allowInsecure); err != nil {
 		return Config{}, err
+	}
+	if (cfg.TLSCertFile == "") != (cfg.TLSKeyFile == "") {
+		return Config{}, errors.New("REMOTE_NODE_TLS_CERT_FILE and REMOTE_NODE_TLS_KEY_FILE must be set together")
 	}
 	if raw := strings.TrimSpace(os.Getenv("REMOTE_NODE_POLL_SECONDS")); raw != "" {
 		if value, err := strconv.Atoi(raw); err == nil && value > 0 {

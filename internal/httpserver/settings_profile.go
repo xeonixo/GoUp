@@ -49,21 +49,26 @@ func (s *Server) handleSettingsProfile(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.logger.Warn("settings profile load push devices failed", "tenant_id", user.TenantID, "user_id", user.UserID, "error", err)
 	}
+	resubscribeNotice, err := s.controlStore.VAPIDNeedsResubscribeNotice(r.Context())
+	if err != nil {
+		s.logger.Warn("settings profile load vapid rotation notice failed", "error", err)
+	}
 
 	s.render(w, "settings_profile", pageData{
-		PushDevices:     pushDeviceViews(pushDevices),
-		Title:           "Einstellungen · Profil · GoUp",
-		UILanguage:      normalizeUILanguage(profileUser.PreferredLanguage),
-		User:            user,
-		IsAdmin:         sessionIsAdmin(user),
-		CanWrite:        sessionCanWrite(user),
-		AdminTenant:     tenant,
-		ProfileUser:     profileUser,
-		ProfileNotify:   notify,
-		LanguageOptions: languageOptions(profileUser.PreferredLanguage),
-		AppBase:         s.tenantAppBase(r),
-		Notice:          strings.TrimSpace(r.URL.Query().Get("notice")),
-		Error:           strings.TrimSpace(r.URL.Query().Get("error")),
+		PushDevices:             pushDeviceViews(pushDevices),
+		PushResubscribeRequired: resubscribeNotice,
+		Title:                   "Einstellungen · Profil · GoUp",
+		UILanguage:              normalizeUILanguage(profileUser.PreferredLanguage),
+		User:                    user,
+		IsAdmin:                 sessionIsAdmin(user),
+		CanWrite:                sessionCanWrite(user),
+		AdminTenant:             tenant,
+		ProfileUser:             profileUser,
+		ProfileNotify:           notify,
+		LanguageOptions:         languageOptions(profileUser.PreferredLanguage),
+		AppBase:                 s.tenantAppBase(r),
+		Notice:                  strings.TrimSpace(r.URL.Query().Get("notice")),
+		Error:                   strings.TrimSpace(r.URL.Query().Get("error")),
 	})
 }
 

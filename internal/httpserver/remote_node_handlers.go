@@ -44,6 +44,10 @@ type remoteNodeMonitorPayload struct {
 	JSONPath           string `json:"json_path,omitempty"`
 	JSONPathExpected   string `json:"json_path_expected,omitempty"`
 	CheckMode          string `json:"check_mode,omitempty"`
+	PromQuery          string `json:"prom_query,omitempty"`
+	PromExpectedValue  string `json:"prom_expected_value,omitempty"`
+	PromComparison     string `json:"prom_comparison,omitempty"`
+	GRPCService        string `json:"grpc_service,omitempty"`
 	NotifyOnRecovery   bool   `json:"notify_on_recovery"`
 }
 

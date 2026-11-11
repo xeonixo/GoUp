@@ -70,6 +70,10 @@ func normalizeTLSMode(kind monitor.Kind, requested monitor.TLSMode) monitor.TLSM
 		return monitor.ComposeSDNSMode(monitor.SDNSTransportDoH, monitor.SDNSMethodPOST, true, monitor.TCPAddressFamilyDual)
 	case monitor.KindDNS, monitor.KindWhois, monitor.KindHeartbeat:
 		return monitor.TLSModeNone
+	case monitor.KindPrometheus:
+		return monitor.NormalizeHTTPSTLSSecurityMode(requested)
+	case monitor.KindGRPC:
+		return monitor.NormalizeTCPTLSSecurityMode(requested)
 	default:
 		return requested
 	}
@@ -199,7 +203,7 @@ func monitorTLSModeLabel(item monitor.Monitor) string {
 			}
 		}
 		return strings.Join(parts, " · ")
-	case monitor.KindTCP:
+	case monitor.KindTCP, monitor.KindGRPC:
 		securityMode, _, family := monitor.ParseTCPTLSMode(item.TLSMode)
 		parts := make([]string, 0, 2)
 		switch securityMode {

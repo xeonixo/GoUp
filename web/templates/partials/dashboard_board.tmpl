@@ -126,6 +126,10 @@
                   data-json-path="{{.JSONPath}}"
                   data-json-path-expected="{{.JSONPathExpected}}"
                   data-check-mode="{{.CheckMode}}"
+                  data-prom-query="{{.PromQuery}}"
+                  data-prom-expected-value="{{.PromExpectedValue}}"
+                  data-prom-comparison="{{.PromComparison}}"
+                  data-grpc-service="{{.GRPCService}}"
                   data-confirm-after="{{.ConfirmAfter}}"
                   data-remind-every="{{.RemindEveryMinutes}}"
                   data-cert-warning-days="{{.CertWarningDays}}"
@@ -233,7 +237,7 @@
               <span class="muted">{{index $.Translations "dashboard.trend_detail.last_check"}}</span>
               <strong>{{if .LastCheckedAtRaw}}<time class="client-time" datetime="{{.LastCheckedAtRaw}}" data-format="relative-age">{{.LastCheckedAt}}</time>{{else}}—{{end}}</strong>
             </div>
-            {{if eq .KindValue "https" "tcp" "smtp" "imap" "sdns"}}
+            {{if eq .KindValue "https" "tcp" "smtp" "imap" "sdns" "grpc"}}
             <div class="monitor-metric">
               <span class="muted">{{index $.Translations "dashboard.monitor.certificate"}}</span>
               <strong>{{if .TLSNotAfterRaw}}<time class="client-time" datetime="{{.TLSNotAfterRaw}}" data-format="minute">{{.TLSNotAfter}}</time>{{else}}—{{end}}</strong>

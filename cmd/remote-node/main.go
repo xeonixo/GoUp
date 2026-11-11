@@ -18,7 +18,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	agent := remotenode.New(cfg, logger)
+	agent, err := remotenode.New(cfg, logger)
+	if err != nil {
+		logger.Error("invalid TLS configuration", "error", err)
+		os.Exit(1)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

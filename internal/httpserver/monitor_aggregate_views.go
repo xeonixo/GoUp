@@ -284,6 +284,10 @@ func monitorKindLabel(kind monitor.Kind) string {
 		return "WHOIS"
 	case monitor.KindHeartbeat:
 		return "Heartbeat"
+	case monitor.KindPrometheus:
+		return "Prometheus"
+	case monitor.KindGRPC:
+		return "gRPC"
 	default:
 		return strings.ToUpper(string(kind))
 	}

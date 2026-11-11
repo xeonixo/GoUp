@@ -24,6 +24,9 @@ func TestLoadConfigFromEnv(t *testing.T) {
 	t.Setenv("REMOTE_NODE_ID", "node-1")
 	t.Setenv("REMOTE_NODE_BOOTSTRAP_KEY", "secret")
 	t.Setenv("REMOTE_NODE_POLL_SECONDS", "15")
+	t.Setenv("REMOTE_NODE_TLS_CERT_FILE", "")
+	t.Setenv("REMOTE_NODE_TLS_KEY_FILE", "")
+	t.Setenv("REMOTE_NODE_TLS_CA_FILE", "")
 
 	cfg, err := LoadConfigFromEnv()
 	if err != nil {
@@ -34,6 +37,17 @@ func TestLoadConfigFromEnv(t *testing.T) {
 	}
 	if cfg.InitialPollSeconds != 15 {
 		t.Fatalf("InitialPollSeconds = %d, want 15", cfg.InitialPollSeconds)
+	}
+}
+
+func TestLoadConfigFromEnvTLSPairRequired(t *testing.T) {
+	t.Setenv("REMOTE_NODE_CONTROL_PLANE_URL", "https://example.com")
+	t.Setenv("REMOTE_NODE_ID", "node-1")
+	t.Setenv("REMOTE_NODE_BOOTSTRAP_KEY", "secret")
+	t.Setenv("REMOTE_NODE_TLS_CERT_FILE", "/certs/node.crt")
+	t.Setenv("REMOTE_NODE_TLS_KEY_FILE", "")
+	if _, err := LoadConfigFromEnv(); err == nil {
+		t.Fatalf("expected error when only cert file is set")
 	}
 }
 

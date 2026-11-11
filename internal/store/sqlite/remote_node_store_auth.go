@@ -20,15 +20,16 @@ func (s *ControlPlaneStore) AuthenticateRemoteNodeBootstrap(ctx context.Context,
 	}
 
 	var (
-		item                   RemoteNode
-		enabledRaw             int
-		lastSeenAt             sql.NullTime
-		accessTokenExpiresAt   sql.NullTime
-		agentVersionSeenAt     sql.NullTime
-		bootstrapKeyCiphertext string
+		item                    RemoteNode
+		enabledRaw              int
+		lastSeenAt              sql.NullTime
+		accessTokenExpiresAt    sql.NullTime
+		agentVersionSeenAt      sql.NullTime
+		bootstrapKeyCiphertext  string
+		bootstrapKeyFingerprint string
 	)
 	err := s.db.QueryRowContext(ctx, `
-SELECT id, tenant_id, node_id, name, enabled, heartbeat_timeout_seconds, last_seen_at, access_token_expires_at, created_at, updated_at, agent_version, agent_version_seen_at, bootstrap_key_ciphertext
+SELECT id, tenant_id, node_id, name, enabled, heartbeat_timeout_seconds, last_seen_at, access_token_expires_at, created_at, updated_at, agent_version, agent_version_seen_at, bootstrap_key_ciphertext, bootstrap_key_fingerprint
 FROM remote_nodes
 WHERE node_id = ?
 `, nodeID).Scan(
@@ -45,6 +46,7 @@ WHERE node_id = ?
 		&item.AgentVersion,
 		&agentVersionSeenAt,
 		&bootstrapKeyCiphertext,
+		&bootstrapKeyFingerprint,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -68,6 +70,17 @@ WHERE node_id = ?
 		value := accessTokenExpiresAt.Time.UTC()
 		item.AccessTokenExpiresAt = &value
 	}
+
+	providedFingerprint := remoteNodeTokenFingerprint(bootstrapKey)
+	storedFingerprint := strings.TrimSpace(bootstrapKeyFingerprint)
+	if storedFingerprint != "" {
+		if subtle.ConstantTimeCompare([]byte(providedFingerprint), []byte(storedFingerprint)) != 1 {
+			return RemoteNode{}, sql.ErrNoRows
+		}
+		return item, nil
+	}
+
+	// Legacy rows: authenticate by decrypting ciphertext until fingerprints are backfilled.
 	plainBootstrap, err := s.decryptSecret(bootstrapKeyCiphertext)
 	if err != nil {
 		return RemoteNode{}, fmt.Errorf("decrypt bootstrap key: %w", err)
@@ -87,16 +100,9 @@ func (s *ControlPlaneStore) IssueRemoteNodeAccessToken(ctx context.Context, node
 	if ttl <= 0 {
 		ttl = 5 * time.Minute
 	}
-	if len(s.secretKey) == 0 {
-		return "", time.Time{}, errors.New("control-plane secret key is not configured")
-	}
 	token, err := generateTokenValue(remoteNodeAccessTokenRandomBytes)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("generate access token: %w", err)
-	}
-	sealed, err := encryptProviderSecret(s.secretKey, token)
-	if err != nil {
-		return "", time.Time{}, fmt.Errorf("encrypt access token: %w", err)
 	}
 	fingerprint := remoteNodeTokenFingerprint(token)
 	now := time.Now().UTC()
@@ -104,24 +110,21 @@ func (s *ControlPlaneStore) IssueRemoteNodeAccessToken(ctx context.Context, node
 	previousGraceUntil := now.Add(remoteNodePreviousTokenGrace)
 
 	var (
-		currentCiphertext   string
-		currentFingerprint  string
-		currentExpiresAt    sql.NullTime
+		currentFingerprint string
+		currentExpiresAt   sql.NullTime
 	)
 	err = s.db.QueryRowContext(ctx, `
-SELECT access_token_ciphertext, access_token_fingerprint, access_token_expires_at
+SELECT access_token_fingerprint, access_token_expires_at
 FROM remote_nodes
 WHERE id = ?
-`, nodeInternalID).Scan(&currentCiphertext, &currentFingerprint, &currentExpiresAt)
+`, nodeInternalID).Scan(&currentFingerprint, &currentExpiresAt)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("load current access token for rotation: %w", err)
 	}
 
-	previousCiphertext := ""
 	previousFingerprint := ""
 	var previousExpires any
-	if strings.TrimSpace(currentCiphertext) != "" && strings.TrimSpace(currentFingerprint) != "" {
-		previousCiphertext = currentCiphertext
+	if strings.TrimSpace(currentFingerprint) != "" {
 		previousFingerprint = currentFingerprint
 		graceExpires := previousGraceUntil
 		if currentExpiresAt.Valid && currentExpiresAt.Time.UTC().Before(graceExpires) {
@@ -132,15 +135,15 @@ WHERE id = ?
 
 	_, err = s.db.ExecContext(ctx, `
 UPDATE remote_nodes
-SET access_token_ciphertext = ?,
+SET access_token_ciphertext = '',
 	access_token_fingerprint = ?,
 	access_token_expires_at = ?,
-	previous_access_token_ciphertext = ?,
+	previous_access_token_ciphertext = '',
 	previous_access_token_fingerprint = ?,
 	previous_access_token_expires_at = ?,
 	updated_at = ?
 WHERE id = ?
-`, sealed, fingerprint, expiresAt, previousCiphertext, previousFingerprint, previousExpires, now, nodeInternalID)
+`, fingerprint, expiresAt, previousFingerprint, previousExpires, now, nodeInternalID)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("store access token: %w", err)
 	}
@@ -164,21 +167,21 @@ func (s *ControlPlaneStore) AuthenticateRemoteNodeAccessToken(ctx context.Contex
 
 func (s *ControlPlaneStore) authenticateRemoteNodeAccessTokenByFingerprint(ctx context.Context, token, fingerprint string, previous bool, now time.Time) (RemoteNode, error) {
 	query := `
-SELECT id, tenant_id, node_id, name, enabled, heartbeat_timeout_seconds, last_seen_at, access_token_expires_at, created_at, updated_at, agent_version, agent_version_seen_at, access_token_ciphertext
+SELECT id, tenant_id, node_id, name, enabled, heartbeat_timeout_seconds, last_seen_at, access_token_expires_at, created_at, updated_at, agent_version, agent_version_seen_at, access_token_ciphertext, access_token_fingerprint
 FROM remote_nodes
 WHERE access_token_fingerprint = ?
 	AND enabled = 1
-	AND TRIM(access_token_ciphertext) <> ''
+	AND TRIM(access_token_fingerprint) <> ''
 	AND access_token_expires_at IS NOT NULL
 	AND access_token_expires_at >= ?
 `
 	if previous {
 		query = `
-SELECT id, tenant_id, node_id, name, enabled, heartbeat_timeout_seconds, last_seen_at, access_token_expires_at, created_at, updated_at, agent_version, agent_version_seen_at, previous_access_token_ciphertext
+SELECT id, tenant_id, node_id, name, enabled, heartbeat_timeout_seconds, last_seen_at, access_token_expires_at, created_at, updated_at, agent_version, agent_version_seen_at, previous_access_token_ciphertext, previous_access_token_fingerprint
 FROM remote_nodes
 WHERE previous_access_token_fingerprint = ?
 	AND enabled = 1
-	AND TRIM(previous_access_token_ciphertext) <> ''
+	AND TRIM(previous_access_token_fingerprint) <> ''
 	AND previous_access_token_expires_at IS NOT NULL
 	AND previous_access_token_expires_at >= ?
 `
@@ -197,6 +200,7 @@ WHERE previous_access_token_fingerprint = ?
 			accessTokenExpiresAt sql.NullTime
 			agentVersionSeenAt   sql.NullTime
 			ciphertext           string
+			storedFingerprint    string
 		)
 		if err := rows.Scan(
 			&item.ID,
@@ -212,6 +216,7 @@ WHERE previous_access_token_fingerprint = ?
 			&item.AgentVersion,
 			&agentVersionSeenAt,
 			&ciphertext,
+			&storedFingerprint,
 		); err != nil {
 			return RemoteNode{}, fmt.Errorf("scan remote node access candidate: %w", err)
 		}
@@ -227,6 +232,14 @@ WHERE previous_access_token_fingerprint = ?
 		if accessTokenExpiresAt.Valid {
 			value := accessTokenExpiresAt.Time.UTC()
 			item.AccessTokenExpiresAt = &value
+		}
+
+		// Prefer hash-only auth. Decrypt only for legacy rows that still store ciphertext.
+		if strings.TrimSpace(ciphertext) == "" {
+			if subtle.ConstantTimeCompare([]byte(fingerprint), []byte(strings.TrimSpace(storedFingerprint))) == 1 {
+				return item, nil
+			}
+			continue
 		}
 		plainToken, err := s.decryptSecret(ciphertext)
 		if err != nil {

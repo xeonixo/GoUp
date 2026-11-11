@@ -201,6 +201,7 @@ Configuration is provided through environment variables, typically via `.env` an
 | `GOUP_BASE_URL` | `http://localhost:8080` | External base URL used for CSRF validation, OIDC callbacks, and generated links |
 | `GOUP_DATA_DIR` | `/data` | Directory containing all SQLite database files |
 | `GOUP_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `GOUP_LOG_FORMAT` | `text` | Log format: `text` or `json` (structured `slog` JSON handler) |
 | `GOUP_MONITOR_WORKERS` | `4` | Maximum number of local monitor checks running concurrently |
 | `GOUP_TRUSTED_PROXIES` | _(empty)_ | Comma separated CIDRs/IPs of reverse proxies whose `X-Forwarded-For`, `X-Real-IP` and `X-Forwarded-Proto` headers are trusted. See [Running behind a reverse proxy](#running-behind-a-reverse-proxy). |
 | `GOUP_SETUP_TOKEN` | _(random)_ | Token required for the initial `/admin/setup` form. If unset, a random token is generated at startup and written to the server log while setup is pending. |
@@ -514,6 +515,19 @@ Each tenant can publish an opt-in status page at `/{slug}/status`. It needs no l
 
 1. Sign in as a tenant admin and open **Settings → Status & metrics**.
 2. Enable the page, set a title and optional description, tick the monitors to show and give each a public display name (defaults to the monitor name). Use **Copy public URL** to share the link.
+3. Optional branding: logo, brand color, custom CSS (size-capped, sanitized, injected only as a `<style>` block on the public page), and a custom domain.
+
+### Custom domain
+
+Set **Custom domain** to a hostname such as `status.example.com`. When a request’s `Host` matches that hostname and the status page is enabled, GoUp serves the page at `/` (and `/status`) without a tenant slug in the path. Asset/feed paths under `/status/...` work the same way.
+
+The reverse proxy in front of GoUp must route that hostname to the GoUp process and forward the original `Host` header (SNI/TLS termination for the custom domain is also the proxy’s job). Example (Caddy):
+
+```caddy
+status.example.com {
+  reverse_proxy goup:8080
+}
+```
 
 The page shows an overall banner, each monitor's current status, 90-day daily uptime bars with the percentage (computed from the hourly rollups, so unknown and maintenance checks do not count) and the time of the last update. It never exposes targets, hosts, URLs, error messages or latencies. If a selected monitor belongs to a monitor group, the group name is shown as a heading. The response is cached on the server for 30 seconds and sent with `Cache-Control: public, max-age=30`, so changes appear after at most about 30 seconds. A disabled page or an inactive tenant returns 404.
 
@@ -553,6 +567,17 @@ Exposed series, labelled with `monitor`, `monitor_id`, `kind` and `group`:
 | `goup_build_info{version=...}` | build information |
 
 Repeated requests with an invalid token are rate limited per client IP (HTTP 429). Monitor targets and hosts are never part of the output.
+
+### Process-level metrics
+
+Process observability (goroutines, memory stats, open DB count, remote-node last-seen summary, notification retry queue depth) is available separately so it does not conflict with tenant `/{slug}/metrics`:
+
+| Endpoint | Access |
+| --- | --- |
+| `GET /admin/system/metrics` | Control-plane admin session required |
+| `GET /metrics-internal` | Unauthenticated, loopback peers only |
+
+Every HTTP response also includes `X-Request-ID` (accepted from the client or generated). Request logs include that ID when present.
 
 ## Running behind a reverse proxy
 
@@ -679,17 +704,18 @@ docs/                   Architecture notes and project documentation
 
 Shipped since the early architecture notes (see [docs/improvements.md](docs/improvements.md) for the full prioritized backlog):
 
-- [x] Public status page (`/{slug}/status`) with branding, incidents, and optional token access
-- [x] Additional monitor types (DNS, SDNS, UDP, WHOIS, heartbeat, and more)
+- [x] Public status page (`/{slug}/status`) with branding, custom CSS/domain, incidents, and optional token access
+- [x] Additional monitor types (DNS, SDNS, UDP, WHOIS, heartbeat, prometheus, gRPC health, and more)
 - [x] Operator role (`admin` / `operator` / `viewer`)
 - [x] Notification routing and quiet hours
 - [x] Versioned JSON API (`/api/v1`) with scoped bearer tokens
-- [x] Remote-node previous-token grace and failed-auth rate limits
+- [x] Remote-node previous-token grace, fingerprint-only tokens, and optional mTLS
 - [x] Online backup and secret rekey
 - [x] HTTPS assertions (method/headers/JSONPath/TLS-only), reports/SLA, maintenance TZ
 - [x] Remote-node assignment UX, status feed/subscriptions, webhook secret rotate
 - [x] `/readyz`, audit retention/export, SSRF align, hardened remote-node compose
-- [ ] Remote-node mTLS (Tier 3)
+- [x] JSON logs, request IDs, process metrics, persistent lockouts, VAPID rotate
+- [ ] Browser/script monitors (Playwright) — intentionally out of scope
 
 ---
 

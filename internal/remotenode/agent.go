@@ -29,18 +29,20 @@ type Agent struct {
 	assignments map[int64]assignedMonitorSpec
 }
 
-func New(cfg Config, logger *slog.Logger) *Agent {
+func New(cfg Config, logger *slog.Logger) (*Agent, error) {
+	httpClient, err := newHTTPClient(cfg)
+	if err != nil {
+		return nil, err
+	}
 	return &Agent{
 		cfg:         cfg,
 		logger:      logger,
 		workerSem:   make(chan struct{}, 4),
 		schedule:    make(map[int64]*remoteScheduleState),
 		assignments: make(map[int64]assignedMonitorSpec),
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		httpClient:  httpClient,
 		pollSeconds: cfg.InitialPollSeconds,
-	}
+	}, nil
 }
 
 func (a *Agent) Run(ctx context.Context) error {
@@ -172,7 +174,9 @@ func (a *Agent) runCheck(ctx context.Context, item assignedMonitorSpec, schedule
 		monitor.KindDNS:   monitor.DNSChecker{},
 		monitor.KindSDNS:  monitor.SDNSChecker{},
 		monitor.KindUDP:   monitor.UDPChecker{},
-		monitor.KindWhois: monitor.WhoisChecker{},
+		monitor.KindWhois:       monitor.WhoisChecker{},
+		monitor.KindPrometheus:  monitor.PrometheusChecker{},
+		monitor.KindGRPC:        monitor.GRPCChecker{},
 	}
 	kind := monitor.Kind(strings.TrimSpace(item.Kind))
 	checker, ok := checkers[kind]
@@ -198,6 +202,10 @@ func (a *Agent) runCheck(ctx context.Context, item assignedMonitorSpec, schedule
 		JSONPath:           strings.TrimSpace(item.JSONPath),
 		JSONPathExpected:   strings.TrimSpace(item.JSONPathExpected),
 		CheckMode:          strings.TrimSpace(item.CheckMode),
+		PromQuery:          strings.TrimSpace(item.PromQuery),
+		PromExpectedValue:  strings.TrimSpace(item.PromExpectedValue),
+		PromComparison:     strings.TrimSpace(item.PromComparison),
+		GRPCService:        strings.TrimSpace(item.GRPCService),
 		Enabled:            true,
 	}
 	runCtx, cancel := context.WithTimeout(ctx, mon.Timeout+2*time.Second)

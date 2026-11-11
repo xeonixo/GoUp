@@ -21,6 +21,7 @@ func (s *Server) runSecurityStateSweeper(ctx context.Context) {
 			s.sweepLocalLoginAttempts(now)
 			s.sweepAdminAccessAttempts(now)
 			s.sweepBootstrapAttempts(now)
+			s.prunePersistedRateLimitAttempts(now)
 			s.sweepUsedPasswordResetTokens(now)
 		}
 	}
@@ -28,32 +29,41 @@ func (s *Server) runSecurityStateSweeper(ctx context.Context) {
 
 func (s *Server) sweepLocalLoginAttempts(now time.Time) {
 	s.localLoginMu.Lock()
-	defer s.localLoginMu.Unlock()
+	expired := make([]string, 0)
 	for key, attempt := range s.localLoginAttempts {
 		if !keepAttempt(attempt, now, localLoginWindow) {
 			delete(s.localLoginAttempts, key)
+			expired = append(expired, key)
 		}
 	}
+	s.localLoginMu.Unlock()
+	s.deletePersistedRateLimitAttempts(expired)
 }
 
 func (s *Server) sweepAdminAccessAttempts(now time.Time) {
 	s.adminAccessMu.Lock()
-	defer s.adminAccessMu.Unlock()
+	expired := make([]string, 0)
 	for key, attempt := range s.adminAccessAttempts {
 		if !keepAttempt(attempt, now, adminAccessWindow) {
 			delete(s.adminAccessAttempts, key)
+			expired = append(expired, key)
 		}
 	}
+	s.adminAccessMu.Unlock()
+	s.deletePersistedRateLimitAttempts(expired)
 }
 
 func (s *Server) sweepBootstrapAttempts(now time.Time) {
 	s.bootstrapMu.Lock()
-	defer s.bootstrapMu.Unlock()
+	expired := make([]string, 0)
 	for key, attempt := range s.bootstrapAttempts {
 		if !keepAttempt(attempt, now, bootstrapWindow) {
 			delete(s.bootstrapAttempts, key)
+			expired = append(expired, key)
 		}
 	}
+	s.bootstrapMu.Unlock()
+	s.deletePersistedRateLimitAttempts(expired)
 }
 
 func keepAttempt(attempt localLoginAttempt, now time.Time, window time.Duration) bool {

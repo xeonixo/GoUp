@@ -58,6 +58,19 @@ func TestReencryptAllSecretsWithPreviousKey(t *testing.T) {
 	if bootstrap == "" || node.ID == 0 {
 		t.Fatalf("unexpected remote node: %+v bootstrap=%q", node, bootstrap)
 	}
+	// Seed a legacy remote-node ciphertext so rekey still covers that path.
+	legacyAccess := "legacy-access-for-rekey"
+	sealedAccess, err := encryptProviderSecret(cp.secretKey, legacyAccess)
+	if err != nil {
+		t.Fatalf("encrypt legacy access: %v", err)
+	}
+	if _, err := cp.db.ExecContext(ctx, `
+UPDATE remote_nodes
+SET access_token_ciphertext = ?, access_token_fingerprint = ?
+WHERE id = ?
+`, sealedAccess, remoteNodeTokenFingerprint(legacyAccess), node.ID); err != nil {
+		t.Fatalf("seed legacy access ciphertext: %v", err)
+	}
 	if _, _, err := cp.GetOrCreateVAPIDKeys(ctx); err != nil {
 		t.Fatalf("vapid: %v", err)
 	}
@@ -103,13 +116,25 @@ func TestReencryptAllSecretsWithPreviousKey(t *testing.T) {
 	if err != nil || notify.MatrixAccessToken != "matrix-token" {
 		t.Fatalf("matrix token = %+v err=%v", notify, err)
 	}
-	var bootstrapCipher string
-	if err := cp.db.QueryRowContext(ctx, `SELECT bootstrap_key_ciphertext FROM remote_nodes WHERE id = ?`, node.ID).Scan(&bootstrapCipher); err != nil {
-		t.Fatalf("load bootstrap cipher: %v", err)
+	var (
+		bootstrapCipher, bootstrapFP string
+		accessCipher                 string
+	)
+	if err := cp.db.QueryRowContext(ctx, `
+SELECT bootstrap_key_ciphertext, bootstrap_key_fingerprint, access_token_ciphertext
+FROM remote_nodes WHERE id = ?
+`, node.ID).Scan(&bootstrapCipher, &bootstrapFP, &accessCipher); err != nil {
+		t.Fatalf("load remote node secrets: %v", err)
 	}
-	gotBootstrap, err := cp.decryptSecret(bootstrapCipher)
-	if err != nil || gotBootstrap != bootstrap {
-		t.Fatalf("bootstrap = %q want %q err=%v", gotBootstrap, bootstrap, err)
+	if bootstrapCipher != "" {
+		t.Fatalf("expected empty bootstrap ciphertext after hash-only create, got %q", bootstrapCipher)
+	}
+	if bootstrapFP != remoteNodeTokenFingerprint(bootstrap) {
+		t.Fatalf("bootstrap fingerprint = %q want %q", bootstrapFP, remoteNodeTokenFingerprint(bootstrap))
+	}
+	gotAccess, err := cp.decryptSecret(accessCipher)
+	if err != nil || gotAccess != legacyAccess {
+		t.Fatalf("legacy access after rekey = %q want %q err=%v", gotAccess, legacyAccess, err)
 	}
 	priv, _, err := cp.GetOrCreateVAPIDKeys(ctx)
 	if err != nil || priv == "" {

@@ -67,8 +67,12 @@ func (s *Server) routes() (http.Handler, error) {
 	mux.Handle("/admin/remote-nodes", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminRemoteNodesOverview)))
 	// System health page and online backup / secret rekey actions
 	mux.Handle("/admin/system", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSystem)))
+	mux.Handle("/admin/system/metrics", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleProcessMetrics)))
 	mux.Handle("/admin/system/backup", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSystemBackup)))
 	mux.Handle("/admin/system/rekey-secrets", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSystemRekeySecrets)))
+	mux.Handle("/admin/system/rotate-vapid", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSystemRotateVAPID)))
+	// Localhost-only process metrics for scrapers without an admin session.
+	mux.HandleFunc("/metrics-internal", s.handleProcessMetricsInternal)
 	mux.Handle("/admin/tenants/new", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantForm)))
 	mux.Handle("/admin/tenants/{id}/edit", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantForm)))
 	mux.Handle("/admin/tenants/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantSave)))
@@ -95,7 +99,7 @@ func (s *Server) routes() (http.Handler, error) {
 	mux.Handle("/admin/settings/smtp/save", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSMTPSettingsSave)))
 	mux.Handle("/admin/settings/smtp/test", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSMTPSettingsTest)))
 
-	return s.logging(s.securityHeaders(s.limitRequestBody(s.requireSameOrigin(mux)))), nil
+	return s.withRequestID(s.logging(s.securityHeaders(s.limitRequestBody(s.requireRemoteNodeMTLS(s.requireSameOrigin(mux)))))), nil
 }
 
 func serveEmbeddedFile(fsys fs.FS, fileName string) http.HandlerFunc {
@@ -131,6 +135,11 @@ func serveEmbeddedFile(fsys fs.FS, fileName string) http.HandlerFunc {
 }
 
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	// Custom-domain status hosting is resolved from Host before slug routing so
+	// status.example.com/ (and /status) work without /{slug} in the path.
+	if s.handleCustomDomainStatus(w, r) {
+		return
+	}
 	if r.URL.Path != "/" {
 		if s.handlePrettyTenantPath(w, r) {
 			return

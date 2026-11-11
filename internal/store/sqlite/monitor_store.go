@@ -29,6 +29,10 @@ type CreateMonitorParams struct {
 	JSONPath           string
 	JSONPathExpected   string
 	CheckMode          string
+	PromQuery          string
+	PromExpectedValue  string
+	PromComparison     string
+	GRPCService        string
 	NotifyOnRecovery   bool
 	RetryCount         int
 	RetryInterval      time.Duration
@@ -46,6 +50,7 @@ type UpdateMonitorParams struct {
 }
 
 func (s *Store) CreateMonitor(ctx context.Context, params CreateMonitorParams) (int64, error) {
+	params.Kind = monitor.NormalizeKind(string(params.Kind))
 	params = normalizeHeartbeatParams(params)
 	if err := validateCreateMonitorParams(params); err != nil {
 		return 0, err
@@ -91,6 +96,7 @@ func (s *Store) UpdateMonitor(ctx context.Context, params UpdateMonitorParams) e
 		return errors.New("monitor id is required")
 	}
 
+	params.Kind = monitor.NormalizeKind(string(params.Kind))
 	params.CreateMonitorParams = normalizeHeartbeatParams(params.CreateMonitorParams)
 	if err := validateCreateMonitorParams(params.CreateMonitorParams); err != nil {
 		return err

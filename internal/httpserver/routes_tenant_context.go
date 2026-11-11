@@ -4,10 +4,13 @@ import (
 	"context"
 	"net/http"
 	"strings"
+
+	store "goup/internal/store/sqlite"
 )
 
 type tenantSlugContextKey struct{}
 type tenantIDContextKey struct{}
+type statusCustomDomainContextKey struct{}
 
 func requestWithTenantSlug(r *http.Request, slug string) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), tenantSlugContextKey{}, strings.TrimSpace(slug)))
@@ -15,6 +18,10 @@ func requestWithTenantSlug(r *http.Request, slug string) *http.Request {
 
 func requestWithTenantID(r *http.Request, tenantID int64) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), tenantIDContextKey{}, tenantID))
+}
+
+func requestWithStatusCustomDomain(r *http.Request) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), statusCustomDomainContextKey{}, true))
 }
 
 func tenantIDFromRequest(r *http.Request) int64 {
@@ -34,6 +41,120 @@ func tenantSlugFromRequest(r *http.Request) string {
 	return ""
 }
 
+func statusPageCustomDomainFromRequest(r *http.Request) bool {
+	ok, _ := r.Context().Value(statusCustomDomainContextKey{}).(bool)
+	return ok
+}
+
+// handleCustomDomainStatus serves the public status page when the request Host matches a
+// tenant's configured custom_domain. The reverse proxy must forward that Host to GoUp.
+// Paths: /, /status, and the usual /status/* assets/feeds/subscriptions (no slug required).
+func (s *Server) handleCustomDomainStatus(w http.ResponseWriter, r *http.Request) bool {
+	if s.controlStore == nil {
+		return false
+	}
+	host := store.NormalizeStatusPageCustomDomain(r.Host)
+	if host == "" {
+		return false
+	}
+	tenant, ok := s.lookupTenantByStatusCustomDomain(r.Context(), host)
+	if !ok {
+		return false
+	}
+
+	trimmed := strings.Trim(strings.TrimSpace(r.URL.Path), "/")
+	parts := []string{}
+	if trimmed != "" {
+		parts = strings.Split(trimmed, "/")
+	}
+
+	r = requestWithTenantSlug(r, tenant.Slug)
+	r = requestWithTenantID(r, tenant.ID)
+	r = requestWithStatusCustomDomain(r)
+
+	switch {
+	case len(parts) == 0:
+		s.handleStatusPage(w, r)
+		return true
+	case len(parts) == 1 && parts[0] == "status":
+		s.handleStatusPage(w, r)
+		return true
+	case len(parts) >= 1 && parts[0] == "status":
+		return s.serveStatusPageSubpath(w, r, parts[1:])
+	default:
+		// Host matches a status custom domain; unknown paths stay 404 rather than
+		// falling through to the tenant app (which requires auth / slug URLs).
+		http.NotFound(w, r)
+		return true
+	}
+}
+
+func (s *Server) serveStatusPageSubpath(w http.ResponseWriter, r *http.Request, subParts []string) bool {
+	switch {
+	case len(subParts) == 1 && (strings.EqualFold(subParts[0], "feed.xml") || strings.EqualFold(subParts[0], "feed.atom")):
+		s.handleStatusPageFeed(w, r)
+		return true
+	case len(subParts) == 1 && subParts[0] == "subscribe":
+		s.handleStatusPageSubscribe(w, r)
+		return true
+	case len(subParts) == 2 && subParts[0] == "subscribe" && subParts[1] == "confirm":
+		s.handleStatusPageSubscribeConfirm(w, r)
+		return true
+	case len(subParts) == 2 && subParts[0] == "subscribe" && subParts[1] == "unsubscribe":
+		s.handleStatusPageUnsubscribe(w, r)
+		return true
+	case len(subParts) == 1 && subParts[0] == "logo":
+		s.handleStatusPageLogo(w, r)
+		return true
+	case len(subParts) == 1 && subParts[0] == "brand.css":
+		s.handleStatusPageBrandCSS(w, r)
+		return true
+	default:
+		http.NotFound(w, r)
+		return true
+	}
+}
+
+func (s *Server) lookupTenantByStatusCustomDomain(ctx context.Context, host string) (store.Tenant, bool) {
+	host = store.NormalizeStatusPageCustomDomain(host)
+	if host == "" || s.controlStore == nil {
+		return store.Tenant{}, false
+	}
+	tenants, err := s.controlStore.GetAllTenants(ctx)
+	if err != nil {
+		return store.Tenant{}, false
+	}
+	for _, tenant := range tenants {
+		if !tenant.Active {
+			continue
+		}
+		appStore, err := s.storeForTenantLookup(ctx, tenant)
+		if err != nil || appStore == nil {
+			continue
+		}
+		settings, err := appStore.GetStatusPageSettings(ctx)
+		if err != nil {
+			continue
+		}
+		// Match the configured hostname even when the page is disabled so the
+		// Host stays reserved and handleStatusPage can return 404.
+		if store.NormalizeStatusPageCustomDomain(settings.CustomDomain) == host {
+			return tenant, true
+		}
+	}
+	return store.Tenant{}, false
+}
+
+func (s *Server) storeForTenantLookup(ctx context.Context, tenant store.Tenant) (*store.Store, error) {
+	if s.tenantStores != nil {
+		return s.tenantStores.StoreForTenant(ctx, tenant.ID)
+	}
+	if s.store != nil {
+		return s.store, nil
+	}
+	return nil, http.ErrNotSupported
+}
+
 func (s *Server) handlePrettyTenantPath(w http.ResponseWriter, r *http.Request) bool {
 	trimmed := strings.Trim(strings.TrimSpace(r.URL.Path), "/")
 	if trimmed == "" {
@@ -47,7 +168,7 @@ func (s *Server) handlePrettyTenantPath(w http.ResponseWriter, r *http.Request) 
 	slug := strings.TrimSpace(parts[0])
 
 	// Reserve built-in top-level paths for the main mux.
-	if slug == "admin" || slug == "static" || slug == "healthz" || slug == "readyz" || slug == "auth" || slug == "node" || slug == "hb" || slug == "assets" || slug == "favicon" || slug == "sw.js" || slug == "offline" {
+	if slug == "admin" || slug == "static" || slug == "healthz" || slug == "readyz" || slug == "auth" || slug == "node" || slug == "hb" || slug == "assets" || slug == "favicon" || slug == "sw.js" || slug == "offline" || slug == "metrics-internal" {
 		return false
 	}
 

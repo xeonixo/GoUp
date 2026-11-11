@@ -49,7 +49,7 @@ The Control Plane stores those results in the same internal flows used for local
 ## Authentication and transport security
 
 - **TLS is required** for all traffic.
-- **mTLS is planned** as an additional hardening step.
+- **mTLS is optional** and additive to bootstrap-key / bearer-token auth.
 - Access tokens are short-lived and rotated regularly (on poll responses).
 - Bootstrap keys and tokens are encrypted at rest in the Control Plane database.
 
@@ -57,6 +57,35 @@ The Control Plane stores those results in the same internal flows used for local
 
 - TLS: only the server proves its identity.
 - mTLS: server and client both present certificates.
+
+### Optional mTLS
+
+Mutual TLS lets the control plane verify a client certificate on `/node/bootstrap`, `/node/poll`, and `/node/report`. Token auth is unchanged; mTLS is an extra transport check.
+
+**Control plane** (GoUp must terminate TLS for client-cert verification to apply):
+
+| Variable | Purpose |
+|---|---|
+| `GOUP_TLS_CERT_FILE` / `GOUP_TLS_KEY_FILE` | Server certificate so GoUp listens with HTTPS (`ListenAndServeTLS`) |
+| `GOUP_REMOTE_NODE_MTLS_CA_FILE` | PEM CA used to verify remote-node client certificates |
+| `GOUP_REMOTE_NODE_MTLS_REQUIRE` | When `true`, `/node/*` requires a verified client certificate |
+
+When the CA file is set, the HTTP server uses `VerifyClientCertIfGiven` so the UI still works without a browser client cert. Require mode is enforced only on the three `/node/*` API paths.
+
+**Remote node agent:**
+
+| Variable | Purpose |
+|---|---|
+| `REMOTE_NODE_TLS_CERT_FILE` / `REMOTE_NODE_TLS_KEY_FILE` | Client certificate presented to the control plane |
+| `REMOTE_NODE_TLS_CA_FILE` | Optional PEM CA to verify the control-plane server certificate |
+
+Example agent env additions:
+
+```bash
+REMOTE_NODE_TLS_CERT_FILE=/certs/node.crt
+REMOTE_NODE_TLS_KEY_FILE=/certs/node.key
+# REMOTE_NODE_TLS_CA_FILE=/certs/server-ca.crt
+```
 
 ## Repository components
 

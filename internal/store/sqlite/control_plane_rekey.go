@@ -228,6 +228,8 @@ func (s *ControlPlaneStore) reencryptIDCiphertexts(ctx context.Context, dryRun b
 }
 
 func (s *ControlPlaneStore) reencryptRemoteNodeSecrets(ctx context.Context, dryRun bool, now time.Time) (int, error) {
+	// New remote-node tokens/bootstrap keys are fingerprint-only; ciphertext columns are
+	// empty. Rekey still re-encrypts any legacy non-empty ciphertext rows during transition.
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, bootstrap_key_ciphertext, access_token_ciphertext, previous_access_token_ciphertext
 FROM remote_nodes

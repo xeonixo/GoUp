@@ -128,8 +128,8 @@ func TestAdminSystemPageRenders(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(body, "message authentication failed") || !strings.Contains(body, `href="/admin/system" class="admin-nav-link is-active"`) {
 		t.Fatalf("render failed: code=%d body=%.300s", rec.Code, body)
 	}
-	if !strings.Contains(body, `/admin/system/backup`) || !strings.Contains(body, `/admin/system/rekey-secrets`) {
-		t.Fatalf("backup/rekey actions missing: %.400s", body)
+	if !strings.Contains(body, `/admin/system/backup`) || !strings.Contains(body, `/admin/system/rekey-secrets`) || !strings.Contains(body, `/admin/system/rotate-vapid`) {
+		t.Fatalf("backup/rekey/vapid actions missing: %.400s", body)
 	}
 }
 
@@ -184,5 +184,66 @@ func TestAdminSystemBackupAndRekey(t *testing.T) {
 	admin, err := cp.GetControlPlaneAdmin(ctx)
 	if err != nil || admin.TOTPSecret != "JBSWY3DPEHPK3PXP" {
 		t.Fatalf("totp after rekey: %+v err=%v", admin, err)
+	}
+}
+
+func TestAdminSystemRotateVAPID(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	controlPath := filepath.Join(dir, "controlplane.db")
+	cp, err := store.OpenControlPlane(ctx, controlPath)
+	if err != nil {
+		t.Fatalf("open control plane: %v", err)
+	}
+	defer cp.Close()
+	if err := cp.ConfigureSecretKey("test-secret-key-for-vapid-rotate"); err != nil {
+		t.Fatal(err)
+	}
+	tenant, err := cp.CreateTenant(ctx, "vapid", "Vapid", filepath.Join(dir, "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := cp.CreateLocalUserForTenant(ctx, tenant.ID, "alice", "a-long-password-123", "a@example.com", "Alice", "viewer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, pub1, err := cp.GetOrCreateVAPIDKeys(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cp.UpsertPushSubscription(ctx, store.PushSubscription{
+		TenantID: tenant.ID, UserID: user.UserID, Endpoint: "https://web.push.apple.com/x",
+		P256dh: "p256", Auth: "auth", NotifyDown: true, NotifyRecovery: true, NotifyDegraded: true, NotifyReminder: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{
+		cfg:          config.Config{DataDir: dir, ControlPlaneDBPath: controlPath, BaseURL: "https://goup.example"},
+		controlStore: cp,
+		logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/admin/system/rotate-vapid", strings.NewReader("confirm=yes"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	s.handleAdminSystemRotateVAPID(rec, req)
+	loc := rec.Header().Get("Location")
+	if rec.Code != http.StatusSeeOther || !strings.Contains(loc, "notice=") || !strings.Contains(loc, "re-enable") {
+		t.Fatalf("rotate redirect: code=%d location=%q", rec.Code, loc)
+	}
+
+	_, pub2, err := cp.GetOrCreateVAPIDKeys(ctx)
+	if err != nil || pub2 == "" || pub2 == pub1 {
+		t.Fatalf("keys after rotate: pub=%q old=%q err=%v", pub2, pub1, err)
+	}
+	subs, _ := cp.ListUserPushSubscriptions(ctx, tenant.ID, user.UserID)
+	if len(subs) != 0 {
+		t.Fatalf("subscriptions not cleared: %#v", subs)
+	}
+	// Cached sender keys must reload the rotated pair.
+	cached, err := s.pushSender().PublicKey(ctx)
+	if err != nil || cached != pub2 {
+		t.Fatalf("sender cache = %q want %q (%v)", cached, pub2, err)
 	}
 }

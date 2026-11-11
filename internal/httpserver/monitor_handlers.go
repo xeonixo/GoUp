@@ -72,11 +72,15 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 	jsonPath := ""
 	jsonPathExpected := ""
 	checkMode := ""
-	kind := monitor.Kind(strings.ToLower(strings.TrimSpace(r.FormValue("kind"))))
+	kind := monitor.NormalizeKind(r.FormValue("kind"))
 	if kind == "" {
 		kind = monitor.KindHTTPS
 	}
 	tlsMode := normalizeTLSMode(kind, monitor.TLSMode(strings.ToLower(strings.TrimSpace(r.FormValue("tls_mode")))))
+	promQuery := ""
+	promExpectedValue := ""
+	promComparison := ""
+	grpcService := ""
 	if raw := strings.TrimSpace(r.FormValue("expected_status_code")); raw != "" && kind == monitor.KindHTTPS {
 		value, err := strconv.Atoi(raw)
 		if err != nil {
@@ -95,6 +99,14 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 		jsonPath = strings.TrimSpace(r.FormValue("json_path"))
 		jsonPathExpected = strings.TrimSpace(r.FormValue("json_path_expected"))
 		checkMode = monitor.NormalizeHTTPSCheckMode(r.FormValue("check_mode"))
+	}
+	if kind == monitor.KindPrometheus {
+		promQuery = strings.TrimSpace(r.FormValue("prom_query"))
+		promExpectedValue = strings.TrimSpace(r.FormValue("prom_expected_value"))
+		promComparison = monitor.NormalizePromComparison(r.FormValue("prom_comparison"))
+	}
+	if kind == monitor.KindGRPC {
+		grpcService = strings.TrimSpace(r.FormValue("grpc_service"))
 	}
 
 	target := strings.TrimSpace(r.FormValue("target"))
@@ -226,6 +238,35 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 			expectedText = ""
 		}
 	}
+	if kind == monitor.KindPrometheus {
+		target = normalizeHTTPMonitorTarget(target, tlsMode)
+		if parsedTarget, parseErr := url.Parse(target); parseErr == nil {
+			hostname := strings.TrimSpace(parsedTarget.Hostname())
+			if hostname != "" {
+				if isLiteralIPAddress(hostname) {
+					tlsMode = monitor.ComposeHTTPSTLSMode(tlsMode, monitor.TCPAddressFamilyDual)
+				} else {
+					family := monitor.NormalizeTCPAddressFamily(strings.TrimSpace(r.FormValue("https_family")))
+					tlsMode = monitor.ComposeHTTPSTLSMode(tlsMode, family)
+				}
+			}
+		}
+	}
+	if kind == monitor.KindGRPC {
+		grpcHost := strings.TrimSpace(r.FormValue("tcp_host"))
+		grpcPort := strings.TrimSpace(r.FormValue("tcp_port"))
+		if grpcHost != "" || grpcPort != "" {
+			target = strings.TrimSpace(net.JoinHostPort(strings.Trim(grpcHost, "[]"), grpcPort))
+		}
+		if host, _, splitErr := net.SplitHostPort(target); splitErr == nil {
+			if isLiteralIPAddress(host) {
+				tlsMode = monitor.ComposeTCPTLSMode(tlsMode, monitor.TCPAddressFamilyDual)
+			} else {
+				family := monitor.NormalizeTCPAddressFamily(strings.TrimSpace(r.FormValue("tcp_family")))
+				tlsMode = monitor.ComposeTCPTLSMode(tlsMode, family)
+			}
+		}
+	}
 
 	executorKind, executorRef := parseMonitorExecutorSelection(strings.TrimSpace(r.FormValue("executor")))
 	if kind == monitor.KindHeartbeat {
@@ -265,6 +306,10 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 		JSONPath:           jsonPath,
 		JSONPathExpected:   jsonPathExpected,
 		CheckMode:          checkMode,
+		PromQuery:          promQuery,
+		PromExpectedValue:  promExpectedValue,
+		PromComparison:     promComparison,
+		GRPCService:        grpcService,
 		NotifyOnRecovery:   r.FormValue("notify_on_recovery") == "on",
 		RetryCount:         func() int { v, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("retry_count"))); return v }(),
 		RetryInterval: func() time.Duration {
