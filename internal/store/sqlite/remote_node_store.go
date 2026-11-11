@@ -65,13 +65,7 @@ func (s *ControlPlaneStore) CreateRemoteNode(ctx context.Context, tenantID int64
 	if err != nil {
 		return RemoteNode{}, "", fmt.Errorf("generate bootstrap key: %w", err)
 	}
-	if len(s.secretKey) == 0 {
-		return RemoteNode{}, "", errors.New("control-plane secret key is not configured")
-	}
-	sealedBootstrap, err := encryptProviderSecret(s.secretKey, bootstrapKey)
-	if err != nil {
-		return RemoteNode{}, "", fmt.Errorf("encrypt bootstrap key: %w", err)
-	}
+	bootstrapFingerprint := remoteNodeTokenFingerprint(bootstrapKey)
 
 	now := time.Now().UTC()
 	_, err = s.db.ExecContext(ctx, `
@@ -80,12 +74,13 @@ INSERT INTO remote_nodes (
 	node_id,
 	name,
 	bootstrap_key_ciphertext,
+	bootstrap_key_fingerprint,
 	heartbeat_timeout_seconds,
 	enabled,
 	created_at,
 	updated_at
-) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-`, tenantID, nodeID, name, sealedBootstrap, heartbeatTimeoutSeconds, now, now)
+) VALUES (?, ?, ?, '', ?, ?, 1, ?, ?)
+`, tenantID, nodeID, name, bootstrapFingerprint, heartbeatTimeoutSeconds, now, now)
 	if err != nil {
 		return RemoteNode{}, "", fmt.Errorf("create remote node: %w", err)
 	}
@@ -121,24 +116,20 @@ func (s *ControlPlaneStore) RotateRemoteNodeBootstrapKey(ctx context.Context, te
 	if tenantID <= 0 || nodeID == "" {
 		return "", errors.New("tenant id and node id are required")
 	}
-	if len(s.secretKey) == 0 {
-		return "", errors.New("control-plane secret key is not configured")
-	}
 
 	bootstrapKey, err := generateTokenValue(remoteNodeBootstrapKeyRandomBytes)
 	if err != nil {
 		return "", fmt.Errorf("generate bootstrap key: %w", err)
 	}
-	sealedBootstrap, err := encryptProviderSecret(s.secretKey, bootstrapKey)
-	if err != nil {
-		return "", fmt.Errorf("encrypt bootstrap key: %w", err)
-	}
+	bootstrapFingerprint := remoteNodeTokenFingerprint(bootstrapKey)
 
 	result, err := s.db.ExecContext(ctx, `
 UPDATE remote_nodes
-SET bootstrap_key_ciphertext = ?, updated_at = ?
+SET bootstrap_key_ciphertext = '',
+	bootstrap_key_fingerprint = ?,
+	updated_at = ?
 WHERE tenant_id = ? AND node_id = ? AND enabled = 1
-`, sealedBootstrap, time.Now().UTC(), tenantID, nodeID)
+`, bootstrapFingerprint, time.Now().UTC(), tenantID, nodeID)
 	if err != nil {
 		return "", fmt.Errorf("rotate remote node bootstrap key: %w", err)
 	}

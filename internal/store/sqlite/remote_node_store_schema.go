@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS remote_nodes (
 	tenant_id INTEGER NOT NULL,
 	node_id TEXT NOT NULL UNIQUE,
 	name TEXT NOT NULL,
-	bootstrap_key_ciphertext TEXT NOT NULL,
+	bootstrap_key_ciphertext TEXT NOT NULL DEFAULT '',
+	bootstrap_key_fingerprint TEXT NOT NULL DEFAULT '',
 	access_token_ciphertext TEXT NOT NULL DEFAULT '',
 	access_token_fingerprint TEXT NOT NULL DEFAULT '',
 	access_token_expires_at DATETIME,
@@ -27,6 +28,9 @@ CREATE TABLE IF NOT EXISTS remote_nodes (
 )
 `); err != nil {
 		return fmt.Errorf("create remote_nodes table: %w", err)
+	}
+	if err := s.ensureRemoteNodeBootstrapKeyFingerprintColumn(ctx); err != nil {
+		return err
 	}
 	if err := s.ensureRemoteNodeAccessTokenFingerprintColumn(ctx); err != nil {
 		return err
@@ -76,6 +80,22 @@ CREATE TABLE IF NOT EXISTS remote_node_events (
 	return nil
 }
 
+func (s *ControlPlaneStore) ensureRemoteNodeBootstrapKeyFingerprintColumn(ctx context.Context) error {
+	hasColumn, err := s.tableHasColumn(ctx, "remote_nodes", "bootstrap_key_fingerprint")
+	if err != nil {
+		return fmt.Errorf("inspect remote_nodes bootstrap_key_fingerprint column: %w", err)
+	}
+	if !hasColumn {
+		if _, err := s.db.ExecContext(ctx, `ALTER TABLE remote_nodes ADD COLUMN bootstrap_key_fingerprint TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("add remote_nodes bootstrap_key_fingerprint column: %w", err)
+		}
+	}
+	if err := s.backfillRemoteNodeBootstrapKeyFingerprints(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *ControlPlaneStore) ensureRemoteNodeAccessTokenFingerprintColumn(ctx context.Context) error {
 	hasColumn, err := s.tableHasColumn(ctx, "remote_nodes", "access_token_fingerprint")
 	if err != nil {
@@ -111,6 +131,45 @@ func (s *ControlPlaneStore) ensureRemoteNodePreviousAccessTokenColumns(ctx conte
 		}
 		if _, err := s.db.ExecContext(ctx, column.ddl); err != nil {
 			return fmt.Errorf("add remote_nodes %s column: %w", column.name, err)
+		}
+	}
+	return nil
+}
+
+func (s *ControlPlaneStore) backfillRemoteNodeBootstrapKeyFingerprints(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, bootstrap_key_ciphertext
+FROM remote_nodes
+WHERE TRIM(bootstrap_key_ciphertext) <> '' AND TRIM(bootstrap_key_fingerprint) = ''
+`)
+	if err != nil {
+		return fmt.Errorf("query remote node bootstrap fingerprint backfill candidates: %w", err)
+	}
+	defer rows.Close()
+
+	type candidate struct {
+		id         int64
+		ciphertext string
+	}
+	candidates := make([]candidate, 0)
+	for rows.Next() {
+		var item candidate
+		if err := rows.Scan(&item.id, &item.ciphertext); err != nil {
+			return fmt.Errorf("scan remote node bootstrap fingerprint backfill candidate: %w", err)
+		}
+		candidates = append(candidates, item)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate remote node bootstrap fingerprint backfill candidates: %w", err)
+	}
+	for _, item := range candidates {
+		plainKey, err := s.decryptSecret(item.ciphertext)
+		if err != nil {
+			continue
+		}
+		fingerprint := remoteNodeTokenFingerprint(plainKey)
+		if _, err := s.db.ExecContext(ctx, `UPDATE remote_nodes SET bootstrap_key_fingerprint = ? WHERE id = ?`, fingerprint, item.id); err != nil {
+			return fmt.Errorf("backfill remote node bootstrap key fingerprint: %w", err)
 		}
 	}
 	return nil
