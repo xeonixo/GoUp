@@ -57,6 +57,8 @@ func (s *Server) handleSettingsMaintenance(w http.ResponseWriter, r *http.Reques
 	s.render(w, "settings_maintenance", pageData{
 		Title:          "Einstellungen · Wartungsfenster · GoUp",
 		User:           user,
+		IsAdmin:        sessionIsAdmin(user),
+		CanWrite:       sessionCanWrite(user),
 		AdminTenant:    tenant,
 		AppBase:        s.tenantAppBase(r),
 		Notice:         strings.TrimSpace(r.URL.Query().Get("notice")),

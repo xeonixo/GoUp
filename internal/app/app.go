@@ -50,8 +50,16 @@ func New(ctx context.Context) (*App, error) {
 	cfg.SessionKey = sessionKey
 
 	secretKey := strings.TrimSpace(cfg.SSOSecretKey)
-	sessionSecretFallback := strings.TrimSpace(cfg.SessionKey)
-	if err := controlStore.ConfigureSecretKeys(secretKey, sessionSecretFallback); err != nil {
+	var secretFallbacks []string
+	if previous := strings.TrimSpace(cfg.SSOSecretKeyPrevious); previous != "" {
+		secretFallbacks = append(secretFallbacks, previous)
+	}
+	// Legacy installs encrypted secrets with GOUP_SESSION_KEY; keep that as a
+	// last-resort fallback after the explicit previous key.
+	if sessionSecretFallback := strings.TrimSpace(cfg.SessionKey); sessionSecretFallback != "" {
+		secretFallbacks = append(secretFallbacks, sessionSecretFallback)
+	}
+	if err := controlStore.ConfigureSecretKeys(secretKey, secretFallbacks...); err != nil {
 		controlStore.Close()
 		return nil, fmt.Errorf("configure control-plane secret key: %w", err)
 	}

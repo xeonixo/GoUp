@@ -2,6 +2,8 @@ package httpserver
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -125,5 +127,62 @@ func TestAdminSystemPageRenders(t *testing.T) {
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK || !strings.Contains(body, "message authentication failed") || !strings.Contains(body, `href="/admin/system" class="admin-nav-link is-active"`) {
 		t.Fatalf("render failed: code=%d body=%.300s", rec.Code, body)
+	}
+	if !strings.Contains(body, `/admin/system/backup`) || !strings.Contains(body, `/admin/system/rekey-secrets`) {
+		t.Fatalf("backup/rekey actions missing: %.400s", body)
+	}
+}
+
+func TestAdminSystemBackupAndRekey(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	controlPath := filepath.Join(dir, "controlplane.db")
+	cp, err := store.OpenControlPlane(ctx, controlPath)
+	if err != nil {
+		t.Fatalf("open control plane: %v", err)
+	}
+	defer cp.Close()
+	oldKey := "old-admin-rekey-key-1234567890abcd"
+	newKey := "new-admin-rekey-key-1234567890abcd"
+	if err := cp.ConfigureSecretKeys(oldKey); err != nil {
+		t.Fatalf("old key: %v", err)
+	}
+	if err := cp.CreateControlPlaneAdmin(ctx, "root", "hash"); err != nil {
+		t.Fatalf("admin: %v", err)
+	}
+	if err := cp.SetControlPlaneAdminTOTP(ctx, "JBSWY3DPEHPK3PXP", true); err != nil {
+		t.Fatalf("totp: %v", err)
+	}
+	if err := cp.ConfigureSecretKeys(newKey, oldKey); err != nil {
+		t.Fatalf("new+old: %v", err)
+	}
+
+	s := &Server{
+		cfg:          config.Config{DataDir: dir, ControlPlaneDBPath: controlPath},
+		controlStore: cp,
+		logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/admin/system/backup", nil)
+	s.handleAdminSystemBackup(rec, req)
+	if rec.Code != http.StatusSeeOther || !strings.Contains(rec.Header().Get("Location"), "notice=") {
+		t.Fatalf("backup redirect: code=%d location=%q", rec.Code, rec.Header().Get("Location"))
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/admin/system/rekey-secrets", strings.NewReader("confirm=yes"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	s.handleAdminSystemRekeySecrets(rec, req)
+	if rec.Code != http.StatusSeeOther || !strings.Contains(rec.Header().Get("Location"), "notice=") {
+		t.Fatalf("rekey redirect: code=%d location=%q", rec.Code, rec.Header().Get("Location"))
+	}
+
+	if err := cp.ConfigureSecretKeys(newKey); err != nil {
+		t.Fatalf("new only: %v", err)
+	}
+	admin, err := cp.GetControlPlaneAdmin(ctx)
+	if err != nil || admin.TOTPSecret != "JBSWY3DPEHPK3PXP" {
+		t.Fatalf("totp after rekey: %+v err=%v", admin, err)
 	}
 }

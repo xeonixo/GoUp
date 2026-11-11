@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"time"
+
+	"goup/internal/notify/route"
 )
 
 // Dispatcher turns check results into persisted state and notifications. The local runner and the
@@ -196,6 +198,11 @@ func (d *Dispatcher) recordSuppressed(ctx context.Context, transition Transition
 	}
 }
 
+// notificationRouteSource optionally exposes per-kind endpoint config for route filtering.
+type notificationRouteSource interface {
+	GetNotificationEndpointConfigJSON(ctx context.Context, kind string) (string, error)
+}
+
 // dispatchTransition sends a transition to every enabled notifier and queues failed deliveries.
 func (d *Dispatcher) dispatchTransition(ctx context.Context, transition Transition) {
 	monitorID := transition.Monitor.ID
@@ -206,6 +213,10 @@ func (d *Dispatcher) dispatchTransition(ctx context.Context, transition Transiti
 
 		if fanout, ok := notifier.(FanoutNotifier); ok {
 			d.dispatchFanoutTransition(ctx, monitorID, fanout, transition)
+			continue
+		}
+
+		if !d.systemRouteMatches(ctx, notifier.EventType(), transition) {
 			continue
 		}
 
@@ -235,5 +246,41 @@ func (d *Dispatcher) dispatchTransition(ctx context.Context, transition Transiti
 			d.logger.Error("send transition notification failed", "monitor_id", monitorID, "endpoint_id", notifier.EndpointID(), "error", err)
 			d.enqueueRetry(ctx, monitorID, notifier.EndpointID(), notifier.EventType(), transition)
 		}
+	}
+}
+
+func (d *Dispatcher) systemRouteMatches(ctx context.Context, eventType string, transition Transition) bool {
+	kind := systemNotificationKind(eventType)
+	if kind == "" {
+		return true
+	}
+	src, ok := d.store.(notificationRouteSource)
+	if !ok || src == nil {
+		return true
+	}
+	configJSON, err := src.GetNotificationEndpointConfigJSON(ctx, kind)
+	if err != nil {
+		d.logger.Warn("load notification route config failed", "kind", kind, "error", err)
+		return true
+	}
+	rt, err := route.Parse([]byte(configJSON))
+	if err != nil {
+		d.logger.Warn("parse notification route config failed", "kind", kind, "error", err)
+		return true
+	}
+	severity := route.SeverityOf(string(transition.Previous), string(transition.Current), transition.Reminder)
+	return rt.Matches(transition.Monitor.Group, transition.Monitor.ID, severity, d.now())
+}
+
+func systemNotificationKind(eventType string) string {
+	switch eventType {
+	case "status_transition_email":
+		return "email"
+	case "status_transition":
+		return "matrix"
+	case "status_transition_webpush":
+		return "webpush"
+	default:
+		return ""
 	}
 }

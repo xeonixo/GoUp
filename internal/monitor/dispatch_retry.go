@@ -143,6 +143,13 @@ func (d *Dispatcher) dispatchRetry(ctx context.Context, retry NotificationRetry)
 		return
 	}
 
+	if fanout == nil && !d.systemRouteMatches(ctx, retry.EventType, retry.Transition) {
+		if updateErr := d.store.UpdateNotificationRetry(ctx, retry.ID, true, "", time.Time{}, false); updateErr != nil {
+			d.logger.Error("update notification retry failed", "retry_id", retry.ID, "error", updateErr)
+		}
+		return
+	}
+
 	notifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	var err error
 	if fanout != nil {

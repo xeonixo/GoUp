@@ -41,6 +41,7 @@
       <label for="role">{{index $.Translations "admin.local_users.role_label"}} *</label>
       <select id="role" name="role" required>
         <option value="viewer" {{if eq .AdminLocalUser.Role "viewer"}}selected{{end}}>viewer</option>
+        <option value="operator" {{if eq .AdminLocalUser.Role "operator"}}selected{{end}}>operator</option>
         <option value="admin" {{if or (eq .AdminLocalUser.Role "admin") (not .AdminLocalUser.Role)}}selected{{end}}>admin</option>
       </select>
     </div>

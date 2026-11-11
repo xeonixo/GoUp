@@ -82,6 +82,7 @@
             <form method="POST" action="/admin/tenants/{{$.AdminTenant.ID}}/users/{{.UserID}}/unblock" class="admin-actions-inline">
               <select name="role">
                 <option value="viewer" selected>viewer</option>
+                <option value="operator">operator</option>
                 <option value="admin">admin</option>
               </select>
               <button type="submit" class="button button-secondary button-small">{{index $.Translations "settings.users.readd_button"}}</button>

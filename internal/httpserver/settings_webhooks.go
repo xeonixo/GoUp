@@ -3,7 +3,9 @@ package httpserver
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"goup/internal/notify/route"
 	webhooknotify "goup/internal/notify/webhook"
 	store "goup/internal/store/sqlite"
 	"net/http"
@@ -116,6 +118,7 @@ func (s *Server) handleSettingsWebhooksSave(w http.ResponseWriter, r *http.Reque
 		URL:            targetURL,
 		Enabled:        enabled,
 		TimeoutSeconds: timeoutSeconds,
+		Route:          parseWebhookRouteForm(r),
 	})
 	if err != nil {
 		s.logger.Error("settings webhooks save endpoint failed", "tenant_id", user.TenantID, "endpoint_id", endpointID, "error", err)
@@ -208,4 +211,95 @@ func (s *Server) handleSettingsWebhookTest(w http.ResponseWriter, r *http.Reques
 	}
 	s.writeAudit(r, "tenant.webhook.test", "tenant", user.TenantID, fmt.Sprintf("endpoint_id=%d", endpointID))
 	http.Redirect(w, r, s.tenantAppBase(r)+"settings/webhooks?notice="+url.QueryEscape("Testversand erfolgreich"), http.StatusSeeOther)
+}
+
+func parseWebhookRouteForm(r *http.Request) route.Route {
+	rt := route.Route{
+		Groups:     splitCSV(r.FormValue("route_groups")),
+		MonitorIDs: parseInt64CSV(r.FormValue("route_monitor_ids")),
+		Severities: normalizeRouteSeverities(r.Form["route_severities"]),
+	}
+	if r.FormValue("quiet_hours_enabled") == "on" {
+		rt.QuietHours = &route.QuietHours{
+			TZ:    strings.TrimSpace(r.FormValue("quiet_hours_tz")),
+			Start: strings.TrimSpace(r.FormValue("quiet_hours_start")),
+			End:   strings.TrimSpace(r.FormValue("quiet_hours_end")),
+			Mode:  route.QuietModeSuppress,
+		}
+	}
+	type wrap struct {
+		Route route.Route `json:"route"`
+	}
+	raw, err := json.Marshal(wrap{Route: rt})
+	if err != nil {
+		return rt
+	}
+	parsed, err := route.Parse(raw)
+	if err != nil {
+		return rt
+	}
+	return parsed
+}
+
+func splitCSV(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func parseInt64CSV(raw string) []int64 {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]int64, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(part, 10, 64)
+		if err != nil || id <= 0 {
+			continue
+		}
+		out = append(out, id)
+	}
+	return out
+}
+
+func normalizeRouteSeverities(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	allowed := map[string]struct{}{
+		route.SeverityDown:     {},
+		route.SeverityDegraded: {},
+		route.SeverityRecovery: {},
+		route.SeverityReminder: {},
+	}
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if _, ok := allowed[value]; !ok {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }

@@ -1,4 +1,4 @@
-{{define "dashboard_group_modal"}}{{if .IsAdmin}}
+{{define "dashboard_group_modal"}}{{if .CanWrite}}
 <dialog id="group-modal" class="monitor-modal group-modal" aria-modal="true" aria-labelledby="group-modal-title">
   <form method="post" action="{{$.AppBase}}groups/save" class="stack" id="group-form" enctype="multipart/form-data">
     <input type="hidden" name="group" id="group-name-field">

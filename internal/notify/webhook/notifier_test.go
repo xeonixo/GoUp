@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"goup/internal/monitor"
+	"goup/internal/notify/route"
 	store "goup/internal/store/sqlite"
 )
 
@@ -167,6 +168,69 @@ func TestSendTestUsesTestEventType(t *testing.T) {
 	}
 	if requests != 1 {
 		t.Fatalf("expected one request, got %d", requests)
+	}
+}
+
+func TestNotifyAllSkipsUnmatchedRoutes(t *testing.T) {
+	requests := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+
+	mustRoute := func(configJSON string) route.Route {
+		t.Helper()
+		rt, err := route.Parse([]byte(configJSON))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rt
+	}
+
+	notifier := NewNotifier(
+		stubStore{endpoints: []store.WebhookEndpoint{
+			{
+				ID: 1, Enabled: true, URL: server.URL,
+				Route: mustRoute(`{"route":{"groups":["prod"],"severities":["down"]}}`),
+			},
+			{
+				ID: 2, Enabled: true, URL: server.URL,
+				Route: mustRoute(`{"route":{"groups":["edge"]}}`),
+			},
+			{ID: 3, Enabled: false, URL: server.URL},
+		}},
+		stubSecrets{secret: "secret"},
+		3,
+	)
+	notifier.validateURL = func(raw string) (*url.URL, error) { return url.Parse(raw) }
+	notifier.newHTTPClient = func(time.Duration) *http.Client { return server.Client() }
+
+	results, err := notifier.NotifyAll(context.Background(), monitor.Transition{
+		Monitor:  monitor.Monitor{ID: 11, Name: "API", Group: "prod"},
+		Previous: monitor.StatusUp, Current: monitor.StatusDown,
+		CheckedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("notify all: %v", err)
+	}
+	if len(results) != 1 || results[0].EndpointID != 1 || results[0].Error != nil {
+		t.Fatalf("unexpected results: %+v", results)
+	}
+	if requests != 1 {
+		t.Fatalf("expected one delivery, got %d", requests)
+	}
+
+	results, err = notifier.NotifyAll(context.Background(), monitor.Transition{
+		Monitor:  monitor.Monitor{ID: 11, Name: "API", Group: "other"},
+		Previous: monitor.StatusUp, Current: monitor.StatusDown,
+		CheckedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("filtered notify: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected all routes filtered, got %+v", results)
 	}
 }
 

@@ -153,7 +153,7 @@ Important notes:
 
 - The tenant slug becomes part of the URL.
 - GoUp does not require a built-in `default` tenant.
-- After creating a new tenant, restart the container so the monitor runner for that tenant starts.
+- New tenants are picked up automatically by the runner reconcile loop (about every 30 seconds); a restart is not required.
 
 ### 6. Add monitors
 
@@ -211,6 +211,7 @@ Configuration is provided through environment variables, typically via `.env` an
 |---|---|
 | `GOUP_SESSION_KEY` | Required HMAC key for tenant session cookies and password-reset tokens. |
 | `GOUP_SSO_SECRET_KEY` | Required encryption key for stored secrets, including OIDC client secrets, TOTP secrets, notification secrets, and remote-node secrets. |
+| `GOUP_SSO_SECRET_KEY_PREVIOUS` | Optional previous SSO encryption key used only while rotating to a new `GOUP_SSO_SECRET_KEY`. Prefer this over relying on the legacy session-key decrypt fallback. |
 | `GOUP_CONTROL_PLANE_ADMIN_KEY` | Required HMAC key for control-plane admin cookies under `/admin/*`. |
 
 All three keys must be at least 32 characters, must be different from each
@@ -236,7 +237,7 @@ value for multiple keys. If keys are added or changed after GoUp has already
 stored data, the effects are:
 
 - Changing `GOUP_SESSION_KEY` invalidates existing tenant session cookies and password-reset tokens.
-- Changing `GOUP_SSO_SECRET_KEY` can make encrypted stored secrets unreadable unless the new value matches the previous effective encryption key.
+- Changing `GOUP_SSO_SECRET_KEY` can make encrypted stored secrets unreadable unless you set `GOUP_SSO_SECRET_KEY_PREVIOUS` to the old key and run `goup rekey-secrets` (or the Admin → System rekey action) before removing the previous key.
 - Changing `GOUP_CONTROL_PLANE_ADMIN_KEY` invalidates current control-plane admin cookies; admins can log in again.
 
 Treat key loss as credential loss for encrypted secrets stored in the database.
@@ -619,10 +620,32 @@ GoUp stores data in SQLite files inside `GOUP_DATA_DIR`.
 | `controlplane.db` | Tenants, auth providers, users, admin account, SMTP settings, audit and operational metadata |
 | `<tenant>.db` | Tenant-specific monitors, results, and notification events |
 
+### Online backup
+
+Use the built-in online backup (SQLite `VACUUM INTO`) so live WAL databases stay consistent:
+
+```bash
+goup backup
+# optional output base (default: $GOUP_DATA_DIR/backups)
+goup backup -o /var/backups/goup
+```
+
+Each run writes `{base}/{YYYYMMDD-HHMMSS}/controlplane.db` plus one file per tenant database. Control-plane admins can also trigger the same snapshot from **Admin → System**.
+
+### Secret rekey
+
+After rotating `GOUP_SSO_SECRET_KEY`, set `GOUP_SSO_SECRET_KEY_PREVIOUS` to the old value and re-encrypt stored secrets:
+
+```bash
+goup rekey-secrets --dry-run   # count decryptable rows
+goup rekey-secrets             # rewrite ciphertext under the new primary key
+```
+
+Then remove `GOUP_SSO_SECRET_KEY_PREVIOUS`. The same rekey action is available under **Admin → System**.
+
 Backup recommendations:
 
-- back up all `.db` files in the data directory
-- include `-wal` and `-shm` files if the service is live during backup
+- prefer `goup backup` (or the admin action) over copying live `.db` / `-wal` / `-shm` files
 - test restore procedures in a staging environment
 
 ---
@@ -652,13 +675,15 @@ docs/                   Architecture notes and project documentation
 
 Shipped since the early architecture notes (see [docs/improvements.md](docs/improvements.md) for the full prioritized backlog):
 
-- [x] Public status page (`/{slug}/status`)
+- [x] Public status page (`/{slug}/status`) with branding, incidents, and optional token access
 - [x] Additional monitor types (DNS, SDNS, UDP, WHOIS, heartbeat, and more)
-- [ ] Operator role and finer permissions
-- [ ] Notification routing and quiet hours
-- [ ] Versioned JSON API (`/api/v1`)
-- [ ] Remote-node token grace and mTLS
-- [ ] Online backup and secret rekey
+- [x] Operator role (`admin` / `operator` / `viewer`)
+- [x] Notification routing and quiet hours
+- [x] Versioned JSON API (`/api/v1`) with scoped bearer tokens
+- [x] Remote-node previous-token grace and failed-auth rate limits
+- [x] Online backup and secret rekey
+- [ ] Remote-node mTLS (Tier 3)
+- [ ] HTTPS assertion upgrades / reports / maintenance TZ (Tier 2)
 
 ---
 

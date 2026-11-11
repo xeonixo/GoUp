@@ -102,6 +102,10 @@ func (s *Server) bootstrapAttemptKey(r *http.Request, nodeID string) string {
 	return "node-bootstrap|" + strings.ToLower(strings.TrimSpace(nodeID)) + "|" + s.rateLimitIP(r)
 }
 
+func (s *Server) nodeBearerAttemptKey(r *http.Request) string {
+	return "node-bearer|" + s.rateLimitIP(r)
+}
+
 func (s *Server) bootstrapAllowed(key string, now time.Time) (bool, time.Duration) {
 	s.bootstrapMu.Lock()
 	defer s.bootstrapMu.Unlock()

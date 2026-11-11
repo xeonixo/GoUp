@@ -34,6 +34,15 @@
       <div><dt>{{index $.Translations "admin.system.data_dir"}}</dt><dd class="break-all"><code>{{$v.Storage.DataDir}}</code></dd></div>
       <div><dt>{{index $.Translations "admin.system.free_space"}}</dt><dd>{{if $v.Storage.FreeKnown}}{{$v.Storage.FreeSpace}}{{else}}—{{end}}</dd></div>
     </dl>
+    <div class="admin-actions row" style="gap:0.75rem;flex-wrap:wrap;margin-top:0.75rem">
+      <form method="post" action="/admin/system/backup" class="inline-form">
+        <button type="submit" class="button button-secondary">{{index $.Translations "admin.system.backup_button"}}</button>
+      </form>
+      <form method="post" action="/admin/system/rekey-secrets" class="inline-form" data-confirm="{{index $.Translations "admin.system.rekey_confirm"}}">
+        <input type="hidden" name="confirm" value="yes">
+        <button type="submit" class="button button-secondary">{{index $.Translations "admin.system.rekey_button"}}</button>
+      </form>
+    </div>
     <div class="system-table-wrap">
       <table class="admin-table system-table">
         <thead>

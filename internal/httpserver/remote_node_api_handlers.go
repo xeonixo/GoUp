@@ -223,17 +223,27 @@ func (s *Server) handleRemoteNodeReport(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) authenticateRemoteNodeRequest(w http.ResponseWriter, r *http.Request) (store.RemoteNode, bool) {
+	now := time.Now().UTC()
+	attemptKey := s.nodeBearerAttemptKey(r)
+	if allowed, wait := s.bootstrapAllowed(attemptKey, now); !allowed {
+		w.Header().Set("Retry-After", fmt.Sprintf("%d", int(wait.Seconds())+1))
+		http.Error(w, "too many failed authentication attempts", http.StatusTooManyRequests)
+		return store.RemoteNode{}, false
+	}
 	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
 	if !strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+		s.registerBootstrapFailure(attemptKey, now)
 		http.Error(w, "missing bearer token", http.StatusUnauthorized)
 		return store.RemoteNode{}, false
 	}
 	token := strings.TrimSpace(authHeader[len("Bearer "):])
 	node, err := s.controlStore.AuthenticateRemoteNodeAccessToken(r.Context(), token)
 	if err != nil {
+		s.registerBootstrapFailure(attemptKey, now)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return store.RemoteNode{}, false
 	}
+	s.clearBootstrapAttempts(attemptKey)
 	return node, true
 }
 

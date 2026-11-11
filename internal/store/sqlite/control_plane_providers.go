@@ -21,7 +21,7 @@ type AuthProvider struct {
 	UpdatedAt   time.Time
 
 	// OIDC access policy.
-	DefaultRole         string // role granted to newly provisioned members ("viewer" or "admin")
+	DefaultRole         string // role granted to newly provisioned members ("viewer", "operator", or "admin")
 	AllowedEmailDomains string // comma/newline separated; empty = any
 	AllowedGroups       string // comma/newline separated; empty = any (matched against the "groups" claim)
 	// RequireEmailVerified rejects identities whose email_verified claim is not true.

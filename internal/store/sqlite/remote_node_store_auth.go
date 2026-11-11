@@ -78,6 +78,8 @@ WHERE node_id = ?
 	return item, nil
 }
 
+const remoteNodePreviousTokenGrace = 90 * time.Second
+
 func (s *ControlPlaneStore) IssueRemoteNodeAccessToken(ctx context.Context, nodeInternalID int64, ttl time.Duration) (string, time.Time, error) {
 	if nodeInternalID <= 0 {
 		return "", time.Time{}, errors.New("node id is required")
@@ -97,12 +99,48 @@ func (s *ControlPlaneStore) IssueRemoteNodeAccessToken(ctx context.Context, node
 		return "", time.Time{}, fmt.Errorf("encrypt access token: %w", err)
 	}
 	fingerprint := remoteNodeTokenFingerprint(token)
-	expiresAt := time.Now().UTC().Add(ttl)
+	now := time.Now().UTC()
+	expiresAt := now.Add(ttl)
+	previousGraceUntil := now.Add(remoteNodePreviousTokenGrace)
+
+	var (
+		currentCiphertext   string
+		currentFingerprint  string
+		currentExpiresAt    sql.NullTime
+	)
+	err = s.db.QueryRowContext(ctx, `
+SELECT access_token_ciphertext, access_token_fingerprint, access_token_expires_at
+FROM remote_nodes
+WHERE id = ?
+`, nodeInternalID).Scan(&currentCiphertext, &currentFingerprint, &currentExpiresAt)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("load current access token for rotation: %w", err)
+	}
+
+	previousCiphertext := ""
+	previousFingerprint := ""
+	var previousExpires any
+	if strings.TrimSpace(currentCiphertext) != "" && strings.TrimSpace(currentFingerprint) != "" {
+		previousCiphertext = currentCiphertext
+		previousFingerprint = currentFingerprint
+		graceExpires := previousGraceUntil
+		if currentExpiresAt.Valid && currentExpiresAt.Time.UTC().Before(graceExpires) {
+			graceExpires = currentExpiresAt.Time.UTC()
+		}
+		previousExpires = graceExpires
+	}
+
 	_, err = s.db.ExecContext(ctx, `
 UPDATE remote_nodes
-SET access_token_ciphertext = ?, access_token_fingerprint = ?, access_token_expires_at = ?, updated_at = ?
+SET access_token_ciphertext = ?,
+	access_token_fingerprint = ?,
+	access_token_expires_at = ?,
+	previous_access_token_ciphertext = ?,
+	previous_access_token_fingerprint = ?,
+	previous_access_token_expires_at = ?,
+	updated_at = ?
 WHERE id = ?
-`, sealed, fingerprint, expiresAt, time.Now().UTC(), nodeInternalID)
+`, sealed, fingerprint, expiresAt, previousCiphertext, previousFingerprint, previousExpires, now, nodeInternalID)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("store access token: %w", err)
 	}
@@ -116,7 +154,16 @@ func (s *ControlPlaneStore) AuthenticateRemoteNodeAccessToken(ctx context.Contex
 	}
 	now := time.Now().UTC()
 	fingerprint := remoteNodeTokenFingerprint(token)
-	rows, err := s.db.QueryContext(ctx, `
+	if node, err := s.authenticateRemoteNodeAccessTokenByFingerprint(ctx, token, fingerprint, false, now); err == nil {
+		return node, nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return RemoteNode{}, err
+	}
+	return s.authenticateRemoteNodeAccessTokenByFingerprint(ctx, token, fingerprint, true, now)
+}
+
+func (s *ControlPlaneStore) authenticateRemoteNodeAccessTokenByFingerprint(ctx context.Context, token, fingerprint string, previous bool, now time.Time) (RemoteNode, error) {
+	query := `
 SELECT id, tenant_id, node_id, name, enabled, heartbeat_timeout_seconds, last_seen_at, access_token_expires_at, created_at, updated_at, agent_version, agent_version_seen_at, access_token_ciphertext
 FROM remote_nodes
 WHERE access_token_fingerprint = ?
@@ -124,7 +171,19 @@ WHERE access_token_fingerprint = ?
 	AND TRIM(access_token_ciphertext) <> ''
 	AND access_token_expires_at IS NOT NULL
 	AND access_token_expires_at >= ?
-`, fingerprint, now)
+`
+	if previous {
+		query = `
+SELECT id, tenant_id, node_id, name, enabled, heartbeat_timeout_seconds, last_seen_at, access_token_expires_at, created_at, updated_at, agent_version, agent_version_seen_at, previous_access_token_ciphertext
+FROM remote_nodes
+WHERE previous_access_token_fingerprint = ?
+	AND enabled = 1
+	AND TRIM(previous_access_token_ciphertext) <> ''
+	AND previous_access_token_expires_at IS NOT NULL
+	AND previous_access_token_expires_at >= ?
+`
+	}
+	rows, err := s.db.QueryContext(ctx, query, fingerprint, now)
 	if err != nil {
 		return RemoteNode{}, fmt.Errorf("query remote node access candidates: %w", err)
 	}
@@ -180,7 +239,6 @@ WHERE access_token_fingerprint = ?
 	if err := rows.Err(); err != nil {
 		return RemoteNode{}, fmt.Errorf("iterate remote node access candidates: %w", err)
 	}
-
 	return RemoteNode{}, sql.ErrNoRows
 }
 

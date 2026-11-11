@@ -19,6 +19,7 @@ type pageData struct {
 	HideTopbar                        bool
 	User                              *auth.UserSession
 	IsAdmin                           bool
+	CanWrite                          bool
 	Stats                             store.DashboardStats
 	Error                             string
 	Notice                            string

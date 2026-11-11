@@ -23,13 +23,13 @@ func heartbeatPingURL(baseURL, tenantSlug, token string) string {
 // a secret, so read-only users never receive it.
 func (s *Server) applyHeartbeatURLs(r *http.Request, views []monitorView) {
 	user := s.currentUser(r)
-	isAdmin := user == nil || strings.EqualFold(strings.TrimSpace(user.Role), "admin")
+	canWrite := sessionCanWrite(user)
 	slug := s.tenantSlugForRequest(r)
 	for i := range views {
 		if views[i].HeartbeatToken == "" {
 			continue
 		}
-		if isAdmin {
+		if canWrite {
 			pingURL := heartbeatPingURL(s.cfg.BaseURL, slug, views[i].HeartbeatToken)
 			views[i].HeartbeatURL = pingURL
 			views[i].HeartbeatCurl = "curl -fsS -m 10 --retry 3 " + shellQuote(pingURL)

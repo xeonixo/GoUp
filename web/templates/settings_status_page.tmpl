@@ -22,7 +22,7 @@
     </div>
   </div>
 
-  <form method="POST" action="{{$.AppBase}}settings/status-page/save" class="admin-form card stack settings-panel">
+  <form method="POST" action="{{$.AppBase}}settings/status-page/save" class="admin-form card stack settings-panel" enctype="multipart/form-data">
     <h2>{{index $.Translations "settings.status_page.page_heading"}}</h2>
     <label class="checkbox-row">
       <input type="checkbox" name="enabled" {{if $sp.Enabled}}checked{{end}}>
@@ -36,6 +36,44 @@
     <label>
       <span>{{index $.Translations "settings.status_page.description"}}</span>
       <textarea name="description" rows="3" maxlength="500">{{$sp.Description}}</textarea>
+    </label>
+
+    <h3>{{index $.Translations "settings.status_page.branding"}}</h3>
+    <label>
+      <span>{{index $.Translations "settings.status_page.logo"}}</span>
+      <input type="file" name="logo_upload" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon,.ico">
+    </label>
+    {{if $sp.HasLogo}}
+    <label class="checkbox-row">
+      <input type="checkbox" name="clear_logo">
+      <span>{{index $.Translations "settings.status_page.clear_logo"}}</span>
+    </label>
+    {{end}}
+    <label>
+      <span>{{index $.Translations "settings.status_page.brand_color"}}</span>
+      <input type="text" name="brand_color" maxlength="7" placeholder="#2563eb" value="{{$sp.BrandColor}}" pattern="#?[0-9A-Fa-f]{3}([0-9A-Fa-f]{3})?">
+    </label>
+    <label class="checkbox-row">
+      <input type="checkbox" name="hide_goup_footer" {{if $sp.HideGoUpFooter}}checked{{end}}>
+      <span>{{index $.Translations "settings.status_page.hide_goup_footer"}}</span>
+    </label>
+    <label class="checkbox-row">
+      <input type="checkbox" name="noindex" {{if $sp.NoIndex}}checked{{end}}>
+      <span>{{index $.Translations "settings.status_page.noindex"}}</span>
+    </label>
+
+    <h3>{{index $.Translations "settings.status_page.access"}}</h3>
+    <p class="muted compact">{{index $.Translations "settings.status_page.access_hint"}}</p>
+    <label>
+      <span>{{index $.Translations "settings.status_page.access_mode"}}</span>
+      <select name="access_mode">
+        <option value="public" {{if ne $sp.AccessMode "token"}}selected{{end}}>{{index $.Translations "settings.status_page.access_public"}}</option>
+        <option value="token" {{if eq $sp.AccessMode "token"}}selected{{end}}>{{index $.Translations "settings.status_page.access_token"}}</option>
+      </select>
+    </label>
+    <label class="checkbox-row">
+      <input type="checkbox" name="regenerate_access_token">
+      <span>{{index $.Translations "settings.status_page.regenerate_access_token"}}{{if $sp.HasAccessToken}} ({{index $.Translations "settings.status_page.access_token_present"}}){{end}}</span>
     </label>
 
     <h3>{{index $.Translations "settings.status_page.monitors"}}</h3>
@@ -70,6 +108,18 @@
     </div>
   </section>
 
+  {{if $sp.NewAccessToken}}
+  <section class="card stack settings-panel">
+    <div class="notice warning stack">
+      <strong>{{index $.Translations "settings.status_page.access_token_once"}}</strong>
+      <div class="status-url-row">
+        <input type="text" id="status-new-access-token" readonly value="{{$sp.NewAccessToken}}" autocomplete="off">
+        <button type="button" class="button button-secondary" data-action="copy" data-copy-target="status-new-access-token" data-copied-label="{{index $.Translations "settings.status_page.copied"}}">{{index $.Translations "settings.status_page.copy_token"}}</button>
+      </div>
+    </div>
+  </section>
+  {{end}}
+
   <section class="card stack settings-panel">
     <h2>{{index $.Translations "settings.status_page.tokens_title"}}</h2>
     <p class="muted compact">{{index $.Translations "settings.status_page.tokens_hint"}}</p>
@@ -89,10 +139,23 @@
         <span>{{index $.Translations "settings.status_page.token_name"}}</span>
         <input type="text" name="name" maxlength="80" required>
       </label>
+      <label>
+        <span>{{index $.Translations "settings.status_page.token_scope"}}</span>
+        <select name="scope">
+          <option value="metrics">metrics</option>
+          <option value="monitors:read">monitors:read</option>
+          <option value="monitors:write">monitors:write</option>
+        </select>
+      </label>
+      <label>
+        <span>{{index $.Translations "settings.status_page.token_ttl_days"}}</span>
+        <input type="number" name="ttl_days" min="0" max="3650" step="1" placeholder="0" value="">
+      </label>
       <div class="form-actions">
         <button type="submit" class="button">{{index $.Translations "settings.status_page.token_create"}}</button>
       </div>
     </form>
+    <p class="muted compact">{{index $.Translations "settings.status_page.token_ttl_hint"}}</p>
 
     {{if $sp.Tokens}}
     <div class="table-wrap">
@@ -102,6 +165,7 @@
           <tr>
             <th scope="col">{{index $.Translations "settings.status_page.token_name"}}</th>
             <th scope="col">{{index $.Translations "settings.status_page.token_created_at"}}</th>
+            <th scope="col">{{index $.Translations "settings.status_page.token_expires_at"}}</th>
             <th scope="col">{{index $.Translations "settings.status_page.token_last_used"}}</th>
             <th scope="col"><span class="sr-only">{{index $.Translations "common.delete"}}</span></th>
           </tr>
@@ -109,10 +173,14 @@
         <tbody>
           {{range $sp.Tokens}}
           <tr>
-            <td>{{.Name}}</td>
+            <td>{{.Name}} <span class="muted">· {{.Scope}}</span></td>
             <td>{{.CreatedAt}}{{if .CreatedBy}} <span class="muted">· {{.CreatedBy}}</span>{{end}}</td>
+            <td>{{if .ExpiresAt}}{{.ExpiresAt}}{{else}}<span class="muted">{{index $.Translations "settings.status_page.token_never_expires"}}</span>{{end}}</td>
             <td>{{if .LastUsed}}{{.LastUsed}}{{else}}<span class="muted">{{index $.Translations "settings.status_page.token_never"}}</span>{{end}}</td>
-            <td>
+            <td class="table-actions">
+              <form method="POST" action="{{$.AppBase}}settings/status-page/tokens/{{.ID}}/rotate" class="inline-form" data-confirm="{{index $.Translations "settings.status_page.token_rotate_confirm"}}">
+                <button type="submit" class="button button-secondary button-small">{{index $.Translations "settings.status_page.token_rotate"}}</button>
+              </form>
               <form method="POST" action="{{$.AppBase}}settings/status-page/tokens/{{.ID}}/revoke" class="inline-form" data-confirm="{{index $.Translations "settings.status_page.token_revoke_confirm"}}">
                 <button type="submit" class="button button-secondary button-small">{{index $.Translations "settings.status_page.token_revoke"}}</button>
               </form>

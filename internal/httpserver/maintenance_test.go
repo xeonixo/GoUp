@@ -34,7 +34,7 @@ func newMaintenanceEnv(t *testing.T) *maintenanceEnv {
 		t.Fatal(err)
 	}
 	me := &maintenanceEnv{statusTestEnv: env, tenant: tenant, cookies: map[string][]*http.Cookie{}}
-	for role, name := range map[string]string{"admin": "alice", "viewer": "bob"} {
+	for role, name := range map[string]string{"admin": "alice", "viewer": "bob", "operator": "carol"} {
 		user, err := env.s.controlStore.CreateLocalUserForTenant(ctx, tenant.ID, name, "a-long-password-123", name+"@example.com", name, role)
 		if err != nil {
 			t.Fatal(err)
@@ -87,6 +87,7 @@ func TestMaintenanceSettingsAdminOnly(t *testing.T) {
 		{"viewer", http.MethodPost, "/acme/settings/maintenance/save", http.StatusForbidden},
 		{"viewer", http.MethodPost, "/acme/settings/maintenance/1/delete", http.StatusForbidden},
 		{"", http.MethodGet, "/acme/settings/maintenance", http.StatusSeeOther},
+		{"operator", http.MethodGet, "/acme/settings/maintenance", http.StatusOK},
 		{"admin", http.MethodGet, "/acme/settings/maintenance", http.StatusOK},
 	} {
 		var form url.Values

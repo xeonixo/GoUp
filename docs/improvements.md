@@ -13,19 +13,20 @@ GoUp ist funktional deutlich weiter als die frühe Zielarchitektur in [architect
 | Bereich | Ist-Zustand |
 |---|---|
 | Tenancy | Control-Plane + per-Tenant-SQLite, Runner-Reconcile ohne Restart |
-| Auth | Control-Plane-Admin, lokale Tenant-User, OIDC, TOTP, Rollen `admin` / `viewer` |
+| Auth | Control-Plane-Admin, lokale Tenant-User, OIDC, TOTP, Rollen `admin` / `operator` / `viewer` |
 | Monitore | HTTPS, TCP, ICMP, SMTP, IMAP, DNS, SDNS, UDP, WHOIS, Heartbeat |
-| Status | Öffentliche Statusseite `/{slug}/status`, Metrics-Tokens |
-| Ops-Features | Maintenance, Mute, Outage-Reminders, Import/Export |
-| Remote Nodes | Outbound HTTPS, Bootstrap + Token-Rotation, Fingerprint-Auth |
-| Notifications | Email, Matrix, signierte Webhooks, Web Push |
+| Status | Statusseite mit Branding/Incidents/optionalem Token-Gate, Metrics-/API-Tokens |
+| Ops-Features | Maintenance, Mute, Outage-Reminders, Import/Export, `goup backup` / Rekey |
+| Remote Nodes | Outbound HTTPS, Bootstrap + Token-Rotation + Previous-Token-Grace, Fingerprint-Auth |
+| Notifications | Email, Matrix, Webhooks, Web Push inkl. Routing/Quiet Hours |
+| API | Scoped `/{slug}/api/v1` Bearer-API (`monitors:read|write`, `metrics`) |
 | Security-Baseline | HMAC-Sessions, Origin/Referer, CSP, Lockouts, AES-GCM-Secrets, Netguard/SSRF |
 
-Die Review in [review.md](review.md) und Teile von [documentation.md](documentation.md) beschreiben teils bereits umgesetzte P0–P2-Punkte (Token-Fingerprint, Body-Limits, Multi-Tenant-Maintenance, Runner-Reconcile, WS-Origin, Lockout-Sweeper). Diese Roadmap listet **offene** Verbesserungen, keine historischen Findings erneut als Bugs.
+Die Review in [review.md](review.md) und Teile von [documentation.md](documentation.md) beschreiben teils bereits umgesetzte P0–P2-Punkte (Token-Fingerprint, Body-Limits, Multi-Tenant-Maintenance, Runner-Reconcile, WS-Origin, Lockout-Sweeper). **Tier 1 (T1.1–T1.6) ist umgesetzt**; Abschnitte unten bleiben als Spezifikation der gelieferten Arbeit. Offener Fokus: Tier 2/3.
 
 ---
 
-## 2. Empfohlene Reihenfolge (Tier 1)
+## 2. Tier 1 (umgesetzt)
 
 Tier 1 baut auf bestehendem Code auf und liefert den höchsten Hebel für Produkt und Betriebsicherheit.
 
@@ -155,14 +156,14 @@ flowchart LR
 
 ---
 
-## 7. Vorschlag für README-Roadmap-Spiegel
+## 7. README-Roadmap-Spiegel
 
 Kurzform für die öffentliche README (siehe auch Root-[README.md](../README.md)):
 
-- [x] Public status page *(Branding / Incident-Historie / optionale Auth → T1.3)*
-- [x] Additional monitor types *(HTTPS-Assertions / TLS-only → T2.1)*
-- [ ] Operator role and finer permissions *(T1.1)*
-- [ ] Notification routing and quiet hours *(T1.2)*
-- [ ] Versioned JSON API (`/api/v1`) *(T1.4)*
-- [ ] Remote-node token grace and mTLS *(T1.5 / Tier 3)*
-- [ ] Online backup and secret rekey *(T1.6)*
+- [x] Public status page *(inkl. Branding / Incident-Historie / optionale Auth — T1.3)*
+- [x] Additional monitor types *(weitere Assertions → T2.1)*
+- [x] Operator role and finer permissions *(T1.1)*
+- [x] Notification routing and quiet hours *(T1.2)*
+- [x] Versioned JSON API (`/api/v1`) *(T1.4)*
+- [x] Remote-node token grace *(T1.5)*; mTLS bleibt Tier 3
+- [x] Online backup and secret rekey *(T1.6)*

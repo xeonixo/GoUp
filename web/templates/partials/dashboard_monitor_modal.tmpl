@@ -1,4 +1,4 @@
-{{define "dashboard_monitor_modal"}}{{if .IsAdmin}}
+{{define "dashboard_monitor_modal"}}{{if .CanWrite}}
 <dialog id="monitor-modal" class="monitor-modal" aria-modal="true" aria-labelledby="monitor-modal-title">
   <form method="post" action="{{$.AppBase}}monitors/save" class="stack form-grid" id="monitor-form">
     <input type="hidden" name="id" id="monitor-id">

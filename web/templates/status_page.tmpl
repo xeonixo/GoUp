@@ -1,7 +1,11 @@
 {{define "content"}}
 {{$sp := .StatusPage}}
+{{if $sp.BrandCSSURL}}<link rel="stylesheet" href="{{$sp.BrandCSSURL}}">{{end}}
 <div class="status-page">
   <header class="status-page-header">
+    {{if $sp.LogoURL}}
+    <img class="status-page-logo" src="{{$sp.LogoURL}}" alt="{{$sp.Title}}">
+    {{end}}
     <h1>{{$sp.Title}}</h1>
     {{if $sp.Description}}<p class="muted">{{$sp.Description}}</p>{{end}}
   </header>
@@ -39,8 +43,25 @@
   </section>
   {{end}}
 
+  {{if $sp.Incidents}}
+  <section class="status-incidents" aria-label="{{index $.Translations "status_page.incidents"}}">
+    <h2 class="status-group-title">{{index $.Translations "status_page.incidents"}}</h2>
+    <ul class="status-incident-list">
+      {{range $sp.Incidents}}
+      <li class="status-incident {{if .Open}}is-open{{end}}">
+        <strong>{{.Name}}</strong>
+        <span class="muted">{{.StartedAt}} – {{.ResolvedAt}}</span>
+      </li>
+      {{end}}
+    </ul>
+  </section>
+  {{end}}
+
   <footer class="status-page-footer muted">
-    {{index $.Translations "status_page.updated"}}: {{$sp.UpdatedAt}}
+    <div>{{index $.Translations "status_page.updated"}}: {{$sp.UpdatedAt}}</div>
+    {{if not $sp.HideGoUpFooter}}
+    <div class="status-page-powered">{{index $.Translations "status_page.powered_by"}} <span class="status-page-brand">GoUp</span></div>
+    {{end}}
   </footer>
 </div>
 {{end}}

@@ -52,6 +52,7 @@
             <form method="POST" action="{{$.AppBase}}settings/users/{{.UserID}}/role" class="admin-actions-inline">
               <select name="role">
                 <option value="viewer" {{if eq .Role "viewer"}}selected{{end}}>viewer</option>
+                <option value="operator" {{if eq .Role "operator"}}selected{{end}}>operator</option>
                 <option value="admin" {{if eq .Role "admin"}}selected{{end}}>admin</option>
               </select>
               <button type="submit" class="button button-secondary button-small">{{index $.Translations "common.save"}}</button>
@@ -105,6 +106,7 @@
             <form method="POST" action="{{$.AppBase}}settings/users/{{.UserID}}/unblock" class="admin-actions-inline">
               <select name="role">
                 <option value="viewer" selected>viewer</option>
+                <option value="operator">operator</option>
                 <option value="admin">admin</option>
               </select>
               <button type="submit" class="button button-secondary button-small">{{index $.Translations "settings.users.readd_button"}}</button>
