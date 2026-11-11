@@ -19,6 +19,8 @@
         <option value="sdns">{{index $.Translations "dashboard.modal.type_sdns"}}</option>
         <option value="udp">{{index $.Translations "dashboard.modal.type_udp"}}</option>
         <option value="whois">{{index $.Translations "dashboard.modal.type_whois"}}</option>
+        <option value="prometheus">{{index $.Translations "dashboard.modal.type_prometheus"}}</option>
+        <option value="grpc">{{index $.Translations "dashboard.modal.type_grpc"}}</option>
         <option value="heartbeat">{{index $.Translations "dashboard.modal.type_heartbeat"}}</option>
       </select>
     </label>
@@ -394,6 +396,36 @@
       <span id="monitor-expected-text-label">{{index $.Translations "dashboard.modal.expected_keywords_optional"}}</span>
       <input type="text" name="expected_text" id="monitor-expected-text" placeholder="{{index $.Translations "dashboard.modal.expected_text_placeholder"}}">
       <small class="muted compact" id="monitor-expected-text-hint">{{index $.Translations "dashboard.modal.expected_keywords_hint"}}</small>
+    </label>
+
+    <label id="prom-query-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.prom_query_label"}}</span>
+      <input type="text" name="prom_query" id="monitor-prom-query" placeholder="{{index $.Translations "dashboard.modal.prom_query_placeholder"}}" autocomplete="off" spellcheck="false">
+      <small class="muted compact">{{index $.Translations "dashboard.modal.prom_query_hint"}}</small>
+    </label>
+
+    <div id="prom-threshold-row" class="inline-grid" hidden>
+      <label>
+        <span>{{index $.Translations "dashboard.modal.prom_comparison_label"}}</span>
+        <select name="prom_comparison" id="monitor-prom-comparison">
+          <option value="eq">{{index $.Translations "dashboard.modal.prom_comparison_eq"}}</option>
+          <option value="ne">{{index $.Translations "dashboard.modal.prom_comparison_ne"}}</option>
+          <option value="gt">{{index $.Translations "dashboard.modal.prom_comparison_gt"}}</option>
+          <option value="gte">{{index $.Translations "dashboard.modal.prom_comparison_gte"}}</option>
+          <option value="lt">{{index $.Translations "dashboard.modal.prom_comparison_lt"}}</option>
+          <option value="lte">{{index $.Translations "dashboard.modal.prom_comparison_lte"}}</option>
+        </select>
+      </label>
+      <label>
+        <span>{{index $.Translations "dashboard.modal.prom_expected_value_label"}}</span>
+        <input type="text" name="prom_expected_value" id="monitor-prom-expected-value" placeholder="{{index $.Translations "dashboard.modal.prom_expected_value_placeholder"}}" inputmode="decimal" autocomplete="off" spellcheck="false">
+      </label>
+    </div>
+
+    <label id="grpc-service-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.grpc_service_label"}}</span>
+      <input type="text" name="grpc_service" id="monitor-grpc-service" placeholder="{{index $.Translations "dashboard.modal.grpc_service_placeholder"}}" autocomplete="off" spellcheck="false">
+      <small class="muted compact">{{index $.Translations "dashboard.modal.grpc_service_hint"}}</small>
     </label>
 
     <label id="https-jsonpath-row" hidden>

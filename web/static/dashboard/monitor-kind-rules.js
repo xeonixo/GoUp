@@ -8,6 +8,8 @@ import {
   httpsFamilyRow, httpsHeadersRow, httpsJsonPathRow, httpsMethodRow, httpsModeRow, httpsTargetRow,
   httpsVerifyRow, icmpFamilyRow, jsonPathExpectedField, jsonPathField, kindField, mailFamilyRow,
   mailHostField, mailPortField, mailTargetRow, mailVerifyField, mailVerifyLabelField, mailVerifyRow,
+  promComparisonField, promExpectedValueField, promQueryField, promQueryRow, promThresholdRow,
+  grpcServiceField, grpcServiceRow,
   requestBodyField, requestHeadersField, targetField, targetHintField, targetRow, tcpFamilyRow,
   tcpHostField, tcpPortField, tcpTargetRow, tlsModeField, tlsModeRow, udpCheckField, udpCheckRow,
   udpFamilyRow, udpHostField, udpPortField, udpTargetRow, useHTTPSField, useHTTPSLabelField,
@@ -40,8 +42,10 @@ export const applyKindRules = () => {
   const isUDP = kind === 'udp';
   const isWhois = kind === 'whois';
   const isHeartbeat = kind === 'heartbeat';
+  const isPrometheus = kind === 'prometheus' || kind === 'prom';
+  const isGRPC = kind === 'grpc';
   const udpCheckMode = normalizeUDPCheck(udpCheckField?.value);
-  const supportsTCPTLSChecks = isTCPMonitor;
+  const supportsTCPTLSChecks = isTCPMonitor || isGRPC;
   const isHTTPSEnabled = isHTTPMonitor && String(httpSchemeField?.value || 'https').toLowerCase() !== 'http';
   const mailTLSSelection = String(tlsModeField?.value || '').toLowerCase();
   const mailEncryptionEnabled = isMail && (mailTLSSelection === 'tls' || mailTLSSelection === 'starttls');
@@ -50,13 +54,22 @@ export const applyKindRules = () => {
   const httpsContentChecks = isHTTPMonitor && !httpsTLSOnly;
 
   if (targetRow) {
-    targetRow.hidden = isTCPMonitor || isHTTPMonitor || isUDP || isMail || isDNS || isSDNS || isHeartbeat;
+    targetRow.hidden = isTCPMonitor || isHTTPMonitor || isUDP || isMail || isDNS || isSDNS || isHeartbeat || isGRPC;
   }
   if (httpsTargetRow) {
     httpsTargetRow.hidden = !isHTTPMonitor;
   }
   if (tcpTargetRow) {
-    tcpTargetRow.hidden = !isTCPMonitor;
+    tcpTargetRow.hidden = !(isTCPMonitor || isGRPC);
+  }
+  if (promQueryRow) {
+    promQueryRow.hidden = !isPrometheus;
+  }
+  if (promThresholdRow) {
+    promThresholdRow.hidden = !isPrometheus;
+  }
+  if (grpcServiceRow) {
+    grpcServiceRow.hidden = !isGRPC;
   }
   if (dnsTargetRow) {
     dnsTargetRow.hidden = !isDNS;
@@ -74,7 +87,10 @@ export const applyKindRules = () => {
     udpTargetRow.hidden = !isUDP;
   }
   if (targetField) {
-    targetField.required = !isTCPMonitor && !isHTTPMonitor && !isUDP && !isMail && !isDNS && !isSDNS && !isHeartbeat;
+    targetField.required = !isTCPMonitor && !isHTTPMonitor && !isUDP && !isMail && !isDNS && !isSDNS && !isHeartbeat && !isGRPC;
+  }
+  if (promQueryField) {
+    promQueryField.required = isPrometheus;
   }
   if (httpHostField) {
     httpHostField.required = isHTTPMonitor;
@@ -83,10 +99,10 @@ export const applyKindRules = () => {
     httpPortField.required = false;
   }
   if (tcpHostField) {
-    tcpHostField.required = isTCPMonitor;
+    tcpHostField.required = isTCPMonitor || isGRPC;
   }
   if (tcpPortField) {
-    tcpPortField.required = isTCPMonitor;
+    tcpPortField.required = isTCPMonitor || isGRPC;
   }
   if (dnsHostField) {
     dnsHostField.required = isDNS;
@@ -372,6 +388,71 @@ export const applyKindRules = () => {
     if (targetHintField) {
       targetHintField.textContent = '';
     }
+  } else if (isPrometheus) {
+    if (httpSchemeField) {
+      httpSchemeField.value = 'http';
+    }
+    if (httpSkipVerifyField) {
+      httpSkipVerifyField.checked = false;
+    }
+    useHTTPSField.checked = false;
+    verifyCertField.checked = false;
+    expectedStatusField.value = '';
+    expectedTextField.value = '';
+    // Default Prometheus scrapes are plain HTTP; keep explicit tls/starttls when editing.
+    if (tlsModeField.value !== 'tls' && tlsModeField.value !== 'starttls' && tlsModeField.value !== 'none') {
+      tlsModeField.value = 'none';
+    }
+    if (String(targetField?.value || '').toLowerCase().startsWith('http://')) {
+      tlsModeField.value = 'none';
+    } else if (String(targetField?.value || '').toLowerCase().startsWith('https://')) {
+      if (tlsModeField.value === 'none') {
+        tlsModeField.value = 'tls';
+      }
+    } else if (!targetField?.value) {
+      tlsModeField.value = 'none';
+    }
+    if (promComparisonField && !promComparisonField.value) {
+      promComparisonField.value = 'eq';
+    }
+    if (targetField) {
+      targetField.placeholder = 'http://prometheus:9090';
+      targetField.required = true;
+    }
+    if (targetHintField) {
+      targetHintField.textContent = tr('monitorHintPrometheus', 'Prometheus base URL (e.g. http://prometheus:9090).');
+    }
+  } else if (isGRPC) {
+    if (httpSchemeField) {
+      httpSchemeField.value = 'https';
+    }
+    if (httpSkipVerifyField) {
+      httpSkipVerifyField.checked = false;
+    }
+    expectedStatusField.value = '';
+    expectedTextField.value = '';
+    if (useHTTPSLabelField) {
+      useHTTPSLabelField.textContent = tr('monitorTCPHandshake', monitorTCPHandshakeFallback);
+    }
+    if (verifyCertLabelField) {
+      verifyCertLabelField.textContent = tr('monitorVerifyCert', monitorVerifyCertFallback);
+    }
+    if (!useHTTPSField.checked) {
+      verifyCertField.checked = false;
+      tlsModeField.value = 'none';
+    } else {
+      tlsModeField.value = verifyCertField.checked ? 'tls' : 'starttls';
+    }
+    if (tcpHostField) {
+      tcpHostField.placeholder = 'grpc.example.com oder 2001:db8::1';
+    }
+    if (tcpPortField) {
+      tcpPortField.placeholder = '443';
+    }
+    if (targetHintField) {
+      targetHintField.textContent = tr('monitorHintGRPC', 'gRPC host:port for the health service.');
+    }
+    syncTCPFamilyMode();
   } else if (isICMPMonitor) {
     if (httpSchemeField) {
       httpSchemeField.value = 'https';
@@ -422,8 +503,11 @@ export const applyKindRules = () => {
   if (!isICMPMonitor && icmpFamilyRow) {
     icmpFamilyRow.hidden = true;
   }
-  if (!isTCPMonitor && tcpFamilyRow) {
+  if (!(isTCPMonitor || isGRPC) && tcpFamilyRow) {
     tcpFamilyRow.hidden = true;
+  }
+  if (!isPrometheus && promQueryField) {
+    promQueryField.required = false;
   }
   if (!isDNS && dnsTargetRow) {
     dnsTargetRow.hidden = true;

@@ -27,6 +27,10 @@ type monitorExportRecord struct {
 	JSONPath             string `json:"json_path,omitempty"`
 	JSONPathExpected     string `json:"json_path_expected,omitempty"`
 	CheckMode            string `json:"check_mode,omitempty"`
+	PromQuery            string `json:"prom_query,omitempty"`
+	PromExpectedValue    string `json:"prom_expected_value,omitempty"`
+	PromComparison       string `json:"prom_comparison,omitempty"`
+	GRPCService          string `json:"grpc_service,omitempty"`
 	NotifyOnRecovery     bool   `json:"notify_on_recovery"`
 	RetryCount           int    `json:"retry_count"`
 	RetryIntervalSeconds int    `json:"retry_interval_seconds"`
@@ -61,6 +65,10 @@ type importPreviewRow struct {
 	JSONPath             string
 	JSONPathExpected     string
 	CheckMode            string
+	PromQuery            string
+	PromExpectedValue    string
+	PromComparison       string
+	GRPCService          string
 	NotifyOnRecovery     bool
 	RetryCount           int
 	RetryIntervalSeconds int
@@ -126,6 +134,10 @@ func (s *Server) handleMonitorExport(w http.ResponseWriter, r *http.Request) {
 			JSONPath:             m.JSONPath,
 			JSONPathExpected:     m.JSONPathExpected,
 			CheckMode:            m.CheckMode,
+			PromQuery:            m.PromQuery,
+			PromExpectedValue:    m.PromExpectedValue,
+			PromComparison:       m.PromComparison,
+			GRPCService:          m.GRPCService,
 			NotifyOnRecovery:     m.NotifyOnRecovery,
 			RetryCount:           m.RetryCount,
 			RetryIntervalSeconds: int(m.RetryInterval.Seconds()),

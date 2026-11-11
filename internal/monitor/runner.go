@@ -48,8 +48,10 @@ func NewRunner(logger *slog.Logger, store Store, notifiers ...Notifier) *Runner 
 			KindDNS:       DNSChecker{},
 			KindSDNS:      SDNSChecker{},
 			KindUDP:       UDPChecker{},
-			KindWhois:     WhoisChecker{},
-			KindHeartbeat: HeartbeatChecker{},
+			KindWhois:       WhoisChecker{},
+			KindHeartbeat:   HeartbeatChecker{},
+			KindPrometheus:  PrometheusChecker{},
+			KindGRPC:        GRPCChecker{},
 		},
 	}
 	r.workerSem = make(chan struct{}, r.workers)

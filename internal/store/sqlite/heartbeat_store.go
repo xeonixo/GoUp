@@ -57,6 +57,10 @@ func normalizeHeartbeatParams(params CreateMonitorParams) CreateMonitorParams {
 	params.TLSMode = monitor.TLSModeNone
 	params.ExpectedStatusCode = nil
 	params.ExpectedText = ""
+	params.PromQuery = ""
+	params.PromExpectedValue = ""
+	params.PromComparison = ""
+	params.GRPCService = ""
 	params.ExecutorKind, params.ExecutorRef = "local", ""
 	return params
 }

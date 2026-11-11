@@ -1,9 +1,10 @@
 import {
   checkModeField, dialog, dnsHostField, dnsRecordTypeField, dnsServerField, enabledField,
-  expectedStatusField, expectedTextField, groupField, httpHostField, httpMethodField, httpPathField,
+  expectedStatusField, expectedTextField, groupField, grpcServiceField, httpHostField, httpMethodField, httpPathField,
   httpPortField, httpSchemeField, httpSkipVerifyField, httpsFamilyField, icmpFamilyField, idField,
   intervalField, jsonPathExpectedField, jsonPathField, kindField, mailFamilyField, mailHostField,
-  mailPortField, mailVerifyField, monitorExecutorField, nameField, notifyField, requestBodyField,
+  mailPortField, mailVerifyField, monitorExecutorField, nameField, notifyField, promComparisonField,
+  promExpectedValueField, promQueryField, requestBodyField,
   requestHeadersField, retryCountField, retryIntervalField, sdnsEndpointField, sdnsFamilyField,
   sdnsHostField, sdnsMethodField, sdnsRecordTypeField, sdnsSNIField, sdnsSkipCertField,
   sdnsTransportField, targetField, tcpFamilyField, tcpHostField, tcpPortField, timeoutField, title,
@@ -129,6 +130,10 @@ export const openCreate = () => {
   if (requestBodyField) requestBodyField.value = '';
   if (jsonPathField) jsonPathField.value = '';
   if (jsonPathExpectedField) jsonPathExpectedField.value = '';
+  if (promQueryField) promQueryField.value = '';
+  if (promExpectedValueField) promExpectedValueField.value = '';
+  if (promComparisonField) promComparisonField.value = 'eq';
+  if (grpcServiceField) grpcServiceField.value = '';
   useHTTPSField.checked = true;
   verifyCertField.checked = true;
   enabledField.checked = true;
@@ -223,7 +228,7 @@ export const openEdit = (button) => {
       httpsFamilyField.value = 'dual';
     }
   }
-  if (monitorKind === 'tcp') {
+  if (monitorKind === 'tcp' || monitorKind === 'grpc') {
     const tcpModeRaw = String(button.dataset.tlsMode || 'none').toLowerCase();
     if (tcpFamilyField) {
       if (tcpModeRaw.endsWith('_ipv6')) {
@@ -422,6 +427,10 @@ export const openEdit = (button) => {
   if (requestBodyField) requestBodyField.value = button.dataset.requestBody || '';
   if (jsonPathField) jsonPathField.value = button.dataset.jsonPath || '';
   if (jsonPathExpectedField) jsonPathExpectedField.value = button.dataset.jsonPathExpected || '';
+  if (promQueryField) promQueryField.value = button.dataset.promQuery || '';
+  if (promExpectedValueField) promExpectedValueField.value = button.dataset.promExpectedValue || '';
+  if (promComparisonField) promComparisonField.value = button.dataset.promComparison || 'eq';
+  if (grpcServiceField) grpcServiceField.value = button.dataset.grpcService || '';
   const tlsModeRaw = String(button.dataset.tlsMode || 'tls').toLowerCase();
   const tlsMode = tlsModeRaw.endsWith('_ipv4') || tlsModeRaw.endsWith('_ipv6') || tlsModeRaw.endsWith('_dual')
     ? tlsModeRaw.replace(/_(ipv4|ipv6|dual)$/, '')

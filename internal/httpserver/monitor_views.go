@@ -69,6 +69,10 @@ type monitorView struct {
 	JSONPath             string
 	JSONPathExpected     string
 	CheckMode            string
+	PromQuery            string
+	PromExpectedValue    string
+	PromComparison       string
+	GRPCService          string
 	TrendLabel           string
 	StatusLabel          string
 	StatusClass          string
@@ -178,6 +182,14 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 			view.JSONPath = strings.TrimSpace(item.Monitor.JSONPath)
 			view.JSONPathExpected = strings.TrimSpace(item.Monitor.JSONPathExpected)
 			view.CheckMode = monitor.NormalizeHTTPSCheckMode(item.Monitor.CheckMode)
+		}
+		if item.Monitor.Kind == monitor.KindPrometheus {
+			view.PromQuery = strings.TrimSpace(item.Monitor.PromQuery)
+			view.PromExpectedValue = strings.TrimSpace(item.Monitor.PromExpectedValue)
+			view.PromComparison = monitor.NormalizePromComparison(item.Monitor.PromComparison)
+		}
+		if item.Monitor.Kind == monitor.KindGRPC {
+			view.GRPCService = strings.TrimSpace(item.Monitor.GRPCService)
 		}
 		if item.LastResult != nil {
 			view.LastCheckedAt = item.LastResult.CheckedAt.UTC().Format(time.RFC3339)

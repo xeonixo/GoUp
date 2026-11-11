@@ -50,6 +50,10 @@
                 <input type="hidden" name="json_path_{{$i}}"              value="{{.JSONPath}}">
                 <input type="hidden" name="json_path_expected_{{$i}}"     value="{{.JSONPathExpected}}">
                 <input type="hidden" name="check_mode_{{$i}}"             value="{{.CheckMode}}">
+                <input type="hidden" name="prom_query_{{$i}}"             value="{{.PromQuery}}">
+                <input type="hidden" name="prom_expected_value_{{$i}}"    value="{{.PromExpectedValue}}">
+                <input type="hidden" name="prom_comparison_{{$i}}"        value="{{.PromComparison}}">
+                <input type="hidden" name="grpc_service_{{$i}}"           value="{{.GRPCService}}">
                 <input type="hidden" name="notify_on_recovery_{{$i}}"     value="{{if .NotifyOnRecovery}}on{{end}}">
                 <input type="hidden" name="retry_count_{{$i}}"            value="{{.RetryCount}}">
                 <input type="hidden" name="retry_interval_seconds_{{$i}}" value="{{.RetryIntervalSeconds}}">

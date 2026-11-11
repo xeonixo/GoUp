@@ -6,19 +6,24 @@ import (
 	"strings"
 )
 
-// monitorConfigJSON holds optional HTTPS assertion settings in monitors.config_json.
+// monitorConfigJSON holds optional kind-specific settings in monitors.config_json.
 type monitorConfigJSON struct {
-	HTTPMethod       string `json:"http_method,omitempty"`
-	RequestHeaders   string `json:"request_headers,omitempty"`
-	RequestBody      string `json:"request_body,omitempty"`
-	JSONPath         string `json:"json_path,omitempty"`
-	JSONPathExpected string `json:"json_path_expected,omitempty"`
-	CheckMode        string `json:"check_mode,omitempty"`
+	HTTPMethod        string `json:"http_method,omitempty"`
+	RequestHeaders    string `json:"request_headers,omitempty"`
+	RequestBody       string `json:"request_body,omitempty"`
+	JSONPath          string `json:"json_path,omitempty"`
+	JSONPathExpected  string `json:"json_path_expected,omitempty"`
+	CheckMode         string `json:"check_mode,omitempty"`
+	Query             string `json:"query,omitempty"`
+	ExpectedValue     string `json:"expected_value,omitempty"`
+	Comparison        string `json:"comparison,omitempty"`
+	Service           string `json:"service,omitempty"`
 }
 
 func encodeMonitorConfigJSON(params CreateMonitorParams) string {
 	cfg := monitorConfigJSON{}
-	if params.Kind == monitor.KindHTTPS {
+	switch params.Kind {
+	case monitor.KindHTTPS:
 		if method := monitor.NormalizeHTTPSMethod(params.HTTPMethod); method != "" && method != "GET" {
 			cfg.HTTPMethod = method
 		}
@@ -29,9 +34,18 @@ func encodeMonitorConfigJSON(params CreateMonitorParams) string {
 		if mode := monitor.NormalizeHTTPSCheckMode(params.CheckMode); mode == monitor.CheckModeTLS {
 			cfg.CheckMode = mode
 		}
+	case monitor.KindPrometheus:
+		cfg.Query = strings.TrimSpace(params.PromQuery)
+		cfg.ExpectedValue = strings.TrimSpace(params.PromExpectedValue)
+		if cmp := monitor.NormalizePromComparison(params.PromComparison); cmp != "" && cmp != monitor.PromComparisonEQ {
+			cfg.Comparison = cmp
+		}
+	case monitor.KindGRPC:
+		cfg.Service = strings.TrimSpace(params.GRPCService)
 	}
 	if cfg.HTTPMethod == "" && cfg.RequestHeaders == "" && cfg.RequestBody == "" &&
-		cfg.JSONPath == "" && cfg.JSONPathExpected == "" && cfg.CheckMode == "" {
+		cfg.JSONPath == "" && cfg.JSONPathExpected == "" && cfg.CheckMode == "" &&
+		cfg.Query == "" && cfg.ExpectedValue == "" && cfg.Comparison == "" && cfg.Service == "" {
 		return "{}"
 	}
 	encoded, err := json.Marshal(cfg)
@@ -59,4 +73,8 @@ func applyMonitorConfigJSON(item *monitor.Monitor, raw string) {
 	item.JSONPath = strings.TrimSpace(cfg.JSONPath)
 	item.JSONPathExpected = strings.TrimSpace(cfg.JSONPathExpected)
 	item.CheckMode = monitor.NormalizeHTTPSCheckMode(cfg.CheckMode)
+	item.PromQuery = strings.TrimSpace(cfg.Query)
+	item.PromExpectedValue = strings.TrimSpace(cfg.ExpectedValue)
+	item.PromComparison = monitor.NormalizePromComparison(cfg.Comparison)
+	item.GRPCService = strings.TrimSpace(cfg.Service)
 }

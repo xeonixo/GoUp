@@ -48,3 +48,59 @@ func TestHTTPSAssertionConfigRoundTrip(t *testing.T) {
 		t.Fatalf("assertion fields = %#v", m)
 	}
 }
+
+func TestPrometheusAndGRPCConfigRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "prom-grpc.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	promID, err := st.CreateMonitor(ctx, CreateMonitorParams{
+		Name:              "Prom",
+		Kind:              "prom",
+		Target:            "http://prometheus:9090",
+		Interval:          time.Minute,
+		Timeout:           5 * time.Second,
+		Enabled:           true,
+		TLSMode:           monitor.TLSModeNone,
+		PromQuery:         `up{job="api"}`,
+		PromExpectedValue: "1",
+		PromComparison:    "gte",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	promSnap, err := st.GetMonitorSnapshot(ctx, promID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if promSnap.Monitor.Kind != monitor.KindPrometheus {
+		t.Fatalf("kind alias not normalized: %q", promSnap.Monitor.Kind)
+	}
+	if promSnap.Monitor.PromQuery != `up{job="api"}` || promSnap.Monitor.PromExpectedValue != "1" || promSnap.Monitor.PromComparison != monitor.PromComparisonGTE {
+		t.Fatalf("prom config = %#v", promSnap.Monitor)
+	}
+
+	grpcID, err := st.CreateMonitor(ctx, CreateMonitorParams{
+		Name:        "GRPC",
+		Kind:        monitor.KindGRPC,
+		Target:      "127.0.0.1:50051",
+		Interval:    time.Minute,
+		Timeout:     5 * time.Second,
+		Enabled:     true,
+		TLSMode:     monitor.TLSModeNone,
+		GRPCService: "api.v1.Service",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grpcSnap, err := st.GetMonitorSnapshot(ctx, grpcID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if grpcSnap.Monitor.GRPCService != "api.v1.Service" {
+		t.Fatalf("grpc service = %q", grpcSnap.Monitor.GRPCService)
+	}
+}

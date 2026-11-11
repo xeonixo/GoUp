@@ -116,6 +116,10 @@ func (s *Server) handleRemoteNodePoll(w http.ResponseWriter, r *http.Request) {
 			JSONPath:           item.JSONPath,
 			JSONPathExpected:   item.JSONPathExpected,
 			CheckMode:          item.CheckMode,
+			PromQuery:          item.PromQuery,
+			PromExpectedValue:  item.PromExpectedValue,
+			PromComparison:     item.PromComparison,
+			GRPCService:        item.GRPCService,
 			NotifyOnRecovery:   item.NotifyOnRecovery,
 		})
 	}

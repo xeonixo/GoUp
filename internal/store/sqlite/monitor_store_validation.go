@@ -6,11 +6,13 @@ import (
 	"goup/internal/monitor"
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
 
 func validateCreateMonitorParams(params CreateMonitorParams) error {
+	params.Kind = monitor.NormalizeKind(string(params.Kind))
 	if strings.TrimSpace(params.Name) == "" {
 		return errors.New("monitor name is required")
 	}
@@ -86,6 +88,27 @@ func validateCreateMonitorParams(params CreateMonitorParams) error {
 				return errors.New("TLS-only check requires HTTPS (not plain HTTP)")
 			}
 		}
+	}
+	if params.Kind != monitor.KindPrometheus {
+		if strings.TrimSpace(params.PromQuery) != "" || strings.TrimSpace(params.PromExpectedValue) != "" ||
+			strings.TrimSpace(params.PromComparison) != "" {
+			return errors.New("prometheus query settings are only valid for prometheus monitors")
+		}
+	} else {
+		if strings.TrimSpace(params.PromQuery) == "" && !strings.Contains(params.Target, "query=") {
+			return errors.New("prometheus query is required")
+		}
+		if cmp := strings.TrimSpace(params.PromComparison); cmp != "" && !monitor.IsValidPromComparison(cmp) {
+			return errors.New("prometheus comparison must be eq, ne, gt, gte, lt or lte")
+		}
+		if raw := strings.TrimSpace(params.PromExpectedValue); raw != "" {
+			if _, err := strconv.ParseFloat(raw, 64); err != nil {
+				return errors.New("prometheus expected_value must be a number")
+			}
+		}
+	}
+	if params.Kind != monitor.KindGRPC && strings.TrimSpace(params.GRPCService) != "" {
+		return errors.New("grpc service is only valid for grpc monitors")
 	}
 	return validateMonitorKindSettings(params.Kind, params.Target, params.TLSMode, params.ExpectedStatusCode)
 }
@@ -222,6 +245,46 @@ func validateMonitorKindSettings(kind monitor.Kind, target string, tlsMode monit
 		}
 		if expectedStatusCode != nil {
 			return errors.New("expected HTTP status is only valid for HTTPS monitors")
+		}
+	case monitor.KindPrometheus:
+		rawTarget := strings.TrimSpace(target)
+		parsedTarget, err := url.Parse(rawTarget)
+		if (err != nil || parsedTarget == nil || parsedTarget.Host == "") && !strings.Contains(rawTarget, "://") {
+			parsedTarget, err = url.Parse("http://" + rawTarget)
+		}
+		if err != nil || parsedTarget == nil || parsedTarget.Host == "" {
+			return errors.New("target must be a valid http(s) URL for prometheus monitors")
+		}
+		if expectedStatusCode != nil {
+			return errors.New("expected HTTP status is only valid for HTTPS monitors")
+		}
+		if !monitor.IsValidHTTPSTLSMode(tlsMode) {
+			return errors.New("invalid prometheus tls mode")
+		}
+		httpsTLSMode, _, _ := monitor.ParseHTTPSTLSMode(tlsMode)
+		scheme := strings.ToLower(parsedTarget.Scheme)
+		if scheme == "" {
+			scheme = "http"
+		}
+		switch httpsTLSMode {
+		case "", monitor.TLSModeTLS, monitor.TLSModeSTARTTLS:
+			if scheme != "https" {
+				return errors.New("https mode requires an https URL for prometheus monitors")
+			}
+		case monitor.TLSModeNone:
+			if scheme != "http" {
+				return errors.New("http mode requires an http URL for prometheus monitors")
+			}
+		}
+	case monitor.KindGRPC:
+		if _, _, err := net.SplitHostPort(strings.TrimSpace(target)); err != nil {
+			return errors.New("target must be a valid host:port for grpc monitors")
+		}
+		if expectedStatusCode != nil {
+			return errors.New("expected HTTP status is only valid for HTTPS monitors")
+		}
+		if !monitor.IsValidTCPTLSMode(tlsMode) {
+			return errors.New("grpc monitors support tls, tls_insecure, starttls, starttls_insecure or none")
 		}
 	default:
 		return fmt.Errorf("unsupported monitor kind %q", kind)
