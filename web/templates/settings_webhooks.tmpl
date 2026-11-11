@@ -9,10 +9,21 @@
     <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link">{{index $.Translations "settings.nav.remote_nodes"}}</a>
     <a href="{{$.AppBase}}settings/status-page" class="admin-nav-link">{{index $.Translations "settings.nav.status_page"}}</a>
     <a href="{{$.AppBase}}settings/maintenance" class="admin-nav-link">{{index $.Translations "settings.nav.maintenance"}}</a>
+    <a href="{{$.AppBase}}settings/reports" class="admin-nav-link">{{index $.Translations "settings.nav.reports"}}</a>
   </nav>
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+
+  {{if .NewWebhookSecret}}
+  <div class="notice warning stack">
+    <strong>{{index $.Translations "settings.webhooks.secret_once"}}</strong>
+    <div class="status-url-row">
+      <input type="text" id="webhook-new-secret" readonly value="{{.NewWebhookSecret}}" autocomplete="off">
+      <button type="button" class="button button-secondary" data-action="copy" data-copy-target="webhook-new-secret" data-copied-label="{{index $.Translations "settings.webhooks.secret_copied"}}">{{index $.Translations "settings.webhooks.copy_secret"}}</button>
+    </div>
+  </div>
+  {{end}}
 
   <div class="admin-header settings-header">
     <div>
@@ -40,9 +51,10 @@
       </label>
       <label>
         <span>{{index $.Translations "settings.webhooks.secret"}}</span>
-        <input type="password" name="secret" minlength="16" required>
+        <input type="password" name="secret" placeholder="{{index $.Translations "settings.webhooks.secret_paste_hint"}}" autocomplete="new-password">
       </label>
     </div>
+    <p class="muted compact">{{index $.Translations "settings.webhooks.secret_hint"}}</p>
     <label class="toggle-row">
       <input type="checkbox" name="enabled" checked>
       <span>{{index $.Translations "settings.webhooks.enabled"}}</span>
@@ -83,6 +95,7 @@
       </label>
     </div>
     <div class="form-actions">
+      <button type="submit" class="button button-secondary" name="generate_secret" value="1">{{index $.Translations "settings.webhooks.generate_secret"}}</button>
       <button type="submit" class="button">{{index $.Translations "settings.webhooks.create_button"}}</button>
     </div>
   </form>
@@ -129,8 +142,9 @@
               </div>
               <div class="inline-grid">
                 <input type="number" name="timeout_seconds" min="1" max="30" value="{{.TimeoutSeconds}}" required>
-                <input type="password" name="secret" placeholder="{{index $.Translations "settings.webhooks.secret_rotate_placeholder"}}">
+                <input type="password" name="secret" placeholder="{{index $.Translations "settings.webhooks.secret_rotate_placeholder"}}" autocomplete="new-password">
               </div>
+              <p class="muted compact">{{index $.Translations "settings.webhooks.secret_rotate_hint"}}</p>
               <div class="inline-grid">
                 <input type="text" name="route_groups" value="{{.Route.GroupsCSV}}" placeholder="prod, edge">
                 <input type="text" name="route_monitor_ids" value="{{.Route.MonitorIDsCSV}}" placeholder="1, 2, 3">
@@ -156,6 +170,7 @@
                   <input type="checkbox" name="enabled" {{if .Enabled}}checked{{end}}>
                   <span>{{index $.Translations "settings.webhooks.enabled"}}</span>
                 </label>
+                <button type="submit" class="button button-secondary button-small" name="generate_secret" value="1">{{index $.Translations "settings.webhooks.generate_secret"}}</button>
                 <button type="submit" class="button button-secondary button-small">{{index $.Translations "common.save"}}</button>
               </div>
             </form>

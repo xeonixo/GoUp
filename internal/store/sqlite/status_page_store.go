@@ -14,29 +14,44 @@ import (
 )
 
 const (
-	statusPageTitleMaxRunes       = 120
-	statusPageDescriptionMaxRunes = 500
-	statusPageDisplayNameMaxRunes = 120
-	statusPageBrandColorMaxRunes  = 32
-	statusPageLogoRefMaxRunes     = 200
-	statusPageAccessModePublic    = "public"
-	statusPageAccessModeToken     = "token"
-	statusPageAccessTokenPrefix   = "goup_"
+	statusPageTitleMaxRunes        = 120
+	statusPageDescriptionMaxRunes  = 500
+	statusPageDisplayNameMaxRunes  = 120
+	statusPageBrandColorMaxRunes   = 32
+	statusPageLogoRefMaxRunes      = 200
+	statusPageAccessModePublic     = "public"
+	statusPageAccessModeToken      = "token"
+	statusPageAccessTokenPrefix    = "goup_"
 	statusPageIncidentDefaultLimit = 20
+	statusPageAnnounceHoursDefault = 24
+	statusPageAnnounceHoursMax     = 720 // 30 days
 )
 
 // StatusPageSettings is the per-tenant configuration of the public status page.
 type StatusPageSettings struct {
-	Enabled        bool
-	Title          string
-	Description    string
-	LogoRef        string
-	BrandColor     string
-	HideGoUpFooter bool
-	AccessMode     string
+	Enabled         bool
+	Title           string
+	Description     string
+	LogoRef         string
+	BrandColor      string
+	HideGoUpFooter  bool
+	AccessMode      string
 	AccessTokenHash string
-	NoIndex        bool
-	UpdatedAt      time.Time
+	NoIndex         bool
+	// AnnounceHours is how far ahead upcoming maintenance is shown on the public page.
+	AnnounceHours int
+	UpdatedAt     time.Time
+}
+
+// NormalizeAnnounceHours returns a sane announce lead time (default 24, max 720).
+func NormalizeAnnounceHours(hours int) int {
+	if hours <= 0 {
+		return statusPageAnnounceHoursDefault
+	}
+	if hours > statusPageAnnounceHoursMax {
+		return statusPageAnnounceHoursMax
+	}
+	return hours
 }
 
 // StatusPageMonitor selects one monitor for the public status page together with the
@@ -81,12 +96,13 @@ CREATE TABLE IF NOT EXISTS status_page_monitors (
 		{"access_mode", "TEXT NOT NULL DEFAULT 'public'"},
 		{"access_token_hash", "TEXT NOT NULL DEFAULT ''"},
 		{"noindex", "INTEGER NOT NULL DEFAULT 0"},
+		{"announce_hours", "INTEGER NOT NULL DEFAULT 24"},
 	} {
 		if _, err := s.ensureColumn(ctx, "status_page_settings", col.name, col.def); err != nil {
 			return err
 		}
 	}
-	return nil
+	return s.ensureStatusPageSubscriptionTables(ctx)
 }
 
 func normalizeStatusPageAccessMode(mode string) string {
@@ -154,12 +170,12 @@ func (s *Store) GetStatusPageSettings(ctx context.Context) (StatusPageSettings, 
 		updatedAt      sql.NullTime
 	)
 	err := s.db.QueryRowContext(ctx, `
-SELECT enabled, title, description, logo_ref, brand_color, hide_goup_footer, access_mode, access_token_hash, noindex, updated_at
+SELECT enabled, title, description, logo_ref, brand_color, hide_goup_footer, access_mode, access_token_hash, noindex, announce_hours, updated_at
 FROM status_page_settings WHERE id = 1
-`).Scan(&enabled, &item.Title, &item.Description, &item.LogoRef, &item.BrandColor, &hideFooter, &item.AccessMode, &item.AccessTokenHash, &noindex, &updatedAt)
+`).Scan(&enabled, &item.Title, &item.Description, &item.LogoRef, &item.BrandColor, &hideFooter, &item.AccessMode, &item.AccessTokenHash, &noindex, &item.AnnounceHours, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return StatusPageSettings{AccessMode: statusPageAccessModePublic}, nil
+			return StatusPageSettings{AccessMode: statusPageAccessModePublic, AnnounceHours: statusPageAnnounceHoursDefault}, nil
 		}
 		return StatusPageSettings{}, fmt.Errorf("load status page settings: %w", err)
 	}
@@ -168,6 +184,7 @@ FROM status_page_settings WHERE id = 1
 	item.NoIndex = noindex == 1
 	item.AccessMode = normalizeStatusPageAccessMode(item.AccessMode)
 	item.BrandColor = normalizeStatusPageBrandColor(item.BrandColor)
+	item.AnnounceHours = NormalizeAnnounceHours(item.AnnounceHours)
 	if updatedAt.Valid {
 		item.UpdatedAt = updatedAt.Time
 	}
@@ -196,12 +213,13 @@ func (s *Store) SaveStatusPageSettings(ctx context.Context, settings StatusPageS
 		noindex = 1
 	}
 	accessMode := normalizeStatusPageAccessMode(settings.AccessMode)
+	announceHours := NormalizeAnnounceHours(settings.AnnounceHours)
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO status_page_settings (
 	id, enabled, title, description, logo_ref, brand_color, hide_goup_footer,
-	access_mode, access_token_hash, noindex, updated_at
+	access_mode, access_token_hash, noindex, announce_hours, updated_at
 )
-VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
 	enabled = excluded.enabled,
 	title = excluded.title,
@@ -212,6 +230,7 @@ ON CONFLICT(id) DO UPDATE SET
 	access_mode = excluded.access_mode,
 	access_token_hash = excluded.access_token_hash,
 	noindex = excluded.noindex,
+	announce_hours = excluded.announce_hours,
 	updated_at = excluded.updated_at
 `, enabled,
 		truncateRunes(strings.TrimSpace(settings.Title), statusPageTitleMaxRunes),
@@ -222,6 +241,7 @@ ON CONFLICT(id) DO UPDATE SET
 		accessMode,
 		strings.TrimSpace(settings.AccessTokenHash),
 		noindex,
+		announceHours,
 		time.Now().UTC()); err != nil {
 		return fmt.Errorf("save status page settings: %w", err)
 	}

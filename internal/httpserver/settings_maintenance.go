@@ -14,10 +14,9 @@ import (
 // maintenancePastLimit bounds the "past windows" list.
 const maintenancePastLimit = 20
 
-// Maintenance window times are exchanged as UTC instants. The browser converts the
-// datetime-local inputs (user's local zone, DST aware) into RFC3339 UTC strings in the hidden
-// fields starts_at/ends_at before submitting (web/static/settings-maintenance.js). Without
-// JavaScript the datetime-local values (starts_local/ends_local) are interpreted as UTC.
+// Maintenance window times are wall-clock values in the window's IANA timezone. Hidden
+// starts_at/ends_at fields may carry RFC3339 UTC from JavaScript; otherwise starts_local/
+// ends_local are interpreted in the selected timezone (default UTC).
 const maintenanceLocalLayout = "2006-01-02T15:04"
 
 func (s *Server) handleSettingsMaintenance(w http.ResponseWriter, r *http.Request) {
@@ -69,16 +68,19 @@ func (s *Server) handleSettingsMaintenance(w http.ResponseWriter, r *http.Reques
 }
 
 // parseMaintenanceInstant reads a UTC instant from the RFC3339 field, falling back to the raw
-// datetime-local value (interpreted as UTC) when JavaScript did not fill the hidden field.
-func parseMaintenanceInstant(r *http.Request, utcField, localField string) time.Time {
+// datetime-local value interpreted in loc when JavaScript did not fill the hidden field.
+func parseMaintenanceInstant(r *http.Request, utcField, localField string, loc *time.Location) time.Time {
 	if raw := strings.TrimSpace(r.FormValue(utcField)); raw != "" {
 		if t, err := time.Parse(time.RFC3339, raw); err == nil {
 			return t.UTC()
 		}
 		return time.Time{}
 	}
+	if loc == nil {
+		loc = time.UTC
+	}
 	if raw := strings.TrimSpace(r.FormValue(localField)); raw != "" {
-		if t, err := time.Parse(maintenanceLocalLayout, raw); err == nil {
+		if t, err := time.ParseInLocation(maintenanceLocalLayout, raw, loc); err == nil {
 			return t.UTC()
 		}
 	}
@@ -97,7 +99,9 @@ func (s *Server) maintenanceErrorMessage(r *http.Request, err error) string {
 	case errors.Is(err, store.ErrMaintenanceOrder):
 		key, fallback = "settings.maintenance.error_order", "The end must be after the start"
 	case errors.Is(err, store.ErrMaintenanceTooLong):
-		key, fallback = "settings.maintenance.error_too_long", "A recurring window must not be longer than its period (24 hours daily, 7 days weekly)"
+		key, fallback = "settings.maintenance.error_too_long", "A recurring window must not be longer than its period (24 hours daily, 7 days weekly, 31 days monthly)"
+	case errors.Is(err, store.ErrMaintenanceTimezone):
+		key, fallback = "settings.maintenance.error_timezone", "Enter a valid IANA timezone (e.g. Europe/Berlin)"
 	case errors.Is(err, store.ErrMaintenanceTargets):
 		key, fallback = "settings.maintenance.error_targets", "Select at least one monitor or group"
 	}
@@ -129,11 +133,19 @@ func (s *Server) handleSettingsMaintenanceSave(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	tzRaw := strings.TrimSpace(r.FormValue("timezone"))
+	if !monitor.ValidTimezone(tzRaw) {
+		s.maintenanceRedirect(w, r, "error", s.maintenanceErrorMessage(r, store.ErrMaintenanceTimezone))
+		return
+	}
+	timezone := monitor.NormalizeTimezone(tzRaw)
+	loc, _ := time.LoadLocation(timezone)
 	window := monitor.MaintenanceWindow{
 		Title:       strings.TrimSpace(r.FormValue("title")),
 		Description: strings.TrimSpace(r.FormValue("description")),
-		StartsAt:    parseMaintenanceInstant(r, "starts_at", "starts_local"),
-		EndsAt:      parseMaintenanceInstant(r, "ends_at", "ends_local"),
+		StartsAt:    parseMaintenanceInstant(r, "starts_at", "starts_local", loc),
+		EndsAt:      parseMaintenanceInstant(r, "ends_at", "ends_local", loc),
+		Timezone:    timezone,
 		Recurrence:  monitor.NormalizeRecurrence(r.FormValue("recurrence")),
 		Scope:       monitor.NormalizeMaintenanceScope(r.FormValue("scope")),
 		CreatedBy:   user.UserID,
@@ -214,6 +226,39 @@ func (s *Server) handleSettingsMaintenanceDelete(w http.ResponseWriter, r *http.
 	s.statusCache.invalidate()
 	s.writeAudit(r, "tenant.maintenance.delete", "tenant", user.TenantID, "window_id="+strconv.FormatInt(id, 10))
 	s.maintenanceRedirect(w, r, "notice", s.settingsFlash(r, "settings.maintenance.deleted", "Maintenance window deleted"))
+}
+
+func (s *Server) handleSettingsMaintenanceICS(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	user := s.currentUser(r)
+	if user == nil || user.TenantID <= 0 {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	appStore, err := s.appStore(r)
+	if err != nil {
+		http.Error(w, "unable to resolve tenant", http.StatusInternalServerError)
+		return
+	}
+	windows, err := appStore.ListMaintenanceWindows(r.Context())
+	if err != nil {
+		s.logger.Error("settings maintenance ics list failed", "tenant_id", user.TenantID, "error", err)
+		http.Error(w, "unable to load maintenance windows", http.StatusInternalServerError)
+		return
+	}
+	slug := tenantSlugFromRequest(r)
+	if slug == "" {
+		slug = "goup"
+	}
+	body := buildMaintenanceICS(windows, slug, time.Now().UTC())
+	filename := "goup-" + slug + "-maintenance.ics"
+	w.Header().Set("Content-Type", "text/calendar; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(body)
 }
 
 // Rows lists active, upcoming and past windows in that order.

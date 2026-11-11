@@ -163,6 +163,35 @@ func TestLoadReadsSSOSecretKeyPrevious(t *testing.T) {
 	}
 }
 
+func TestLoadAuditRetentionDays(t *testing.T) {
+	t.Setenv("GOUP_ADDR", ":8080")
+	t.Setenv("GOUP_BASE_URL", "http://localhost:8080")
+	t.Setenv("GOUP_DATA_DIR", t.TempDir())
+	t.Setenv("GOUP_SESSION_KEY", "session-key-1234567890-abcdefghijkl")
+	t.Setenv("GOUP_SSO_SECRET_KEY", "sso-secret-key-123456-abcdefghijklmn")
+	t.Setenv("GOUP_CONTROL_PLANE_ADMIN_KEY", "admin-cookie-key-123456-abcdefghijklm")
+	t.Setenv("GOUP_AUTH_MODE", "disabled")
+	_ = os.Unsetenv("GOUP_CONTROL_DB_PATH")
+	_ = os.Unsetenv("GOUP_AUDIT_RETENTION_DAYS")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AuditRetentionDays != 90 {
+		t.Fatalf("default AuditRetentionDays = %d", cfg.AuditRetentionDays)
+	}
+
+	t.Setenv("GOUP_AUDIT_RETENTION_DAYS", "30")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load with override: %v", err)
+	}
+	if cfg.AuditRetentionDays != 30 {
+		t.Fatalf("override AuditRetentionDays = %d", cfg.AuditRetentionDays)
+	}
+}
+
 func TestParseTrustedProxies(t *testing.T) {
 	got, err := ParseTrustedProxies("10.0.0.0/8, 192.168.1.5 ,::1")
 	if err != nil || len(got) != 3 {

@@ -39,6 +39,7 @@ type statusPageAdminView struct {
 	NoIndex          bool
 	AccessMode       string
 	HasAccessToken   bool
+	AnnounceHours    int
 	Monitors         []statusPageAdminMonitorView
 	PublicURL        string
 	MetricsURL       string
@@ -103,6 +104,7 @@ func (s *Server) loadStatusPageAdminView(r *http.Request, tenantID int64) (*stat
 		NoIndex:        settings.NoIndex,
 		AccessMode:     settings.AccessMode,
 		HasAccessToken: strings.TrimSpace(settings.AccessTokenHash) != "",
+		AnnounceHours:  store.NormalizeAnnounceHours(settings.AnnounceHours),
 		PublicURL:      s.publicTenantURL(r, "status"),
 		MetricsURL:     s.publicTenantURL(r, "metrics"),
 	}
@@ -254,6 +256,7 @@ func (s *Server) handleSettingsStatusPageSave(w http.ResponseWriter, r *http.Req
 		// Keep hash so switching back to token mode can reuse or regenerate explicitly.
 	}
 
+	announceHours, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("announce_hours")))
 	settings := store.StatusPageSettings{
 		Enabled:         r.FormValue("enabled") == "on",
 		Title:           r.FormValue("title"),
@@ -264,6 +267,7 @@ func (s *Server) handleSettingsStatusPageSave(w http.ResponseWriter, r *http.Req
 		AccessMode:      accessMode,
 		AccessTokenHash: accessHash,
 		NoIndex:         r.FormValue("noindex") == "on",
+		AnnounceHours:   announceHours,
 	}
 	if err := appStore.SaveStatusPageSettings(r.Context(), settings, monitors); err != nil {
 		s.logger.Error("settings status page save failed", "tenant_id", user.TenantID, "error", err)

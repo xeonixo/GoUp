@@ -52,7 +52,7 @@ func TestAllowedPolicy(t *testing.T) {
 }
 
 func TestValidateURL(t *testing.T) {
-	bad := []string{"http://example.com", "https://user:pw@example.com", "https://127.0.0.1/x", "https://localhost/x", "https:///x", "https://[::1]/"}
+	bad := []string{"http://example.com", "https://user:pw@example.com", "https://127.0.0.1/x", "https://localhost/x", "https://app.localhost/x", "https:///x", "https://[::1]/"}
 	for _, raw := range bad {
 		if _, err := ValidateURL(raw, false); err == nil {
 			t.Errorf("expected %q to be rejected", raw)

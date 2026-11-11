@@ -49,6 +49,7 @@ SELECT
     m.last_alert_at,
     m.created_at,
     m.updated_at,
+    COALESCE(m.config_json, '{}'),
     r.id,
     r.checked_at,
     r.status,
@@ -123,7 +124,8 @@ SELECT
     updated_at,
     heartbeat_token,
     last_heartbeat_at,
-    last_heartbeat_ok
+    last_heartbeat_ok,
+    COALESCE(config_json, '{}')
 FROM monitors
 ORDER BY sort_order ASC, id ASC
 `)
@@ -150,6 +152,7 @@ ORDER BY sort_order ASC, id ASC
 			lastAlertAt          sql.NullTime
 			heartbeatAt          sql.NullTime
 			heartbeatOK          int
+			configJSON           string
 		)
 
 		if err := rows.Scan(
@@ -181,6 +184,7 @@ ORDER BY sort_order ASC, id ASC
 			&item.Monitor.HeartbeatToken,
 			&heartbeatAt,
 			&heartbeatOK,
+			&configJSON,
 		); err != nil {
 			return nil, fmt.Errorf("scan monitor fallback: %w", err)
 		}
@@ -206,6 +210,7 @@ ORDER BY sort_order ASC, id ASC
 			value := int(expectedStatusCode.Int64)
 			item.Monitor.ExpectedStatusCode = &value
 		}
+		applyMonitorConfigJSON(&item.Monitor, configJSON)
 
 		snapshots = append(snapshots, item)
 	}

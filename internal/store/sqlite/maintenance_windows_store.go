@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS maintenance_windows (
 	description TEXT NOT NULL DEFAULT '',
 	starts_at DATETIME NOT NULL,
 	ends_at DATETIME NOT NULL,
+	timezone TEXT NOT NULL DEFAULT 'UTC',
 	recurrence TEXT NOT NULL DEFAULT 'none',
 	scope TEXT NOT NULL DEFAULT 'all',
 	created_by INTEGER NOT NULL DEFAULT 0,
@@ -50,6 +51,9 @@ CREATE INDEX IF NOT EXISTS idx_maintenance_window_targets_window
 ON maintenance_window_targets(window_id);
 `); err != nil {
 		return fmt.Errorf("create maintenance tables: %w", err)
+	}
+	if _, err := s.ensureColumn(ctx, "maintenance_windows", "timezone", "TEXT NOT NULL DEFAULT 'UTC'"); err != nil {
+		return err
 	}
 	return nil
 }
@@ -101,9 +105,9 @@ func (s *Store) CreateMaintenanceWindow(ctx context.Context, w monitor.Maintenan
 	}
 	defer tx.Rollback()
 	res, err := tx.ExecContext(ctx, `
-INSERT INTO maintenance_windows (title, description, starts_at, ends_at, recurrence, scope, created_by, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-`, w.Title, w.Description, w.StartsAt, w.EndsAt, w.Recurrence, w.Scope, w.CreatedBy, time.Now().UTC())
+INSERT INTO maintenance_windows (title, description, starts_at, ends_at, timezone, recurrence, scope, created_by, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, w.Title, w.Description, w.StartsAt, w.EndsAt, w.Timezone, w.Recurrence, w.Scope, w.CreatedBy, time.Now().UTC())
 	if err != nil {
 		return 0, fmt.Errorf("create maintenance window: %w", err)
 	}
@@ -134,9 +138,9 @@ func (s *Store) UpdateMaintenanceWindow(ctx context.Context, w monitor.Maintenan
 	defer tx.Rollback()
 	res, err := tx.ExecContext(ctx, `
 UPDATE maintenance_windows
-SET title = ?, description = ?, starts_at = ?, ends_at = ?, recurrence = ?, scope = ?
+SET title = ?, description = ?, starts_at = ?, ends_at = ?, timezone = ?, recurrence = ?, scope = ?
 WHERE id = ?
-`, w.Title, w.Description, w.StartsAt, w.EndsAt, w.Recurrence, w.Scope, w.ID)
+`, w.Title, w.Description, w.StartsAt, w.EndsAt, w.Timezone, w.Recurrence, w.Scope, w.ID)
 	if err != nil {
 		return fmt.Errorf("update maintenance window: %w", err)
 	}
@@ -189,7 +193,7 @@ func mustWindows(items []monitor.MaintenanceWindow, _ error) []monitor.Maintenan
 // ListMaintenanceWindows returns every window with its targets, newest start first.
 func (s *Store) ListMaintenanceWindows(ctx context.Context) ([]monitor.MaintenanceWindow, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, title, description, starts_at, ends_at, recurrence, scope, created_by, created_at
+SELECT id, title, description, starts_at, ends_at, timezone, recurrence, scope, created_by, created_at
 FROM maintenance_windows
 ORDER BY starts_at DESC, id DESC
 `)
@@ -200,11 +204,12 @@ ORDER BY starts_at DESC, id DESC
 	index := map[int64]int{}
 	for rows.Next() {
 		var w monitor.MaintenanceWindow
-		if err := rows.Scan(&w.ID, &w.Title, &w.Description, &w.StartsAt, &w.EndsAt, &w.Recurrence, &w.Scope, &w.CreatedBy, &w.CreatedAt); err != nil {
+		if err := rows.Scan(&w.ID, &w.Title, &w.Description, &w.StartsAt, &w.EndsAt, &w.Timezone, &w.Recurrence, &w.Scope, &w.CreatedBy, &w.CreatedAt); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("scan maintenance window: %w", err)
 		}
 		w.StartsAt, w.EndsAt = w.StartsAt.UTC(), w.EndsAt.UTC()
+		w.Timezone = monitor.NormalizeTimezone(w.Timezone)
 		w.Recurrence = monitor.NormalizeRecurrence(w.Recurrence)
 		w.Scope = monitor.NormalizeMaintenanceScope(w.Scope)
 		index[w.ID] = len(items)

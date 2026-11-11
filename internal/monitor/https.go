@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -43,6 +44,18 @@ func (c HTTPSChecker) Check(ctx context.Context, item Monitor) Result {
 
 	if schemeErr := validateHTTPSMonitorScheme(item.Target, securityMode); schemeErr != nil {
 		result.Message = schemeErr.Error()
+		return result
+	}
+	if NormalizeHTTPSCheckMode(item.CheckMode) == CheckModeTLS && securityMode == TLSModeNone {
+		result.Message = "TLS-only check requires an https:// target"
+		return result
+	}
+	if method := NormalizeHTTPSMethod(item.HTTPMethod); method == "" {
+		result.Message = fmt.Sprintf("unsupported HTTP method %q", strings.TrimSpace(item.HTTPMethod))
+		return result
+	}
+	if _, headerErr := ParseHTTPRequestHeaders(item.RequestHeaders); headerErr != nil {
+		result.Message = headerErr.Error()
 		return result
 	}
 
@@ -109,6 +122,12 @@ func (c HTTPSChecker) checkTarget(ctx context.Context, item Monitor, checkedAt t
 		CheckedAt: checkedAt,
 		Status:    StatusDown,
 	}
+	tlsOnly := NormalizeHTTPSCheckMode(item.CheckMode) == CheckModeTLS
+	method := NormalizeHTTPSMethod(item.HTTPMethod)
+	if method == "" {
+		result.Message = fmt.Sprintf("unsupported HTTP method %q", strings.TrimSpace(item.HTTPMethod))
+		return result
+	}
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = &tls.Config{
@@ -131,7 +150,11 @@ func (c HTTPSChecker) checkTarget(ctx context.Context, item Monitor, checkedAt t
 		Transport: transport,
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, item.Target, nil)
+	var bodyReader io.Reader
+	if item.RequestBody != "" && method != http.MethodGet && method != http.MethodHead {
+		bodyReader = strings.NewReader(item.RequestBody)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, item.Target, bodyReader)
 	if err != nil {
 		result.Message = fmt.Sprintf("invalid request target: %v", err)
 		return result
@@ -139,6 +162,14 @@ func (c HTTPSChecker) checkTarget(ctx context.Context, item Monitor, checkedAt t
 	if schemeErr := validateHTTPSMonitorScheme(item.Target, securityMode); schemeErr != nil {
 		result.Message = schemeErr.Error()
 		return result
+	}
+	headers, headerErr := ParseHTTPRequestHeaders(item.RequestHeaders)
+	if headerErr != nil {
+		result.Message = headerErr.Error()
+		return result
+	}
+	for name, value := range headers {
+		req.Header.Set(name, value)
 	}
 
 	resp, err := client.Do(req)
@@ -153,6 +184,33 @@ func (c HTTPSChecker) checkTarget(ctx context.Context, item Monitor, checkedAt t
 	status := StatusUp
 	message := fmt.Sprintf("HTTP %d in %s", resp.StatusCode, formatLatency(result.Latency))
 
+	var body []byte
+	needBody := !tlsOnly && (len(parseExpectedKeywords(item.ExpectedText)) > 0 || strings.TrimSpace(item.JSONPath) != "")
+	if needBody {
+		var readErr error
+		body, readErr = io.ReadAll(io.LimitReader(resp.Body, maxHTTPSBodyBytes))
+		if readErr != nil {
+			result.Status = StatusDown
+			result.Message = fmt.Sprintf("response read failed: %v", readErr)
+			return result
+		}
+	} else {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxHTTPSBodyBytes))
+	}
+
+	if tlsOnly {
+		if resp.TLS == nil || len(resp.TLS.PeerCertificates) == 0 {
+			result.Status = StatusDown
+			result.Message = "TLS-only check failed: no certificate presented"
+			return result
+		}
+		applyTLSMetadata(&result, *resp.TLS)
+		status, message = finalizeTLSResult(&result, fmt.Sprintf("TLS ok in %s", formatLatency(result.Latency)), item.EffectiveCertWarningDays())
+		result.Status = status
+		result.Message = message
+		return result
+	}
+
 	if item.ExpectedStatusCode != nil && resp.StatusCode != *item.ExpectedStatusCode {
 		status = StatusDown
 		message = fmt.Sprintf("expected HTTP %d, got %d", *item.ExpectedStatusCode, resp.StatusCode)
@@ -164,18 +222,33 @@ func (c HTTPSChecker) checkTarget(ctx context.Context, item Monitor, checkedAt t
 	if status == StatusUp {
 		keywords := parseExpectedKeywords(item.ExpectedText)
 		if len(keywords) > 0 {
-			body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxHTTPSBodyBytes))
-			if readErr != nil {
+			lowerBody := strings.ToLower(string(body))
+			for _, keyword := range keywords {
+				if !strings.Contains(lowerBody, strings.ToLower(keyword)) {
+					status = StatusDown
+					message = fmt.Sprintf("keyword not found: %q", keyword)
+					break
+				}
+			}
+		}
+	}
+
+	if status == StatusUp {
+		if path := strings.TrimSpace(item.JSONPath); path != "" {
+			var decoded any
+			if err := json.Unmarshal(body, &decoded); err != nil {
 				status = StatusDown
-				message = fmt.Sprintf("response read failed: %v", readErr)
-			} else {
-				lowerBody := strings.ToLower(string(body))
-				for _, keyword := range keywords {
-					if !strings.Contains(lowerBody, strings.ToLower(keyword)) {
-						status = StatusDown
-						message = fmt.Sprintf("keyword not found: %q", keyword)
-						break
-					}
+				message = fmt.Sprintf("JSONPath assertion failed: response is not JSON: %v", err)
+			} else if got, pathErr := EvalSimpleJSONPath(decoded, path); pathErr != nil {
+				status = StatusDown
+				message = fmt.Sprintf("JSONPath assertion failed: %v", pathErr)
+			} else if !matchJSONPathExpected(got, item.JSONPathExpected) {
+				status = StatusDown
+				expected := strings.TrimSpace(item.JSONPathExpected)
+				if expected == "" {
+					message = fmt.Sprintf("JSONPath %s not found", path)
+				} else {
+					message = fmt.Sprintf("JSONPath %s: expected %q, got %s", path, expected, formatJSONPathValue(got))
 				}
 			}
 		}

@@ -38,7 +38,8 @@ SELECT
 	confirm_after,
 	mute_start_status,
 	created_at,
-	updated_at
+	updated_at,
+	COALESCE(config_json, '{}')
 FROM monitors
 WHERE executor_kind = ?
 	AND executor_ref = ?
@@ -62,6 +63,7 @@ ORDER BY sort_order ASC, id ASC
 		var expectedStatusCode sql.NullInt64
 		var mutedUntil sql.NullTime
 		var muteStartStatus string
+		var configJSON string
 		if err := rows.Scan(
 			&item.ID,
 			&item.Name,
@@ -84,6 +86,7 @@ ORDER BY sort_order ASC, id ASC
 			&muteStartStatus,
 			&item.CreatedAt,
 			&item.UpdatedAt,
+			&configJSON,
 		); err != nil {
 			return nil, fmt.Errorf("scan monitor by executor: %w", err)
 		}
@@ -103,6 +106,7 @@ ORDER BY sort_order ASC, id ASC
 			value := int(expectedStatusCode.Int64)
 			item.ExpectedStatusCode = &value
 		}
+		applyMonitorConfigJSON(&item, configJSON)
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -130,6 +134,7 @@ func scanMonitorSnapshot(scanner interface{ Scan(dest ...any) error }) (monitor.
 	var mutedUntil sql.NullTime
 	var muteStartStatus string
 	var lastAlertAt sql.NullTime
+	var configJSON string
 	var resultID sql.NullInt64
 	var checkedAt sql.NullTime
 	var status sql.NullString
@@ -168,6 +173,7 @@ func scanMonitorSnapshot(scanner interface{ Scan(dest ...any) error }) (monitor.
 		&lastAlertAt,
 		&item.Monitor.CreatedAt,
 		&item.Monitor.UpdatedAt,
+		&configJSON,
 		&resultID,
 		&checkedAt,
 		&status,
@@ -209,6 +215,7 @@ func scanMonitorSnapshot(scanner interface{ Scan(dest ...any) error }) (monitor.
 		value := int(expectedStatusCode.Int64)
 		item.Monitor.ExpectedStatusCode = &value
 	}
+	applyMonitorConfigJSON(&item.Monitor, configJSON)
 
 	if resultID.Valid {
 		result := &monitor.Result{

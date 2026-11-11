@@ -9,13 +9,14 @@ import (
 
 // Validation errors of maintenance windows; callers map them to localized messages.
 var (
-	ErrMaintenanceTitle   = errors.New("maintenance title is required (max 120 characters)")
-	ErrMaintenanceText    = errors.New("maintenance description must not exceed 1000 characters")
-	ErrMaintenanceTimes   = errors.New("maintenance start and end are required")
-	ErrMaintenanceOrder   = errors.New("maintenance end must be after its start")
-	ErrMaintenanceTooLong = errors.New("a recurring maintenance window must not be longer than its period")
-	ErrMaintenanceTargets = errors.New("select at least one monitor or group")
-	ErrMaintenanceInvalid = errors.New("invalid maintenance recurrence or scope")
+	ErrMaintenanceTitle    = errors.New("maintenance title is required (max 120 characters)")
+	ErrMaintenanceText     = errors.New("maintenance description must not exceed 1000 characters")
+	ErrMaintenanceTimes    = errors.New("maintenance start and end are required")
+	ErrMaintenanceOrder    = errors.New("maintenance end must be after its start")
+	ErrMaintenanceTooLong  = errors.New("a recurring maintenance window must not be longer than its period")
+	ErrMaintenanceTargets  = errors.New("select at least one monitor or group")
+	ErrMaintenanceInvalid  = errors.New("invalid maintenance recurrence or scope")
+	ErrMaintenanceTimezone = errors.New("invalid maintenance timezone")
 )
 
 // ValidateMaintenanceWindow checks a window before it is stored.
@@ -32,6 +33,9 @@ func ValidateMaintenanceWindow(w monitor.MaintenanceWindow) error {
 	if !w.EndsAt.After(w.StartsAt) {
 		return ErrMaintenanceOrder
 	}
+	if !monitor.ValidTimezone(w.Timezone) {
+		return ErrMaintenanceTimezone
+	}
 	length := w.EndsAt.Sub(w.StartsAt)
 	switch w.Recurrence {
 	case monitor.RecurrenceNone:
@@ -41,6 +45,10 @@ func ValidateMaintenanceWindow(w monitor.MaintenanceWindow) error {
 		}
 	case monitor.RecurrenceWeekly:
 		if length > 7*24*time.Hour {
+			return ErrMaintenanceTooLong
+		}
+	case monitor.RecurrenceMonthly:
+		if length > 31*24*time.Hour {
 			return ErrMaintenanceTooLong
 		}
 	default:
@@ -67,6 +75,11 @@ func normalizeMaintenanceWindow(w monitor.MaintenanceWindow) monitor.Maintenance
 	w.Description = strings.TrimSpace(w.Description)
 	w.StartsAt = w.StartsAt.UTC()
 	w.EndsAt = w.EndsAt.UTC()
+	w.Timezone = strings.TrimSpace(w.Timezone)
+	if w.Timezone == "" {
+		w.Timezone = "UTC"
+	}
+	// Keep invalid names so ValidateMaintenanceWindow can reject them.
 	w.Recurrence = monitor.NormalizeRecurrence(w.Recurrence)
 	w.Scope = monitor.NormalizeMaintenanceScope(w.Scope)
 	return w

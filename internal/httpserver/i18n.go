@@ -20,8 +20,11 @@ var (
 	monitorCreatedPattern      = regexp.MustCompile(`^([A-Z][A-Za-z0-9 ()]*)-Monitor angelegt$`)
 	remoteNodeCreatedPattern   = regexp.MustCompile(`^Remote-Node erstellt\.\s+(REMOTE_NODE_ID=.*)$`)
 	bootstrapKeyRotatedPattern = regexp.MustCompile(`^Bootstrap-Key rotiert\.\s+(REMOTE_NODE_ID=.*)$`)
-	monitorsImportedPattern    = regexp.MustCompile(`^(\d+) Monitor\(e\) importiert$`)
-	monitorsUpdatedPattern     = regexp.MustCompile(`^(\d+) Monitor\(e\) aktualisiert$`)
+	monitorsImportedPattern          = regexp.MustCompile(`^(\d+) Monitor\(e\) importiert$`)
+	monitorsUpdatedPattern           = regexp.MustCompile(`^(\d+) Monitor\(e\) aktualisiert$`)
+	monitorsReassignedPattern        = regexp.MustCompile(`^(\d+) Monitor\(e\) neu zugewiesen$`)
+	monitorsReassignedOfflinePattern = regexp.MustCompile(`^(\d+) Monitor\(e\) neu zugewiesen\. Die gewählte Remote-Node ist derzeit offline\.$`)
+	monitorCreatedOfflinePattern     = regexp.MustCompile(`^([A-Z][A-Za-z0-9 ()]*)-Monitor angelegt\. Die gewählte Remote-Node ist derzeit offline\.$`)
 )
 
 type translationCatalog struct {
@@ -207,6 +210,9 @@ func localizeFlashMessage(translations map[string]string, message string) string
 	if matches := localLoginWaitPattern.FindStringSubmatch(message); len(matches) == 2 {
 		return translateFlashMessage(translations, "flash.too_many_failed_attempts_wait", message, map[string]string{"minutes": matches[1]})
 	}
+	if matches := monitorCreatedOfflinePattern.FindStringSubmatch(message); len(matches) == 2 {
+		return translateFlashMessage(translations, "flash.monitor_created_node_offline", message, map[string]string{"kind": matches[1]})
+	}
 	if matches := monitorCreatedPattern.FindStringSubmatch(message); len(matches) == 2 {
 		return translateFlashMessage(translations, "flash.monitor_created", message, map[string]string{"kind": matches[1]})
 	}
@@ -221,6 +227,12 @@ func localizeFlashMessage(translations map[string]string, message string) string
 	}
 	if matches := monitorsUpdatedPattern.FindStringSubmatch(message); len(matches) == 2 {
 		return translateFlashMessage(translations, "flash.monitors_updated", message, map[string]string{"count": matches[1]})
+	}
+	if matches := monitorsReassignedOfflinePattern.FindStringSubmatch(message); len(matches) == 2 {
+		return translateFlashMessage(translations, "flash.monitors_reassigned_node_offline", message, map[string]string{"count": matches[1]})
+	}
+	if matches := monitorsReassignedPattern.FindStringSubmatch(message); len(matches) == 2 {
+		return translateFlashMessage(translations, "flash.monitors_reassigned", message, map[string]string{"count": matches[1]})
 	}
 	return message
 }

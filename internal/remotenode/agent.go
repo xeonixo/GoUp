@@ -192,6 +192,12 @@ func (a *Agent) runCheck(ctx context.Context, item assignedMonitorSpec, schedule
 		TLSMode:            monitor.TLSMode(strings.TrimSpace(item.TLSMode)),
 		ExpectedStatusCode: item.ExpectedStatusCode,
 		ExpectedText:       strings.TrimSpace(item.ExpectedText),
+		HTTPMethod:         strings.TrimSpace(item.HTTPMethod),
+		RequestHeaders:     strings.TrimSpace(item.RequestHeaders),
+		RequestBody:        item.RequestBody,
+		JSONPath:           strings.TrimSpace(item.JSONPath),
+		JSONPathExpected:   strings.TrimSpace(item.JSONPathExpected),
+		CheckMode:          strings.TrimSpace(item.CheckMode),
 		Enabled:            true,
 	}
 	runCtx, cancel := context.WithTimeout(ctx, mon.Timeout+2*time.Second)

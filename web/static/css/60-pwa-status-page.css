@@ -158,6 +158,57 @@ a[target="_blank"]::after {
   border-color: rgba(var(--rgb-bad), 0.4);
 }
 
+.status-subscribe {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.status-feed-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  align-items: baseline;
+  margin: 0;
+}
+
+.status-feed-link {
+  font-weight: 600;
+}
+
+.status-subscribe-form {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 28rem;
+}
+
+.status-subscribe-email {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.status-subscribe-email input {
+  width: 100%;
+}
+
+.status-subscribe-monitors {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.status-subscribe-monitors legend {
+  padding: 0;
+  font-weight: 600;
+}
+
+.status-subscribe-monitor {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .status-banner {
   display: flex;
   align-items: center;

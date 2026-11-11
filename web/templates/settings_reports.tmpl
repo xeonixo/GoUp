@@ -1,0 +1,135 @@
+{{define "content"}}
+{{$r := .SLAReport}}
+<div class="admin-section settings-section" id="reports-page">
+  <nav class="admin-nav settings-nav" aria-label="{{index $.Translations "layout.settings_title"}}">
+    <a href="{{$.AppBase}}" class="admin-nav-link">{{index $.Translations "settings.nav.dashboard"}}</a>
+    <a href="{{$.AppBase}}settings/profile" class="admin-nav-link">{{index $.Translations "settings.nav.profile"}}</a>
+    {{if .IsAdmin}}
+    <a href="{{$.AppBase}}settings/users" class="admin-nav-link">{{index $.Translations "settings.nav.users"}}</a>
+    <a href="{{$.AppBase}}settings/webhooks" class="admin-nav-link">{{index $.Translations "settings.nav.webhooks"}}</a>
+    <a href="{{$.AppBase}}settings/providers" class="admin-nav-link">{{index $.Translations "settings.nav.oidc_providers"}}</a>
+    <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link">{{index $.Translations "settings.nav.remote_nodes"}}</a>
+    <a href="{{$.AppBase}}settings/status-page" class="admin-nav-link">{{index $.Translations "settings.nav.status_page"}}</a>
+    {{end}}
+    {{if .CanWrite}}
+    <a href="{{$.AppBase}}settings/maintenance" class="admin-nav-link">{{index $.Translations "settings.nav.maintenance"}}</a>
+    <a href="{{$.AppBase}}settings/reports" class="admin-nav-link is-active">{{index $.Translations "settings.nav.reports"}}</a>
+    {{end}}
+  </nav>
+
+  <div class="admin-header settings-header">
+    <div>
+      <h1>{{index $.Translations "settings.reports.title"}}</h1>
+      <p class="muted compact">{{index $.Translations "settings.reports.subtitle"}}</p>
+    </div>
+    <div class="admin-actions-inline">
+      <a class="button button-secondary" href="{{$r.ExportURL}}">{{index $.Translations "settings.reports.download_csv"}}</a>
+    </div>
+  </div>
+
+  <form method="GET" action="{{$.AppBase}}settings/reports" class="admin-form card stack settings-panel reports-period-form">
+    <label>
+      <span>{{index $.Translations "settings.reports.period_label"}}</span>
+      <select name="period" onchange="this.form.submit()">
+        {{range $r.PeriodOptions}}
+        <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+        {{end}}
+      </select>
+    </label>
+    <p class="muted compact">{{index $.Translations "settings.reports.range_hint"}} {{$r.FromLabel}} → {{$r.ToLabel}} (UTC)</p>
+  </form>
+
+  {{if $r.HasData}}
+  <section class="card stack settings-panel">
+    <h2>{{index $.Translations "settings.reports.overall_heading"}}</h2>
+    <div class="table-wrap">
+      <table class="admin-table">
+        <caption class="sr-only">{{index $.Translations "settings.reports.overall_heading"}}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{{index $.Translations "settings.reports.col_uptime"}}</th>
+            <th scope="col">{{index $.Translations "settings.reports.col_incidents"}}</th>
+            <th scope="col">{{index $.Translations "settings.reports.col_mttr"}}</th>
+            <th scope="col">{{index $.Translations "settings.reports.col_monitors"}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="{{$r.Overall.UptimeClass}}">{{$r.Overall.UptimePercent}}</span></td>
+            <td>{{$r.Overall.IncidentCount}}</td>
+            <td>{{$r.Overall.MTTR}}</td>
+            <td>{{$r.Overall.MonitorCount}}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card stack settings-panel">
+    <h2>{{index $.Translations "settings.reports.groups_heading"}}</h2>
+    {{if $r.Groups}}
+    <div class="table-wrap">
+      <table class="admin-table">
+        <caption class="sr-only">{{index $.Translations "settings.reports.groups_heading"}}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{{index $.Translations "settings.reports.col_group"}}</th>
+            <th scope="col">{{index $.Translations "settings.reports.col_uptime"}}</th>
+            <th scope="col">{{index $.Translations "settings.reports.col_incidents"}}</th>
+            <th scope="col">{{index $.Translations "settings.reports.col_mttr"}}</th>
+            <th scope="col">{{index $.Translations "settings.reports.col_monitors"}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $r.Groups}}
+          <tr>
+            <td><strong>{{.Name}}</strong></td>
+            <td><span class="{{.UptimeClass}}">{{.UptimePercent}}</span></td>
+            <td>{{.IncidentCount}}</td>
+            <td>{{.MTTR}}</td>
+            <td>{{.MonitorCount}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <p class="muted">{{index $.Translations "settings.reports.none_groups"}}</p>
+    {{end}}
+  </section>
+
+  <section class="card stack settings-panel">
+    <h2>{{index $.Translations "settings.reports.monitors_heading"}}</h2>
+    <div class="table-wrap">
+      <table class="admin-table">
+        <caption class="sr-only">{{index $.Translations "settings.reports.monitors_heading"}}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{{index $.Translations "settings.reports.col_monitor"}}</th>
+            <th scope="col">{{index $.Translations "settings.reports.col_group"}}</th>
+            <th scope="col">{{index $.Translations "settings.reports.col_uptime"}}</th>
+            <th scope="col">{{index $.Translations "settings.reports.col_incidents"}}</th>
+            <th scope="col">{{index $.Translations "settings.reports.col_mttr"}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $r.Monitors}}
+          <tr>
+            <td><strong>{{.Name}}</strong></td>
+            <td>{{.Group}}</td>
+            <td><span class="{{.UptimeClass}}">{{.UptimePercent}}</span></td>
+            <td>{{.IncidentCount}}</td>
+            <td>{{.MTTR}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {{else}}
+  <section class="card stack settings-panel">
+    <p class="muted">{{index $.Translations "settings.reports.none"}}</p>
+  </section>
+  {{end}}
+</div>
+{{end}}

@@ -63,6 +63,12 @@ type monitorView struct {
 	RetryIntervalSeconds int
 	ExpectedStatus       string
 	ExpectedText         string
+	HTTPMethod           string
+	RequestHeaders       string
+	RequestBody          string
+	JSONPath             string
+	JSONPathExpected     string
+	CheckMode            string
 	TrendLabel           string
 	StatusLabel          string
 	StatusClass          string
@@ -165,6 +171,14 @@ func buildMonitorViews(items []monitor.Snapshot, rollups []store.MonitorHourlyRo
 			view.ExpectedStatus = strconv.Itoa(*item.Monitor.ExpectedStatusCode)
 		}
 		view.ExpectedText = strings.TrimSpace(item.Monitor.ExpectedText)
+		if item.Monitor.Kind == monitor.KindHTTPS {
+			view.HTTPMethod = strings.TrimSpace(item.Monitor.HTTPMethod)
+			view.RequestHeaders = strings.TrimSpace(item.Monitor.RequestHeaders)
+			view.RequestBody = item.Monitor.RequestBody
+			view.JSONPath = strings.TrimSpace(item.Monitor.JSONPath)
+			view.JSONPathExpected = strings.TrimSpace(item.Monitor.JSONPathExpected)
+			view.CheckMode = monitor.NormalizeHTTPSCheckMode(item.Monitor.CheckMode)
+		}
 		if item.LastResult != nil {
 			view.LastCheckedAt = item.LastResult.CheckedAt.UTC().Format(time.RFC3339)
 			view.LastCheckedAtRaw = item.LastResult.CheckedAt.UTC().Format(time.RFC3339)

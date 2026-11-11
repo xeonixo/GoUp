@@ -10,6 +10,7 @@
     <a href="{{$.AppBase}}settings/remote-nodes" class="admin-nav-link">{{index $.Translations "settings.nav.remote_nodes"}}</a>
     <a href="{{$.AppBase}}settings/status-page" class="admin-nav-link is-active">{{index $.Translations "settings.nav.status_page"}}</a>
     <a href="{{$.AppBase}}settings/maintenance" class="admin-nav-link">{{index $.Translations "settings.nav.maintenance"}}</a>
+    <a href="{{$.AppBase}}settings/reports" class="admin-nav-link">{{index $.Translations "settings.nav.reports"}}</a>
   </nav>
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
@@ -60,6 +61,11 @@
     <label class="checkbox-row">
       <input type="checkbox" name="noindex" {{if $sp.NoIndex}}checked{{end}}>
       <span>{{index $.Translations "settings.status_page.noindex"}}</span>
+    </label>
+    <label>
+      <span>{{index $.Translations "settings.status_page.announce_hours"}}</span>
+      <input type="number" name="announce_hours" min="1" max="720" step="1" value="{{$sp.AnnounceHours}}">
+      <small class="muted compact">{{index $.Translations "settings.status_page.announce_hours_hint"}}</small>
     </label>
 
     <h3>{{index $.Translations "settings.status_page.access"}}</h3>

@@ -55,7 +55,7 @@ SELECT id, totp_secret_ciphertext FROM control_plane_admins WHERE TRIM(totp_secr
 `, `UPDATE control_plane_admins SET totp_secret_ciphertext = ?, updated_at = ? WHERE id = ?`, now)
 		}},
 		{"tenant_notification_endpoint_secrets", func() (int, error) {
-			return s.reencryptKeyedCiphertexts(ctx, dryRun, `
+			n, err := s.reencryptKeyedCiphertexts(ctx, dryRun, `
 SELECT tenant_id, endpoint_id, kind, secret_ciphertext
 FROM tenant_notification_endpoint_secrets
 WHERE TRIM(secret_ciphertext) <> ''
@@ -63,6 +63,18 @@ WHERE TRIM(secret_ciphertext) <> ''
 				return `UPDATE tenant_notification_endpoint_secrets SET secret_ciphertext = ?, updated_at = ? WHERE tenant_id = ? AND endpoint_id = ? AND kind = ?`,
 					[]any{sealed, now, keys[0], keys[1], keys[2]}
 			})
+			if err != nil {
+				return n, err
+			}
+			prev, prevErr := s.reencryptKeyedCiphertexts(ctx, dryRun, `
+SELECT tenant_id, endpoint_id, kind, previous_secret_ciphertext
+FROM tenant_notification_endpoint_secrets
+WHERE TRIM(previous_secret_ciphertext) <> ''
+`, 3, func(keys []any, sealed string) (string, []any) {
+				return `UPDATE tenant_notification_endpoint_secrets SET previous_secret_ciphertext = ?, updated_at = ? WHERE tenant_id = ? AND endpoint_id = ? AND kind = ?`,
+					[]any{sealed, now, keys[0], keys[1], keys[2]}
+			})
+			return n + prev, prevErr
 		}},
 		{"user_notification_channels", func() (int, error) {
 			return s.reencryptKeyedCiphertexts(ctx, dryRun, `

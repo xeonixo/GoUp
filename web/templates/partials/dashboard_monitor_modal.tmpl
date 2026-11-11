@@ -53,10 +53,11 @@
       <span>{{index $.Translations "dashboard.modal.executor_label"}}</span>
       <select name="executor" id="monitor-executor">
         {{range .MonitorExecutors}}
-        <option value="{{.Value}}">{{.Label}}</option>
+        <option value="{{.Value}}" {{if not .Online}}data-offline="1"{{end}}>{{.Label}}</option>
         {{end}}
       </select>
       <small class="muted compact">{{index $.Translations "dashboard.modal.executor_hint"}}</small>
+      <small class="muted compact monitor-executor-offline-hint" id="monitor-executor-offline-hint" hidden>{{index $.Translations "dashboard.modal.executor_offline_warn"}}</small>
     </label>
     {{end}}
 
@@ -352,6 +353,38 @@
       <button class="button button-secondary button-small" type="submit" id="monitor-heartbeat-regenerate" formaction="{{$.AppBase}}monitors/heartbeat/regenerate" formnovalidate data-confirm="{{index $.Translations "dashboard.modal.heartbeat_regenerate_confirm"}}">{{index $.Translations "dashboard.modal.heartbeat_regenerate"}}</button>
     </div>
 
+    <label id="https-check-mode-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.check_mode_label"}}</span>
+      <select name="check_mode" id="monitor-check-mode">
+        <option value="http">{{index $.Translations "dashboard.modal.check_mode_http"}}</option>
+        <option value="tls">{{index $.Translations "dashboard.modal.check_mode_tls"}}</option>
+      </select>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.check_mode_hint"}}</small>
+    </label>
+
+    <label id="https-method-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.http_method_label"}}</span>
+      <select name="http_method" id="monitor-http-method">
+        <option value="GET">GET</option>
+        <option value="POST">POST</option>
+        <option value="PUT">PUT</option>
+        <option value="HEAD">HEAD</option>
+        <option value="PATCH">PATCH</option>
+        <option value="DELETE">DELETE</option>
+      </select>
+    </label>
+
+    <label id="https-headers-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.request_headers_label"}}</span>
+      <textarea name="request_headers" id="monitor-request-headers" rows="3" placeholder="{{index $.Translations "dashboard.modal.request_headers_placeholder"}}"></textarea>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.request_headers_hint"}}</small>
+    </label>
+
+    <label id="https-body-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.request_body_label"}}</span>
+      <textarea name="request_body" id="monitor-request-body" rows="3" placeholder="{{index $.Translations "dashboard.modal.request_body_placeholder"}}"></textarea>
+    </label>
+
     <label id="expected-status-row" hidden>
       <span>{{index $.Translations "dashboard.modal.expected_http_status_optional"}}</span>
       <input type="number" name="expected_status_code" id="monitor-expected-status" min="100" max="599" placeholder="{{index $.Translations "dashboard.modal.expected_status_placeholder"}}">
@@ -361,6 +394,15 @@
       <span id="monitor-expected-text-label">{{index $.Translations "dashboard.modal.expected_keywords_optional"}}</span>
       <input type="text" name="expected_text" id="monitor-expected-text" placeholder="{{index $.Translations "dashboard.modal.expected_text_placeholder"}}">
       <small class="muted compact" id="monitor-expected-text-hint">{{index $.Translations "dashboard.modal.expected_keywords_hint"}}</small>
+    </label>
+
+    <label id="https-jsonpath-row" hidden>
+      <span>{{index $.Translations "dashboard.modal.json_path_label"}}</span>
+      <div class="inline-grid">
+        <input type="text" name="json_path" id="monitor-json-path" placeholder="{{index $.Translations "dashboard.modal.json_path_placeholder"}}" autocomplete="off" spellcheck="false">
+        <input type="text" name="json_path_expected" id="monitor-json-path-expected" placeholder="{{index $.Translations "dashboard.modal.json_path_expected_placeholder"}}" autocomplete="off" spellcheck="false">
+      </div>
+      <small class="muted compact">{{index $.Translations "dashboard.modal.json_path_hint"}}</small>
     </label>
 
     <label class="checkbox-row">

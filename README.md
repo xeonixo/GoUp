@@ -163,7 +163,10 @@ Use **+ Monitor** in the tenant dashboard to create checks. New monitors are sch
 
 ```text
 http://localhost:8080/healthz
+http://localhost:8080/readyz
 ```
+
+`/healthz` is a shallow liveness check. `/readyz` also pings the control-plane DB, active tenant stores, and monitor runners (JSON `{"status":"ok"}` or `503` with reasons).
 
 ### Updating an existing installation
 
@@ -203,6 +206,7 @@ Configuration is provided through environment variables, typically via `.env` an
 | `GOUP_SETUP_TOKEN` | _(random)_ | Token required for the initial `/admin/setup` form. If unset, a random token is generated at startup and written to the server log while setup is pending. |
 | `GOUP_MONITOR_ALLOW_PRIVATE` | `true` | Allow monitors to reach private/loopback networks. Cloud metadata addresses (`169.254.169.254`, `fd00:ec2::254`, `100.100.100.200`) are always blocked. |
 | `GOUP_ALLOW_PRIVATE_INTEGRATIONS` | `false` | Allow the Matrix homeserver URL and OIDC issuer URLs to point at private/loopback addresses. Default is public https only (SSRF protection). **Set to `true` if your Keycloak/Matrix runs on your LAN.** |
+| `GOUP_AUDIT_RETENTION_DAYS` | `90` | How long control-plane `audit_events` are retained before maintenance prunes them |
 | `GOUP_REMOTE_NODE_ALLOW_INSECURE` | `false` | Remote-node agent only: permit a plain `http://` control-plane URL (otherwise https is required, except `localhost`/`127.0.0.1`). |
 
 ### Security-related settings
@@ -494,13 +498,13 @@ Each monitor has an **Repeat outage alert** setting (advanced section of the mon
 
 Tenant admins manage windows under **Settings → Maintenance windows** (`/{slug}/settings/maintenance`).
 
-- A window has a title, optional internal description, start and end, a repetition (**one time**, **daily**, **weekly**) and a scope: all monitors, selected groups, or selected monitors.
-- Recurring windows repeat the same span every 24 hours / 7 days. Occurrences are computed in plain UTC, so across a daylight-saving change the local wall-clock time shifts by one hour. A recurring window must not be longer than its period.
-- **Time zone:** start and end are entered in the browser's time zone; a small script converts them to UTC instants before submitting (hidden `starts_at`/`ends_at`), and times are displayed in the browser time zone as well. Without JavaScript the entered values are interpreted as UTC. Windows are stored in UTC.
+- A window has a title, optional internal description, start and end, an IANA **timezone** (default UTC), a repetition (**one time**, **daily**, **weekly**, **monthly**) and a scope: all monitors, selected groups, or selected monitors.
+- Recurring windows keep the same local wall-clock time in the window's timezone (calendar day / week / month). A recurring window must not be longer than its period (24 h / 7 d / 31 d).
+- **Time zone:** start and end are wall-clock times in the selected IANA timezone and are stored as UTC instants. Operators can download an `.ics` calendar of all windows from the settings page.
 - While a window covers a monitor, checks keep running and are stored with `in_maintenance = 1`. They count towards `total_checks` and `maintenance_checks` of the hourly rollup but not towards up/down/degraded, so they do not lower uptime. No notifications are sent, no incident or state-change event is created for downtime inside the window, and no reminders are sent.
 - When the window ends, one summary notification is sent if the monitor's status differs from its status before the window (same mechanism as the mute catch-up; the marker is `monitors.mute_start_status`).
 - The dashboard card, group header and detail page show a "Maintenance" status; the monitor menu has a quick action **Start maintenance (1 h)**.
-- The public status page lists running and upcoming (next 7 days) windows that affect at least one shown monitor (title and time range only) and shows "Maintenance" for covered monitors.
+- The public status page lists running and upcoming windows (within the tenant's `announce_hours`, default 24) that affect at least one shown monitor (title and time range only) and shows "Maintenance" for covered monitors.
 - Prometheus: `goup_monitor_in_maintenance` is 1 while a window covers the monitor.
 - The server caches the windows for up to 30 seconds; changes made through the UI take effect immediately.
 
@@ -682,8 +686,10 @@ Shipped since the early architecture notes (see [docs/improvements.md](docs/impr
 - [x] Versioned JSON API (`/api/v1`) with scoped bearer tokens
 - [x] Remote-node previous-token grace and failed-auth rate limits
 - [x] Online backup and secret rekey
+- [x] HTTPS assertions (method/headers/JSONPath/TLS-only), reports/SLA, maintenance TZ
+- [x] Remote-node assignment UX, status feed/subscriptions, webhook secret rotate
+- [x] `/readyz`, audit retention/export, SSRF align, hardened remote-node compose
 - [ ] Remote-node mTLS (Tier 3)
-- [ ] HTTPS assertion upgrades / reports / maintenance TZ (Tier 2)
 
 ---
 

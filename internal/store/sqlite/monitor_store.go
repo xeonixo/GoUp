@@ -23,6 +23,12 @@ type CreateMonitorParams struct {
 	TLSMode            monitor.TLSMode
 	ExpectedStatusCode *int
 	ExpectedText       string
+	HTTPMethod         string
+	RequestHeaders     string
+	RequestBody        string
+	JSONPath           string
+	JSONPathExpected   string
+	CheckMode          string
 	NotifyOnRecovery   bool
 	RetryCount         int
 	RetryInterval      time.Duration
@@ -65,9 +71,9 @@ INSERT INTO monitors (
 	name, group_name, sort_order, executor_kind, executor_ref, kind, target, interval_seconds, timeout_seconds, enabled,
     tls_mode, expected_status_code, expected_text, notify_on_recovery,
     retry_count, retry_interval_seconds, cert_warning_days, confirm_after, remind_every_minutes,
-    created_at, updated_at, heartbeat_token
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, params.Name, strings.TrimSpace(params.Group), nextSortOrder, executorKind, executorRef, string(params.Kind), params.Target, int(params.Interval.Seconds()), int(params.Timeout.Seconds()), boolToInt(params.Enabled), string(params.TLSMode), params.ExpectedStatusCode, strings.TrimSpace(params.ExpectedText), boolToInt(params.NotifyOnRecovery), params.RetryCount, int(params.RetryInterval.Seconds()), normalizeCertWarningDays(params.CertWarningDays), normalizeConfirmAfter(params.ConfirmAfter), params.RemindEveryMinutes, now, now, heartbeatToken)
+    config_json, created_at, updated_at, heartbeat_token
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, params.Name, strings.TrimSpace(params.Group), nextSortOrder, executorKind, executorRef, string(params.Kind), params.Target, int(params.Interval.Seconds()), int(params.Timeout.Seconds()), boolToInt(params.Enabled), string(params.TLSMode), params.ExpectedStatusCode, strings.TrimSpace(params.ExpectedText), boolToInt(params.NotifyOnRecovery), params.RetryCount, int(params.RetryInterval.Seconds()), normalizeCertWarningDays(params.CertWarningDays), normalizeConfirmAfter(params.ConfirmAfter), params.RemindEveryMinutes, encodeMonitorConfigJSON(params), now, now, heartbeatToken)
 	if err != nil {
 		return 0, fmt.Errorf("create monitor: %w", err)
 	}
@@ -123,6 +129,7 @@ SET
     cert_warning_days = ?,
     confirm_after = ?,
     remind_every_minutes = ?,
+    config_json = ?,
     heartbeat_token = CASE WHEN ? = 'heartbeat' THEN COALESCE(NULLIF(heartbeat_token, ''), ?) ELSE '' END,
     updated_at = ?
 WHERE id = ?
@@ -145,6 +152,7 @@ WHERE id = ?
 		normalizeCertWarningDays(params.CertWarningDays),
 		normalizeConfirmAfter(params.ConfirmAfter),
 		params.RemindEveryMinutes,
+		encodeMonitorConfigJSON(params.CreateMonitorParams),
 		string(params.Kind),
 		newToken,
 		now,
@@ -329,6 +337,35 @@ WHERE executor_kind = 'remote' AND executor_ref = ?
 		return fmt.Errorf("reassign remote node monitors: %w", err)
 	}
 	return nil
+}
+
+// SetGroupMonitorsExecutor assigns all monitors in a group to local or a remote node.
+// Heartbeat monitors always stay on the control plane and are skipped.
+func (s *Store) SetGroupMonitorsExecutor(ctx context.Context, groupName, executorKind, executorRef string) (int64, error) {
+	groupName = strings.TrimSpace(groupName)
+	if groupName == "" {
+		return 0, errors.New("group name is required")
+	}
+	executorKind, executorRef = normalizeMonitorExecutor(executorKind, executorRef)
+	if executorKind != "local" && executorKind != "remote" {
+		return 0, errors.New("monitor executor must be local or remote")
+	}
+	if executorKind == "remote" && executorRef == "" {
+		return 0, errors.New("remote executor requires a node id")
+	}
+	result, err := s.db.ExecContext(ctx, `
+UPDATE monitors
+SET executor_kind = ?, executor_ref = ?, updated_at = ?
+WHERE TRIM(group_name) = ? AND kind <> 'heartbeat'
+`, executorKind, executorRef, time.Now().UTC(), groupName)
+	if err != nil {
+		return 0, fmt.Errorf("set group monitors executor: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("set group monitors executor rows affected: %w", err)
+	}
+	return affected, nil
 }
 
 // ClearMonitorMuteStartStatus drops the pending mute catch-up marker once it was handled.

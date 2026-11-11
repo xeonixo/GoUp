@@ -12,6 +12,7 @@
     <a href="{{$.AppBase}}settings/status-page" class="admin-nav-link">{{index $.Translations "settings.nav.status_page"}}</a>
     {{end}}
     <a href="{{$.AppBase}}settings/maintenance" class="admin-nav-link is-active">{{index $.Translations "settings.nav.maintenance"}}</a>
+    <a href="{{$.AppBase}}settings/reports" class="admin-nav-link">{{index $.Translations "settings.nav.reports"}}</a>
   </nav>
 
   {{if .Notice}}<div class="notice success">{{.Notice}}</div>{{end}}
@@ -21,6 +22,9 @@
     <div>
       <h1>{{index $.Translations "settings.maintenance.title"}}</h1>
       <p class="muted compact">{{index $.Translations "settings.maintenance.subtitle"}}</p>
+    </div>
+    <div class="form-actions">
+      <a class="button button-secondary" href="{{$.AppBase}}settings/maintenance/export.ics">{{index $.Translations "settings.maintenance.export_ics"}}</a>
     </div>
   </div>
 
@@ -81,22 +85,35 @@
     <div class="inline-grid">
       <label>
         <span>{{index $.Translations "settings.maintenance.field_starts"}}</span>
-        <input type="datetime-local" name="starts_local" required data-utc="{{$m.Form.StartsRaw}}">
-        <input type="hidden" name="starts_at" value="{{$m.Form.StartsRaw}}">
+        <input type="datetime-local" name="starts_local" required value="{{$m.Form.StartsLocal}}" data-utc="{{$m.Form.StartsRaw}}" data-local="{{$m.Form.StartsLocal}}">
+        <input type="hidden" name="starts_at" value="">
       </label>
       <label>
         <span>{{index $.Translations "settings.maintenance.field_ends"}}</span>
-        <input type="datetime-local" name="ends_local" required data-utc="{{$m.Form.EndsRaw}}">
-        <input type="hidden" name="ends_at" value="{{$m.Form.EndsRaw}}">
+        <input type="datetime-local" name="ends_local" required value="{{$m.Form.EndsLocal}}" data-utc="{{$m.Form.EndsRaw}}" data-local="{{$m.Form.EndsLocal}}">
+        <input type="hidden" name="ends_at" value="">
       </label>
     </div>
-    <p class="muted compact">{{index $.Translations "settings.maintenance.timezone_hint"}} <strong id="maintenance-tz">UTC</strong></p>
+    <label>
+      <span>{{index $.Translations "settings.maintenance.field_timezone"}}</span>
+      <input type="text" name="timezone" id="maintenance-timezone" maxlength="64" required value="{{if $m.Form.Timezone}}{{$m.Form.Timezone}}{{else}}UTC{{end}}" placeholder="UTC" list="maintenance-tz-suggestions">
+      <datalist id="maintenance-tz-suggestions">
+        <option value="UTC"></option>
+        <option value="Europe/Berlin"></option>
+        <option value="Europe/London"></option>
+        <option value="America/New_York"></option>
+        <option value="America/Los_Angeles"></option>
+        <option value="Asia/Tokyo"></option>
+      </datalist>
+      <small class="muted compact">{{index $.Translations "settings.maintenance.timezone_hint"}}</small>
+    </label>
     <label>
       <span>{{index $.Translations "settings.maintenance.field_recurrence"}}</span>
       <select name="recurrence">
         <option value="none" {{if eq $m.Form.Recurrence "none"}}selected{{end}}>{{index $.Translations "settings.maintenance.recurrence_none"}}</option>
         <option value="daily" {{if eq $m.Form.Recurrence "daily"}}selected{{end}}>{{index $.Translations "settings.maintenance.recurrence_daily"}}</option>
         <option value="weekly" {{if eq $m.Form.Recurrence "weekly"}}selected{{end}}>{{index $.Translations "settings.maintenance.recurrence_weekly"}}</option>
+        <option value="monthly" {{if eq $m.Form.Recurrence "monthly"}}selected{{end}}>{{index $.Translations "settings.maintenance.recurrence_monthly"}}</option>
       </select>
       <small class="muted compact">{{index $.Translations "settings.maintenance.recurrence_hint"}}</small>
     </label>

@@ -3,6 +3,7 @@
   const page = document.getElementById('dashboard-page');
   const searchInput = document.getElementById('board-search');
   const emptyHint = document.getElementById('board-filter-empty');
+  const nodeFilter = document.getElementById('board-node-filter');
   const statusButtons = Array.from(document.querySelectorAll('[data-status-filter]'));
   if (!page || !searchInput) {
     return;
@@ -15,7 +16,7 @@
   }
   const storageKey = 'goup:board-filter';
   const problemStatuses = new Set(['status-DOWN', 'status-DEGRADED']);
-  const state = { query: '', status: 'all' };
+  const state = { query: '', status: 'all', node: 'all' };
 
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
@@ -25,9 +26,19 @@
     if (['all', 'problems', 'paused'].includes(saved.status)) {
       state.status = saved.status;
     }
+    if (typeof saved.node === 'string' && saved.node) {
+      state.node = saved.node;
+    }
   } catch (_) {
   }
   searchInput.value = state.query;
+  if (nodeFilter) {
+    const hasOption = Array.from(nodeFilter.options).some((option) => option.value === state.node);
+    nodeFilter.value = hasOption ? state.node : 'all';
+    state.node = nodeFilter.value || 'all';
+  } else {
+    state.node = 'all';
+  }
 
   const persist = () => {
     try {
@@ -47,16 +58,24 @@
     return true;
   };
 
+  const matchesNode = (card) => {
+    if (state.node === 'all') {
+      return true;
+    }
+    const executor = card.dataset.executor || 'local';
+    return executor === state.node;
+  };
+
   const applyFilter = () => {
     const terms = state.query.toLowerCase().split(/\s+/).filter(Boolean);
-    const active = terms.length > 0 || state.status !== 'all';
+    const active = terms.length > 0 || state.status !== 'all' || state.node !== 'all';
     let visibleTotal = 0;
 
     document.querySelectorAll('#dashboard-live-board .service-cluster').forEach((cluster) => {
       let visibleInCluster = 0;
       cluster.querySelectorAll('.monitor-card').forEach((card) => {
         const haystack = String(card.dataset.search || '').toLowerCase();
-        const visible = matchesStatus(card) && terms.every((term) => haystack.includes(term));
+        const visible = matchesStatus(card) && matchesNode(card) && terms.every((term) => haystack.includes(term));
         card.hidden = !visible;
         if (visible) {
           visibleInCluster += 1;
@@ -104,6 +123,11 @@
       persist();
       applyFilter();
     });
+  });
+  nodeFilter?.addEventListener('change', () => {
+    state.node = nodeFilter.value || 'all';
+    persist();
+    applyFilter();
   });
 
   // "/" focuses the search like in many web apps, unless the user is typing somewhere.

@@ -59,6 +59,11 @@ type statusPageIncidentView struct {
 	Open       bool
 }
 
+type statusPageSubscribeMonitorView struct {
+	ID   int64
+	Name string
+}
+
 // statusPageView is the public view model. It deliberately has no field for targets, hosts,
 // URLs, error messages or latencies.
 type statusPageView struct {
@@ -66,15 +71,21 @@ type statusPageView struct {
 	Description    string
 	LogoURL        string
 	BrandCSSURL    string
+	FeedURL        string
+	SubscribeURL   string
 	HideGoUpFooter bool
 	OverallClass   string
 	OverallLabel   string
 	UpdatedAt      string
 	Groups         []statusPageGroupView
-	// MaintenanceNotices lists running and upcoming (next 7 days) maintenance windows that
-	// affect at least one shown monitor. Only title and time range are public.
+	// MaintenanceNotices lists running and upcoming (within announce_hours) maintenance
+	// windows that affect at least one shown monitor. Only title and time range are public.
 	MaintenanceNotices []statusPageMaintenanceView
 	Incidents          []statusPageIncidentView
+	SubscribeMonitors  []statusPageSubscribeMonitorView
+	SubscriptionsOn    bool
+	Notice             string
+	Error              string
 }
 
 func statusPageLanguage(r *http.Request) string {
@@ -161,9 +172,11 @@ func (s *Server) handleStatusPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lang := statusPageLanguage(r)
-	key := statusPageCacheKey(tenantID, lang)
+	subsOn := s.statusSubscriptionsEnabled(r)
+	key := statusPageCacheKey(tenantID, lang, subsOn)
 	now := time.Now()
-	useCache := settings.AccessMode != "token"
+	flash := strings.TrimSpace(r.URL.Query().Get("notice")) != "" || strings.TrimSpace(r.URL.Query().Get("error")) != ""
+	useCache := settings.AccessMode != "token" && !flash
 
 	var (
 		entry statusPageCacheEntry
@@ -300,6 +313,9 @@ func (s *Server) buildStatusPage(r *http.Request, tenantID int64, settings store
 	translations := s.translationsForLanguage(lang)
 	slug := tenantSlugFromRequest(r)
 	view := buildStatusPageView(settings, selected, snapshots, rollups, incidents, tenantName, translations, now, appStore.MaintenanceSet(r.Context()), slug)
+	view.SubscriptionsOn = s.statusSubscriptionsEnabled(r)
+	view.Notice = resolveStatusPageFlash(translations, r.URL.Query().Get("notice"))
+	view.Error = resolveStatusPageFlash(translations, r.URL.Query().Get("error"))
 
 	data := pageData{
 		Title:        view.Title,
@@ -347,6 +363,25 @@ func buildStatusPageView(settings store.StatusPageSettings, selected []store.Sta
 	}
 	if strings.TrimSpace(settings.BrandColor) != "" && slug != "" {
 		view.BrandCSSURL = "/" + slug + "/status/brand.css"
+	}
+	if slug != "" {
+		view.FeedURL = "/" + slug + "/status/feed.xml"
+		view.SubscribeURL = "/" + slug + "/status/subscribe"
+	}
+	for _, item := range selected {
+		name := strings.TrimSpace(item.DisplayName)
+		if name == "" {
+			if snap, ok := byID[item.MonitorID]; ok {
+				name = strings.TrimSpace(snap.Monitor.Name)
+			}
+		}
+		if name == "" {
+			continue
+		}
+		view.SubscribeMonitors = append(view.SubscribeMonitors, statusPageSubscribeMonitorView{
+			ID:   item.MonitorID,
+			Name: name,
+		})
 	}
 
 	groupIndex := make(map[string]int)
@@ -430,7 +465,7 @@ func buildStatusPageView(settings store.StatusPageSettings, selected []store.Sta
 		view.OverallClass = "is-ok"
 		view.OverallLabel = statusPageTr(tr, "status_page.overall.ok", "All systems operational")
 	}
-	view.MaintenanceNotices = buildStatusPageMaintenance(maintenance, selected, byID, now)
+	view.MaintenanceNotices = buildStatusPageMaintenance(maintenance, selected, byID, now, settings.AnnounceHours)
 	view.Incidents = buildStatusPageIncidents(incidents, tr)
 	return view
 }
@@ -453,14 +488,12 @@ func buildStatusPageIncidents(items []store.StatusPageIncident, tr map[string]st
 	return out
 }
 
-// statusPageMaintenanceHorizon is how far ahead upcoming maintenance is announced.
-const statusPageMaintenanceHorizon = 7 * 24 * time.Hour
-
-// buildStatusPageMaintenance lists the running and the next-7-days windows that cover at least
-// one monitor shown on the page. Descriptions and targets are never exposed.
-func buildStatusPageMaintenance(set monitor.MaintenanceSet, selected []store.StatusPageMonitor, byID map[int64]monitor.Snapshot, now time.Time) []statusPageMaintenanceView {
+// buildStatusPageMaintenance lists running windows and those starting within announceHours
+// that cover at least one monitor shown on the page. Descriptions and targets are never exposed.
+func buildStatusPageMaintenance(set monitor.MaintenanceSet, selected []store.StatusPageMonitor, byID map[int64]monitor.Snapshot, now time.Time, announceHours int) []statusPageMaintenanceView {
+	horizon := time.Duration(store.NormalizeAnnounceHours(announceHours)) * time.Hour
 	var notices []statusPageMaintenanceView
-	for _, occ := range set.Upcoming(now, now.Add(statusPageMaintenanceHorizon)) {
+	for _, occ := range set.Upcoming(now, now.Add(horizon)) {
 		affects := false
 		for _, item := range selected {
 			if snap, ok := byID[item.MonitorID]; ok && occ.Window.Covers(snap.Monitor.ID, snap.Monitor.Group) {

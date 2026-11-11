@@ -163,6 +163,33 @@
   gap: 0.35rem;
 }
 
+.board-node-filter {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  min-width: 11rem;
+}
+
+.board-node-filter select {
+  min-height: 2.5rem;
+  width: 100%;
+}
+
+.monitor-executor-offline-hint {
+  color: rgba(var(--rgb-warn, 180, 120, 20), 0.95);
+}
+
+.group-reassign-form {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.35rem 0.6rem 0.55rem;
+}
+
+.group-reassign-executor {
+  width: 100%;
+  min-height: 2.25rem;
+}
+
 .board-filter-empty {
   flex-basis: 100%;
   margin: 0;
@@ -255,6 +282,11 @@
   .board-status-filter .button {
     flex: 1 1 0;
     justify-content: center;
+  }
+
+  .board-node-filter {
+    width: 100%;
+    min-width: 0;
   }
 }
 

@@ -31,17 +31,20 @@ func (a *App) runMaintenanceOnce(ctx context.Context) {
 	}
 	now := time.Now().UTC()
 
-	controlResult, err := a.controlStore.RunMaintenance(ctx, now)
+	controlResult, err := a.controlStore.RunMaintenance(ctx, now, store.ControlPlaneMaintenanceOptions{
+		AuditRetentionDays: a.config.AuditRetentionDays,
+	})
 	if err != nil {
 		a.logger.Error("control-plane maintenance failed", "error", err)
 	} else {
 		if controlResult.CompactionSkipped != "" {
 			a.logger.Warn("control-plane compaction skipped", "reason", controlResult.CompactionSkipped)
 		}
-		if controlResult.DeletedRemoteNodeEvents > 0 || controlResult.Vacuumed {
+		if controlResult.DeletedRemoteNodeEvents > 0 || controlResult.DeletedAuditEvents > 0 || controlResult.Vacuumed {
 			a.logger.Info(
 				"control-plane maintenance completed",
 				"remote_node_events_deleted", controlResult.DeletedRemoteNodeEvents,
+				"audit_events_deleted", controlResult.DeletedAuditEvents,
 				"vacuumed", controlResult.Vacuumed,
 			)
 		}

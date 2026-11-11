@@ -57,6 +57,41 @@
   </section>
   {{end}}
 
+  <section class="status-subscribe" aria-label="{{index $.Translations "status_page.subscribe.title"}}">
+    <h2 class="status-group-title">{{index $.Translations "status_page.subscribe.title"}}</h2>
+    {{if $sp.Notice}}<div class="notice success">{{$sp.Notice}}</div>{{end}}
+    {{if $sp.Error}}<div class="notice error">{{$sp.Error}}</div>{{end}}
+    {{if $sp.FeedURL}}
+    <p class="muted status-feed-line">
+      <a class="status-feed-link" href="{{$sp.FeedURL}}">{{index $.Translations "status_page.feed.link"}}</a>
+      <span>{{index $.Translations "status_page.feed.hint"}}</span>
+    </p>
+    {{end}}
+    {{if and $sp.SubscriptionsOn $sp.SubscribeURL}}
+    <form class="status-subscribe-form" method="post" action="{{$sp.SubscribeURL}}">
+      <label class="status-subscribe-email">
+        <span>{{index $.Translations "status_page.subscribe.email"}}</span>
+        <input type="email" name="email" required autocomplete="email" maxlength="254" placeholder="name@example.com">
+      </label>
+      {{if $sp.SubscribeMonitors}}
+      <fieldset class="status-subscribe-monitors">
+        <legend>{{index $.Translations "status_page.subscribe.monitors"}}</legend>
+        <p class="muted">{{index $.Translations "status_page.subscribe.monitors_hint"}}</p>
+        {{range $sp.SubscribeMonitors}}
+        <label class="status-subscribe-monitor">
+          <input type="checkbox" name="monitor_id" value="{{.ID}}" checked>
+          <span>{{.Name}}</span>
+        </label>
+        {{end}}
+      </fieldset>
+      {{end}}
+      <button type="submit" class="button">{{index $.Translations "status_page.subscribe.submit"}}</button>
+    </form>
+    {{else}}
+    <p class="muted">{{index $.Translations "status_page.subscribe.email_unavailable"}}</p>
+    {{end}}
+  </section>
+
   <footer class="status-page-footer muted">
     <div>{{index $.Translations "status_page.updated"}}: {{$sp.UpdatedAt}}</div>
     {{if not $sp.HideGoUpFooter}}

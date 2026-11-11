@@ -34,6 +34,12 @@ type assignedMonitorSpec struct {
 	TLSMode            string `json:"tls_mode"`
 	ExpectedStatusCode *int   `json:"expected_status_code,omitempty"`
 	ExpectedText       string `json:"expected_text,omitempty"`
+	HTTPMethod         string `json:"http_method,omitempty"`
+	RequestHeaders     string `json:"request_headers,omitempty"`
+	RequestBody        string `json:"request_body,omitempty"`
+	JSONPath           string `json:"json_path,omitempty"`
+	JSONPathExpected   string `json:"json_path_expected,omitempty"`
+	CheckMode          string `json:"check_mode,omitempty"`
 }
 
 type reportRequest struct {

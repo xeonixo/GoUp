@@ -8,9 +8,10 @@ import (
 
 // Maintenance recurrence modes.
 const (
-	RecurrenceNone   = "none"
-	RecurrenceDaily  = "daily"
-	RecurrenceWeekly = "weekly"
+	RecurrenceNone    = "none"
+	RecurrenceDaily   = "daily"
+	RecurrenceWeekly  = "weekly"
+	RecurrenceMonthly = "monthly"
 )
 
 // Maintenance scopes.
@@ -21,15 +22,17 @@ const (
 )
 
 // MaintenanceWindow is a planned period in which the covered monitors are not alarmed and do
-// not count towards uptime. StartsAt/EndsAt are UTC; EndsAt-StartsAt is the length of every
-// occurrence. Recurring windows repeat every 24 h / 7 x 24 h in UTC (pure UTC arithmetic, so
-// the local wall-clock time shifts by one hour across a DST change).
+// not count towards uptime. StartsAt/EndsAt are stored as UTC instants; EndsAt-StartsAt is the
+// length of every occurrence. Timezone is an IANA name (default UTC) used when evaluating
+// recurring starts so daily/weekly/monthly windows keep a stable local wall-clock time across
+// daylight-saving changes.
 type MaintenanceWindow struct {
 	ID          int64
 	Title       string
 	Description string
 	StartsAt    time.Time
 	EndsAt      time.Time
+	Timezone    string
 	Recurrence  string
 	Scope       string
 	MonitorIDs  []int64
@@ -45,8 +48,32 @@ func NormalizeRecurrence(value string) string {
 		return RecurrenceDaily
 	case RecurrenceWeekly:
 		return RecurrenceWeekly
+	case RecurrenceMonthly:
+		return RecurrenceMonthly
 	}
 	return RecurrenceNone
+}
+
+// NormalizeTimezone returns a valid IANA timezone name. Empty or unknown values become UTC.
+func NormalizeTimezone(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "UTC"
+	}
+	if _, err := time.LoadLocation(value); err != nil {
+		return "UTC"
+	}
+	return value
+}
+
+// ValidTimezone reports whether value is empty (meaning UTC) or a loadable IANA name.
+func ValidTimezone(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return true
+	}
+	_, err := time.LoadLocation(value)
+	return err == nil
 }
 
 // NormalizeMaintenanceScope returns a valid scope (default all).
@@ -60,18 +87,68 @@ func NormalizeMaintenanceScope(value string) string {
 	return MaintenanceScopeAll
 }
 
-func (w MaintenanceWindow) period() time.Duration {
-	switch w.Recurrence {
-	case RecurrenceDaily:
-		return 24 * time.Hour
-	case RecurrenceWeekly:
-		return 7 * 24 * time.Hour
+// Location returns the window's IANA location, falling back to UTC.
+func (w MaintenanceWindow) Location() *time.Location {
+	name := NormalizeTimezone(w.Timezone)
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return time.UTC
 	}
-	return 0
+	return loc
 }
 
 // Length is the duration of one occurrence.
 func (w MaintenanceWindow) Length() time.Duration { return w.EndsAt.Sub(w.StartsAt) }
+
+// addRecurrence advances t by n recurrence periods in t's location, preserving wall clock.
+func addRecurrence(t time.Time, recurrence string, n int) time.Time {
+	if n == 0 {
+		return t
+	}
+	y, m, d := t.Date()
+	h, min, sec := t.Clock()
+	ns := t.Nanosecond()
+	loc := t.Location()
+	switch recurrence {
+	case RecurrenceDaily:
+		return time.Date(y, m, d+n, h, min, sec, ns, loc)
+	case RecurrenceWeekly:
+		return time.Date(y, m, d+7*n, h, min, sec, ns, loc)
+	case RecurrenceMonthly:
+		target := time.Date(y, m+time.Month(n), 1, h, min, sec, ns, loc)
+		lastDay := time.Date(target.Year(), target.Month()+1, 0, 0, 0, 0, 0, loc).Day()
+		day := d
+		if day > lastDay {
+			day = lastDay
+		}
+		return time.Date(target.Year(), target.Month(), day, h, min, sec, ns, loc)
+	}
+	return t
+}
+
+func estimateRecurrenceIndex(first, now time.Time, recurrence string) int {
+	switch recurrence {
+	case RecurrenceDaily:
+		days := int(now.Sub(first) / (24 * time.Hour))
+		if days < 0 {
+			return 0
+		}
+		return days
+	case RecurrenceWeekly:
+		weeks := int(now.Sub(first) / (7 * 24 * time.Hour))
+		if weeks < 0 {
+			return 0
+		}
+		return weeks
+	case RecurrenceMonthly:
+		months := (now.Year()-first.Year())*12 + int(now.Month()-first.Month())
+		if months < 0 {
+			return 0
+		}
+		return months
+	}
+	return 0
+}
 
 // Occurrence returns the occurrence that is active at now or, when none is, the next upcoming
 // one. ok is false when the window is over for good (non-recurring and already ended).
@@ -80,27 +157,41 @@ func (w MaintenanceWindow) Occurrence(now time.Time) (start, end time.Time, acti
 	if length <= 0 {
 		return time.Time{}, time.Time{}, false, false
 	}
-	now = now.UTC()
-	first := w.StartsAt.UTC()
-	period := w.period()
-	if period == 0 || now.Before(first) {
-		if now.Before(first) {
-			return first, first.Add(length), false, true
+	loc := w.Location()
+	nowLocal := now.In(loc)
+	first := w.StartsAt.In(loc)
+	recurrence := NormalizeRecurrence(w.Recurrence)
+
+	if recurrence == RecurrenceNone || nowLocal.Before(first) {
+		endLocal := first.Add(length)
+		if nowLocal.Before(first) {
+			return first.UTC(), endLocal.UTC(), false, true
 		}
-		end = first.Add(length)
-		if now.Before(end) {
-			return first, end, true, true
+		if nowLocal.Before(endLocal) {
+			return first.UTC(), endLocal.UTC(), true, true
 		}
-		return time.Time{}, time.Time{}, false, false
+		if recurrence == RecurrenceNone {
+			return time.Time{}, time.Time{}, false, false
+		}
 	}
-	n := now.Sub(first) / period
-	start = first.Add(n * period)
-	end = start.Add(length)
-	if now.Before(end) {
-		return start, end, true, true
+
+	n := estimateRecurrenceIndex(first, nowLocal, recurrence)
+	startLocal := addRecurrence(first, recurrence, n)
+	for n > 0 && nowLocal.Before(startLocal) {
+		n--
+		startLocal = addRecurrence(first, recurrence, n)
 	}
-	start = start.Add(period)
-	return start, start.Add(length), false, true
+	endLocal := startLocal.Add(length)
+	for !nowLocal.Before(endLocal) {
+		n++
+		startLocal = addRecurrence(first, recurrence, n)
+		endLocal = startLocal.Add(length)
+		if n > 100000 {
+			return time.Time{}, time.Time{}, false, false
+		}
+	}
+	active = !nowLocal.Before(startLocal)
+	return startLocal.UTC(), endLocal.UTC(), active, true
 }
 
 // ActiveAt reports whether an occurrence is running at now.

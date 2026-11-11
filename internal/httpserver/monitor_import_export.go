@@ -21,6 +21,12 @@ type monitorExportRecord struct {
 	TLSMode              string `json:"tls_mode"`
 	ExpectedStatusCode   *int   `json:"expected_status_code"`
 	ExpectedText         string `json:"expected_text"`
+	HTTPMethod           string `json:"http_method,omitempty"`
+	RequestHeaders       string `json:"request_headers,omitempty"`
+	RequestBody          string `json:"request_body,omitempty"`
+	JSONPath             string `json:"json_path,omitempty"`
+	JSONPathExpected     string `json:"json_path_expected,omitempty"`
+	CheckMode            string `json:"check_mode,omitempty"`
 	NotifyOnRecovery     bool   `json:"notify_on_recovery"`
 	RetryCount           int    `json:"retry_count"`
 	RetryIntervalSeconds int    `json:"retry_interval_seconds"`
@@ -49,6 +55,12 @@ type importPreviewRow struct {
 	TLSMode              string
 	ExpectedStatusCode   string // empty string means null
 	ExpectedText         string
+	HTTPMethod           string
+	RequestHeaders       string
+	RequestBody          string
+	JSONPath             string
+	JSONPathExpected     string
+	CheckMode            string
 	NotifyOnRecovery     bool
 	RetryCount           int
 	RetryIntervalSeconds int
@@ -108,6 +120,12 @@ func (s *Server) handleMonitorExport(w http.ResponseWriter, r *http.Request) {
 			TLSMode:              string(m.TLSMode),
 			ExpectedStatusCode:   m.ExpectedStatusCode,
 			ExpectedText:         m.ExpectedText,
+			HTTPMethod:           m.HTTPMethod,
+			RequestHeaders:       m.RequestHeaders,
+			RequestBody:          m.RequestBody,
+			JSONPath:             m.JSONPath,
+			JSONPathExpected:     m.JSONPathExpected,
+			CheckMode:            m.CheckMode,
 			NotifyOnRecovery:     m.NotifyOnRecovery,
 			RetryCount:           m.RetryCount,
 			RetryIntervalSeconds: int(m.RetryInterval.Seconds()),

@@ -46,6 +46,9 @@ func (s *Store) initSchema(ctx context.Context) error {
 	if err := s.ensureHeartbeatColumns(ctx); err != nil {
 		return err
 	}
+	if err := s.ensureMonitorConfigJSONColumn(ctx); err != nil {
+		return err
+	}
 	if err := s.ensureStatusPageTables(ctx); err != nil {
 		return err
 	}

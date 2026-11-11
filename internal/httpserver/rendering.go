@@ -57,6 +57,7 @@ type pageData struct {
 	AdminLocalUser                    store.LocalUser
 	AdminRemoteNodeRows               []adminRemoteNodeOverviewRow
 	AdminWebhookEndpoints             []store.WebhookEndpoint
+	NewWebhookSecret                  string
 	ProfileUser                       store.TenantUser
 	ProfileNotify                     store.UserNotificationSettings
 	PushDevices                       []pushDeviceView
@@ -104,6 +105,7 @@ type pageData struct {
 	AdminNavActive                    string
 	AdminNavScoped                    bool
 	MaintenanceAdm                    *maintenanceAdminView
+	SLAReport                         *slaReportView
 }
 
 type remoteNodeProvisioningVarView struct {
@@ -188,7 +190,7 @@ func parseRemoteNodeProvisioningNotice(message string) (string, []remoteNodeProv
 }
 
 func parseTemplates() (map[string]*template.Template, error) {
-	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_providers_overview", "admin_provider_form", "admin_local_users", "admin_users_overview", "admin_local_user_form", "admin_remote_nodes", "admin_remote_nodes_overview", "settings_users", "settings_profile", "settings_webhooks", "settings_providers", "settings_provider_form", "settings_remote_nodes", "admin_access", "admin_setup", "admin_security", "admin_system", "no_tenant", "state_events_history", "notification_events_history", "monitors_import", "monitors_import_preview", "monitor_detail", "offline", "status_page", "settings_status_page", "settings_maintenance"}
+	pages := []string{"dashboard", "login", "password_reset_request", "password_reset_confirm", "admin_dashboard", "admin_tenants", "admin_tenant_form", "admin_providers", "admin_providers_overview", "admin_provider_form", "admin_local_users", "admin_users_overview", "admin_local_user_form", "admin_remote_nodes", "admin_remote_nodes_overview", "settings_users", "settings_profile", "settings_webhooks", "settings_providers", "settings_provider_form", "settings_remote_nodes", "admin_access", "admin_setup", "admin_security", "admin_system", "no_tenant", "state_events_history", "notification_events_history", "monitors_import", "monitors_import_preview", "monitor_detail", "offline", "status_page", "settings_status_page", "settings_maintenance", "settings_reports"}
 	parsed := make(map[string]*template.Template, len(pages))
 	for _, page := range pages {
 		tmpl, err := template.ParseFS(web.FS, "templates/layout.tmpl", "templates/"+page+".tmpl", "templates/partials/*.tmpl")

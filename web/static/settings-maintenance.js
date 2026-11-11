@@ -1,22 +1,11 @@
 (() => {
-  // Maintenance windows: times are shown and entered in the browser's time zone and sent to the
-  // server as UTC instants (RFC 3339) in the hidden starts_at / ends_at fields.
+  // Maintenance windows: times are wall-clock values in the selected IANA timezone.
+  // The server interprets starts_local/ends_local in that zone; hidden starts_at/ends_at
+  // stay empty so the timezone is authoritative.
   window.addEventListener('DOMContentLoaded', () => {
     const page = document.getElementById('maintenance-page');
     if (!(page instanceof HTMLElement)) {
       return;
-    }
-
-    const pad = (n) => String(n).padStart(2, '0');
-    const toLocalInput = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-
-    try {
-      const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const label = document.getElementById('maintenance-tz');
-      if (label && zone) {
-        label.textContent = zone;
-      }
-    } catch (_) {
     }
 
     page.querySelectorAll('time.maint-time[datetime]').forEach((element) => {
@@ -31,31 +20,22 @@
       return;
     }
 
-    // Prefill the local inputs from the stored UTC instants (edit mode).
-    form.querySelectorAll('input[type="datetime-local"][data-utc]').forEach((input) => {
-      const raw = input.getAttribute('data-utc');
-      if (!raw) {
-        return;
-      }
-      const date = new Date(raw);
-      if (!Number.isNaN(date.getTime())) {
-        input.value = toLocalInput(date);
+    form.querySelectorAll('input[type="datetime-local"][data-local]').forEach((input) => {
+      const local = input.getAttribute('data-local');
+      if (local && !input.value) {
+        input.value = local;
       }
     });
 
-    const syncUTC = (localName, utcName) => {
-      const local = form.elements.namedItem(localName);
-      const utc = form.elements.namedItem(utcName);
-      if (!(local instanceof HTMLInputElement) || !(utc instanceof HTMLInputElement)) {
-        return;
-      }
-      // "YYYY-MM-DDTHH:mm" without an offset is parsed as local time, DST rules included.
-      const date = new Date(local.value);
-      utc.value = local.value && !Number.isNaN(date.getTime()) ? date.toISOString() : '';
-    };
     form.addEventListener('submit', () => {
-      syncUTC('starts_local', 'starts_at');
-      syncUTC('ends_local', 'ends_at');
+      const startsAt = form.elements.namedItem('starts_at');
+      const endsAt = form.elements.namedItem('ends_at');
+      if (startsAt instanceof HTMLInputElement) {
+        startsAt.value = '';
+      }
+      if (endsAt instanceof HTMLInputElement) {
+        endsAt.value = '';
+      }
     });
 
     const scope = document.getElementById('maintenance-scope');

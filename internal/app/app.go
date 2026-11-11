@@ -135,6 +135,12 @@ func New(ctx context.Context) (*App, error) {
 		}
 		return app.runnerForTenant(tenantID)
 	}
+	readyCheck := func(ctx context.Context) []string {
+		if app == nil {
+			return []string{"app: not initialized"}
+		}
+		return app.Ready(ctx)
+	}
 
 	server, err := httpserver.New(httpserver.Dependencies{
 		Config:         cfg,
@@ -146,6 +152,7 @@ func New(ctx context.Context) (*App, error) {
 		DefaultTenant:  defaultTenant,
 		Sessions:       sessions,
 		RunnerLookup:   runnerLookup,
+		ReadyCheck:     readyCheck,
 	})
 	if err != nil {
 		if sqliteStore != nil {

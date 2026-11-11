@@ -7,6 +7,13 @@ import (
 	"time"
 )
 
+const (
+	defaultAuditListLimit     = 50
+	maxAuditListLimit         = 200
+	maxAuditExportLimit       = 10000
+	DefaultAuditRetentionDays = 90
+)
+
 type AuditEvent struct {
 	ID         int64
 	Actor      string
@@ -31,41 +38,49 @@ VALUES (?, ?, ?, ?, ?, ?)
 	return nil
 }
 
-func (s *ControlPlaneStore) ListRecentAuditEvents(ctx context.Context, limit int) ([]AuditEvent, error) {
-	if limit <= 0 || limit > 200 {
-		limit = 50
+// NormalizeAuditRetentionDays returns a positive retention window. Non-positive
+// values fall back to DefaultAuditRetentionDays (90).
+func NormalizeAuditRetentionDays(days int) int {
+	if days <= 0 {
+		return DefaultAuditRetentionDays
 	}
+	return days
+}
 
-	rows, err := s.db.QueryContext(ctx, `
-SELECT id, actor, action, target_type, target_id, details, created_at
-FROM audit_events
-ORDER BY id DESC
-LIMIT ?
-`, limit)
+// PruneAuditEvents deletes audit_events older than cutoff.
+func (s *ControlPlaneStore) PruneAuditEvents(ctx context.Context, cutoff time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `
+DELETE FROM audit_events
+WHERE created_at < ?
+`, cutoff.UTC())
 	if err != nil {
-		return nil, fmt.Errorf("query audit events: %w", err)
+		return 0, fmt.Errorf("prune audit events: %w", err)
 	}
-	defer rows.Close()
+	deleted, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("read pruned audit event rows: %w", err)
+	}
+	return deleted, nil
+}
 
-	items := make([]AuditEvent, 0, limit)
-	for rows.Next() {
-		var event AuditEvent
-		if err := rows.Scan(&event.ID, &event.Actor, &event.Action, &event.TargetType, &event.TargetID, &event.Details, &event.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scan audit event: %w", err)
-		}
-		items = append(items, event)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate audit events: %w", err)
-	}
-
-	return items, nil
+func (s *ControlPlaneStore) ListRecentAuditEvents(ctx context.Context, limit int) ([]AuditEvent, error) {
+	return s.ListAuditEventsFiltered(ctx, limit, "", "", "")
 }
 
 func (s *ControlPlaneStore) ListAuditEventsFiltered(ctx context.Context, limit int, action, actor, targetType string) ([]AuditEvent, error) {
-	if limit <= 0 || limit > 200 {
-		limit = 50
+	if limit <= 0 || limit > maxAuditListLimit {
+		limit = defaultAuditListLimit
 	}
+	return s.queryAuditEventsFiltered(ctx, limit, action, actor, targetType)
+}
+
+// ExportAuditEventsFiltered returns up to maxAuditExportLimit events matching the
+// same filters as the admin dashboard.
+func (s *ControlPlaneStore) ExportAuditEventsFiltered(ctx context.Context, action, actor, targetType string) ([]AuditEvent, error) {
+	return s.queryAuditEventsFiltered(ctx, maxAuditExportLimit, action, actor, targetType)
+}
+
+func (s *ControlPlaneStore) queryAuditEventsFiltered(ctx context.Context, limit int, action, actor, targetType string) ([]AuditEvent, error) {
 	action = strings.TrimSpace(action)
 	actor = strings.TrimSpace(actor)
 	targetType = strings.TrimSpace(targetType)

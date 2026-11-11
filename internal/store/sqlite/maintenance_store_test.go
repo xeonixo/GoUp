@@ -172,7 +172,7 @@ func TestControlPlaneMaintenancePrunesRemoteNodeEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rerun control-plane maintenance: %v", err)
 	}
-	if again.Vacuumed || again.DeletedRemoteNodeEvents != 0 {
+	if again.Vacuumed || again.DeletedRemoteNodeEvents != 0 || again.DeletedAuditEvents != 0 {
 		t.Fatalf("expected idempotent second run, got %+v", again)
 	}
 }

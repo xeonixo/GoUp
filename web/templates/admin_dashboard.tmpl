@@ -107,6 +107,8 @@
         <div class="form-actions form-actions-align-end">
           <button type="submit" class="button button-secondary">{{index $.Translations "admin.settings.apply_filter"}}</button>
           <a href="/admin/" class="button button-secondary">{{index $.Translations "common.reset"}}</a>
+          <a href="/admin/audit/export?format=csv&amp;audit_action={{urlquery .AuditAction}}&amp;audit_actor={{urlquery .AuditActor}}&amp;audit_target={{urlquery .AuditTargetType}}" class="button button-secondary">{{index $.Translations "admin.settings.export_csv"}}</a>
+          <a href="/admin/audit/export?format=json&amp;audit_action={{urlquery .AuditAction}}&amp;audit_actor={{urlquery .AuditActor}}&amp;audit_target={{urlquery .AuditTargetType}}" class="button button-secondary">{{index $.Translations "admin.settings.export_json"}}</a>
         </div>
       </div>
     </form>

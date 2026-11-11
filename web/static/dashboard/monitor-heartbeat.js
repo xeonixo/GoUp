@@ -17,11 +17,24 @@ const timeoutRow = byId('monitor-timeout')?.closest('label');
 const certWarningRow = byId('monitor-cert-warning-days')?.closest('label');
 const executorRow = byId('monitor-executor-row');
 const executorField = byId('monitor-executor');
+const executorOfflineHint = byId('monitor-executor-offline-hint');
 
 const defaultGraceSeconds = '300';
 const minHeartbeatPeriodSeconds = '60';
 
 const shellQuote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
+
+export const syncExecutorOfflineHint = () => {
+  if (!executorOfflineHint) {
+    return;
+  }
+  if (executorRow?.hidden || !executorField) {
+    executorOfflineHint.hidden = true;
+    return;
+  }
+  const selected = executorField.selectedOptions?.[0];
+  executorOfflineHint.hidden = !(selected && selected.dataset.offline === '1');
+};
 
 // Shows or hides everything that only applies to heartbeat monitors; called by applyKindRules.
 export const syncHeartbeatRows = (isHeartbeat) => {
@@ -43,6 +56,7 @@ export const syncHeartbeatRows = (isHeartbeat) => {
   const hasURL = Boolean(urlField?.value);
   if (infoRow) infoRow.hidden = !isHeartbeat || !hasURL;
   if (pendingRow) pendingRow.hidden = !isHeartbeat || hasURL;
+  syncExecutorOfflineHint();
 };
 
 // Fills the URL block for the monitor being edited (url is empty for new monitors and clones).
@@ -72,4 +86,5 @@ export const initHeartbeatForm = () => {
       event.preventDefault();
     }
   });
+  executorField?.addEventListener('change', syncExecutorOfflineHint);
 };

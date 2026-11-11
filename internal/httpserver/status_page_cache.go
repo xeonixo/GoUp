@@ -17,8 +17,12 @@ type statusPageCache struct {
 	entries map[string]statusPageCacheEntry
 }
 
-func statusPageCacheKey(tenantID int64, lang string) string {
-	return lang + "|" + strconv.FormatInt(tenantID, 10)
+func statusPageCacheKey(tenantID int64, lang string, subscriptionsOn bool) string {
+	flag := "0"
+	if subscriptionsOn {
+		flag = "1"
+	}
+	return lang + "|" + strconv.FormatInt(tenantID, 10) + "|sub" + flag
 }
 
 func (c *statusPageCache) get(key string, now time.Time) (statusPageCacheEntry, bool) {
