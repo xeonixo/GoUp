@@ -37,7 +37,7 @@ func lookupDNSNS(ctx context.Context, host string, preferredServer string, timeo
 		timeout = 10 * time.Second
 	}
 
-	resolvers := dnsResolverServers(preferredServer)
+	resolvers := dnsResolverServersFn(preferredServer)
 	if records, err := lookupDNSNSFromResolvers(ctx, host, resolvers, false, timeout); err == nil && len(records) > 0 {
 		return records, nil
 	} else if err != nil && ctx.Err() != nil {
@@ -361,4 +361,7 @@ func minDuration(a, b time.Duration) time.Duration {
 }
 
 // Test seams for authoritative NS lookup (production defaults below).
-var resolveDNSHostPortsFn = resolveDNSHostPorts
+var (
+	resolveDNSHostPortsFn = resolveDNSHostPorts
+	dnsResolverServersFn  = dnsResolverServers
+)
