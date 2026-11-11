@@ -255,3 +255,30 @@ textarea {
     width: 100%;
   }
 }
+
+#reports-page .uptime-good {
+  color: var(--success);
+  font-variant-numeric: tabular-nums;
+}
+
+#reports-page .uptime-warn {
+  color: var(--star);
+  font-variant-numeric: tabular-nums;
+}
+
+#reports-page .uptime-bad {
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+}
+
+#reports-page .uptime-none {
+  color: var(--muted);
+}
+
+#reports-page .reports-period-form {
+  max-width: 28rem;
+}
+
+#reports-page .reports-period-form select {
+  max-width: 12rem;
+}

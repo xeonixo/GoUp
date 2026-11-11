@@ -212,6 +212,8 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/settings/maintenance", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleSettingsMaintenance))))
 	mux.Handle("/settings/maintenance/save", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleSettingsMaintenanceSave))))
 	mux.Handle("/settings/maintenance/{id}/delete", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleSettingsMaintenanceDelete))))
+	mux.Handle("/settings/reports", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleSettingsReports))))
+	mux.Handle("/settings/reports/export", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleSettingsReportsExport))))
 	mux.Handle("/settings/remote-nodes", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSettingsRemoteNodes))))
 	mux.Handle("/settings/remote-nodes/live", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSettingsRemoteNodesLive))))
 	mux.Handle("/settings/remote-nodes/live/snapshot", s.requireAuth(s.requireAdminWhenAuth(http.HandlerFunc(s.handleSettingsRemoteNodesLiveSnapshot))))
