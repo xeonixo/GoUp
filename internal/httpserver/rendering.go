@@ -61,6 +61,7 @@ type pageData struct {
 	ProfileUser                       store.TenantUser
 	ProfileNotify                     store.UserNotificationSettings
 	PushDevices                       []pushDeviceView
+	PushResubscribeRequired           bool
 	AdminAuditEvents                  []store.AuditEvent
 	AuditAction                       string
 	AuditActor                        string

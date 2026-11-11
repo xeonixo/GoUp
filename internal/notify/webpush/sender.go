@@ -124,6 +124,14 @@ func (s *Sender) PublicKey(ctx context.Context) (string, error) {
 	return pub, err
 }
 
+// InvalidateCachedKeys drops the in-memory VAPID pair so the next send/PublicKey
+// reloads keys from the store (used after RotateVAPIDKeys).
+func (s *Sender) InvalidateCachedKeys() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.privateKey, s.publicKey = "", ""
+}
+
 func (s *Sender) keys(ctx context.Context) (string, string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

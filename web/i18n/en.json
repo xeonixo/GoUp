@@ -1213,5 +1213,9 @@
   "settings.maintenance.export_ics": "Download .ics",
   "settings.maintenance.error_timezone": "Enter a valid IANA timezone (e.g. Europe/Berlin)",
   "settings.status_page.announce_hours": "Maintenance announce lead time (hours)",
-  "settings.status_page.announce_hours_hint": "Upcoming maintenance windows are listed on the public page this many hours ahead (default 24)."
+  "settings.status_page.announce_hours_hint": "Upcoming maintenance windows are listed on the public page this many hours ahead (default 24).",
+  "admin.system.rotate_vapid_button": "Rotate VAPID keys",
+  "admin.system.rotate_vapid_confirm": "Generate new Web Push (VAPID) keys? All device subscriptions will be cleared. Users must reopen the app and re-enable push notifications.",
+  "admin.system.rotate_vapid_hint": "Rotating VAPID keys invalidates every registered device. Users need to reopen GoUp and enable push again on each device.",
+  "settings.push.resubscribe_notice": "Push keys were rotated on the server. Reopen the app (or this page) and enable push again on each device."
 }

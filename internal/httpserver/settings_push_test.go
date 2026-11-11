@@ -278,4 +278,17 @@ func TestSettingsProfileRendersPushSection(t *testing.T) {
 	if strings.Contains(body, "style=") {
 		t.Error("inline styles are blocked by the CSP")
 	}
+	if strings.Contains(body, "Push keys were rotated") {
+		t.Error("resubscribe notice should be hidden when PushResubscribeRequired is false")
+	}
+
+	rec = httptest.NewRecorder()
+	s.render(rec, "settings_profile", pageData{
+		User: user, AppBase: "/acme/",
+		PushResubscribeRequired: true,
+	})
+	body = rec.Body.String()
+	if !strings.Contains(body, "Push keys were rotated") || !strings.Contains(body, "enable push again") {
+		t.Fatalf("resubscribe notice missing: %.400s", body)
+	}
 }

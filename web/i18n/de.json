@@ -1213,5 +1213,9 @@
   "settings.maintenance.export_ics": ".ics herunterladen",
   "settings.maintenance.error_timezone": "Eine gültige IANA-Zeitzone angeben (z. B. Europe/Berlin)",
   "settings.status_page.announce_hours": "Vorlauf für Wartungsankündigung (Stunden)",
-  "settings.status_page.announce_hours_hint": "Geplante Wartungsfenster erscheinen auf der öffentlichen Seite so viele Stunden im Voraus (Standard 24)."
+  "settings.status_page.announce_hours_hint": "Geplante Wartungsfenster erscheinen auf der öffentlichen Seite so viele Stunden im Voraus (Standard 24).",
+  "admin.system.rotate_vapid_button": "VAPID-Schlüssel rotieren",
+  "admin.system.rotate_vapid_confirm": "Neue Web-Push-(VAPID-)Schlüssel erzeugen? Alle Geräte-Abonnements werden gelöscht. Nutzer müssen die App erneut öffnen und Push-Benachrichtigungen wieder aktivieren.",
+  "admin.system.rotate_vapid_hint": "Das Rotieren der VAPID-Schlüssel entwertet jedes registrierte Gerät. Nutzer müssen GoUp erneut öffnen und Push auf jedem Gerät wieder aktivieren.",
+  "settings.push.resubscribe_notice": "Die Push-Schlüssel wurden auf dem Server rotiert. Öffne die App (oder diese Seite) erneut und aktiviere Push auf jedem Gerät wieder."
 }

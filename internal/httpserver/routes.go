@@ -70,6 +70,7 @@ func (s *Server) routes() (http.Handler, error) {
 	mux.Handle("/admin/system/metrics", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleProcessMetrics)))
 	mux.Handle("/admin/system/backup", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSystemBackup)))
 	mux.Handle("/admin/system/rekey-secrets", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSystemRekeySecrets)))
+	mux.Handle("/admin/system/rotate-vapid", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminSystemRotateVAPID)))
 	// Localhost-only process metrics for scrapers without an admin session.
 	mux.HandleFunc("/metrics-internal", s.handleProcessMetricsInternal)
 	mux.Handle("/admin/tenants/new", s.requireControlPlaneAdmin(http.HandlerFunc(s.handleAdminTenantForm)))

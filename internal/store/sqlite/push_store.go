@@ -16,9 +16,14 @@ const MaxPushSubscriptionsPerUser = 10
 var ErrPushSubscriptionLimit = errors.New("push subscription limit reached")
 
 const (
-	vapidPublicSettingKey  = "vapid_public_key"
-	vapidPrivateSettingKey = "vapid_private_key_ciphertext"
+	vapidPublicSettingKey    = "vapid_public_key"
+	vapidPrivateSettingKey   = "vapid_private_key_ciphertext"
+	vapidRotatedAtSettingKey = "vapid_rotated_at"
 )
+
+// VAPIDResubscribeNoticeTTL is how long the profile UI shows resubscribe guidance
+// after an admin rotates VAPID keys.
+const VAPIDResubscribeNoticeTTL = 14 * 24 * time.Hour
 
 // PushSubscription is one registered Web Push endpoint (one browser/device of a user).
 // P256dh and Auth are stored encrypted and returned decrypted.

@@ -42,7 +42,12 @@
         <input type="hidden" name="confirm" value="yes">
         <button type="submit" class="button button-secondary">{{index $.Translations "admin.system.rekey_button"}}</button>
       </form>
+      <form method="post" action="/admin/system/rotate-vapid" class="inline-form" data-confirm="{{index $.Translations "admin.system.rotate_vapid_confirm"}}">
+        <input type="hidden" name="confirm" value="yes">
+        <button type="submit" class="button button-secondary">{{index $.Translations "admin.system.rotate_vapid_button"}}</button>
+      </form>
     </div>
+    <p class="muted compact">{{index $.Translations "admin.system.rotate_vapid_hint"}}</p>
     <div class="system-table-wrap">
       <table class="admin-table system-table">
         <thead>

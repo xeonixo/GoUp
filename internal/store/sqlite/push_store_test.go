@@ -169,3 +169,63 @@ func TestVAPIDKeysAreStableAndEncrypted(t *testing.T) {
 		t.Fatal("private key must be stored encrypted")
 	}
 }
+
+func TestRotateVAPIDKeysRegeneratesAndClearsSubscriptions(t *testing.T) {
+	ctx := context.Background()
+	cp, tenant, admin, viewer := newPushTestStore(t)
+
+	priv1, pub1, err := cp.GetOrCreateVAPIDKeys(ctx)
+	if err != nil {
+		t.Fatalf("create keys: %v", err)
+	}
+	if _, err := cp.UpsertPushSubscription(ctx, pushSub(tenant.ID, admin.UserID, "https://web.push.apple.com/a")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cp.UpsertPushSubscription(ctx, pushSub(tenant.ID, viewer.UserID, "https://web.push.apple.com/b")); err != nil {
+		t.Fatal(err)
+	}
+	if notice, err := cp.VAPIDNeedsResubscribeNotice(ctx); err != nil || notice {
+		t.Fatalf("notice before rotation = %v (%v)", notice, err)
+	}
+
+	pubRotated, cleared, err := cp.RotateVAPIDKeys(ctx)
+	if err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+	if cleared != 2 {
+		t.Fatalf("cleared = %d, want 2", cleared)
+	}
+	if pubRotated == "" || pubRotated == pub1 {
+		t.Fatalf("public key was not regenerated: old=%q new=%q", pub1, pubRotated)
+	}
+
+	priv2, pub2, err := cp.GetOrCreateVAPIDKeys(ctx)
+	if err != nil {
+		t.Fatalf("reload after rotate: %v", err)
+	}
+	if pub2 != pubRotated || priv2 == priv1 || pub2 == pub1 {
+		t.Fatalf("keys after rotate: priv changed=%v pub=%q (want %q)", priv2 != priv1, pub2, pubRotated)
+	}
+	var sealed string
+	if err := cp.db.QueryRowContext(ctx, `SELECT value FROM system_settings WHERE key = ?`, vapidPrivateSettingKey).Scan(&sealed); err != nil {
+		t.Fatal(err)
+	}
+	if sealed == priv2 {
+		t.Fatal("rotated private key must be stored encrypted")
+	}
+
+	adminSubs, _ := cp.ListUserPushSubscriptions(ctx, tenant.ID, admin.UserID)
+	viewerSubs, _ := cp.ListUserPushSubscriptions(ctx, tenant.ID, viewer.UserID)
+	if len(adminSubs) != 0 || len(viewerSubs) != 0 {
+		t.Fatalf("subscriptions not cleared: admin=%d viewer=%d", len(adminSubs), len(viewerSubs))
+	}
+	if notice, err := cp.VAPIDNeedsResubscribeNotice(ctx); err != nil || !notice {
+		t.Fatalf("notice after rotation = %v (%v)", notice, err)
+	}
+
+	// A second rotation must change keys again and leave subscriptions empty.
+	pub3, cleared3, err := cp.RotateVAPIDKeys(ctx)
+	if err != nil || cleared3 != 0 || pub3 == pub2 {
+		t.Fatalf("second rotate: pub=%q cleared=%d err=%v", pub3, cleared3, err)
+	}
+}

@@ -172,6 +172,9 @@
         <p class="muted compact">{{index $.Translations "settings.push.subtitle"}}</p>
       </div>
     </div>
+    {{if .PushResubscribeRequired}}
+    <div class="notice" role="status">{{index $.Translations "settings.push.resubscribe_notice"}}</div>
+    {{end}}
     <p class="push-status" data-push-status role="status" aria-live="polite">{{index $.Translations "settings.push.status.checking"}}</p>
     <div class="form-actions">
       <button type="button" class="button button-small" data-push-enable hidden>{{index $.Translations "settings.push.button.enable"}}</button>
