@@ -84,10 +84,12 @@ func TestMaintenanceSettingsAdminOnly(t *testing.T) {
 		want               int
 	}{
 		{"viewer", http.MethodGet, "/acme/settings/maintenance", http.StatusForbidden},
+		{"viewer", http.MethodGet, "/acme/settings/maintenance/export.ics", http.StatusForbidden},
 		{"viewer", http.MethodPost, "/acme/settings/maintenance/save", http.StatusForbidden},
 		{"viewer", http.MethodPost, "/acme/settings/maintenance/1/delete", http.StatusForbidden},
 		{"", http.MethodGet, "/acme/settings/maintenance", http.StatusSeeOther},
 		{"operator", http.MethodGet, "/acme/settings/maintenance", http.StatusOK},
+		{"operator", http.MethodGet, "/acme/settings/maintenance/export.ics", http.StatusOK},
 		{"admin", http.MethodGet, "/acme/settings/maintenance", http.StatusOK},
 	} {
 		var form url.Values
@@ -177,18 +179,72 @@ func TestMaintenanceSettingsValidationAndCRUD(t *testing.T) {
 
 func TestMaintenanceNoJSFallbackIsUTC(t *testing.T) {
 	env := newMaintenanceEnv(t)
-	form := url.Values{"title": {"x"}, "starts_local": {"2030-01-02T03:04"}, "ends_local": {"2030-01-02T05:00"}, "recurrence": {"none"}, "scope": {"all"}}
+	form := url.Values{"title": {"x"}, "starts_local": {"2030-01-02T03:04"}, "ends_local": {"2030-01-02T05:00"}, "recurrence": {"none"}, "scope": {"all"}, "timezone": {"UTC"}}
 	env.do("admin", http.MethodPost, "/acme/settings/maintenance/save", form)
 	windows, _ := env.st.ListMaintenanceWindows(context.Background())
-	if len(windows) != 1 || !windows[0].StartsAt.Equal(time.Date(2030, 1, 2, 3, 4, 0, 0, time.UTC)) {
+	if len(windows) != 1 || !windows[0].StartsAt.Equal(time.Date(2030, 1, 2, 3, 4, 0, 0, time.UTC)) || windows[0].Timezone != "UTC" {
 		t.Fatalf("fallback parsing = %+v", windows)
+	}
+}
+
+func TestMaintenanceTimezoneAndMonthlySave(t *testing.T) {
+	env := newMaintenanceEnv(t)
+	ctx := context.Background()
+	form := url.Values{
+		"title": {"TZ monthly"}, "starts_local": {"2030-01-31T10:00"}, "ends_local": {"2030-01-31T12:00"},
+		"timezone": {"Europe/Berlin"}, "recurrence": {"monthly"}, "scope": {"all"},
+	}
+	rec := env.do("admin", http.MethodPost, "/acme/settings/maintenance/save", form)
+	if rec.Code != http.StatusSeeOther || !strings.Contains(rec.Header().Get("Location"), "notice=") {
+		t.Fatalf("save: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+	windows, err := env.st.ListMaintenanceWindows(ctx)
+	if err != nil || len(windows) != 1 {
+		t.Fatalf("windows = %+v err=%v", windows, err)
+	}
+	w := windows[0]
+	if w.Timezone != "Europe/Berlin" || w.Recurrence != monitor.RecurrenceMonthly {
+		t.Fatalf("stored = %+v", w)
+	}
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Skip("tzdata unavailable")
+	}
+	wantStart := time.Date(2030, 1, 31, 10, 0, 0, 0, berlin).UTC()
+	if !w.StartsAt.Equal(wantStart) {
+		t.Fatalf("starts_at = %v, want %v", w.StartsAt, wantStart)
+	}
+}
+
+func TestMaintenanceICSExport(t *testing.T) {
+	env := newMaintenanceEnv(t)
+	ctx := context.Background()
+	start := time.Date(2030, 6, 1, 8, 0, 0, 0, time.UTC)
+	if _, err := env.st.CreateMaintenanceWindow(ctx, monitor.MaintenanceWindow{
+		Title: "Patch night", Description: "kernel", StartsAt: start, EndsAt: start.Add(2 * time.Hour),
+		Timezone: "UTC", Recurrence: monitor.RecurrenceWeekly, Scope: monitor.MaintenanceScopeAll,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rec := env.do("operator", http.MethodGet, "/acme/settings/maintenance/export.ics", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/calendar") {
+		t.Fatalf("content-type = %q", ct)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"BEGIN:VCALENDAR", "BEGIN:VEVENT", "SUMMARY:Patch night", "RRULE:FREQ=WEEKLY", "END:VCALENDAR"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("ics missing %q\n%s", want, body)
+		}
 	}
 }
 
 func TestStatusPageMaintenanceNoticesAndStatus(t *testing.T) {
 	env := newMaintenanceEnv(t)
 	ctx := context.Background()
-	if err := env.st.SaveStatusPageSettings(ctx, store.StatusPageSettings{Enabled: true},
+	if err := env.st.SaveStatusPageSettings(ctx, store.StatusPageSettings{Enabled: true, AnnounceHours: 24},
 		[]store.StatusPageMonitor{{MonitorID: env.upID, DisplayName: "Online Shop"}, {MonitorID: env.hiddenID, DisplayName: "Database"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -203,8 +259,8 @@ func TestStatusPageMaintenanceNoticesAndStatus(t *testing.T) {
 		}
 	}
 	mk("Running work", -time.Hour, time.Hour, env.hiddenID)
-	mk("Planned work", 48*time.Hour, 50*time.Hour, env.upID)
-	mk("Far future", 20*24*time.Hour, 20*24*time.Hour+time.Hour, env.upID)
+	mk("Planned work", 12*time.Hour, 14*time.Hour, env.upID)
+	mk("Far future", 48*time.Hour, 50*time.Hour, env.upID)
 	mk("Ended work", -5*time.Hour, -4*time.Hour, env.upID)
 	other, err := env.st.CreateMonitor(ctx, store.CreateMonitorParams{Name: "Not shown", Kind: monitor.KindTCP, Target: "10.0.0.9:1", Interval: time.Minute, Timeout: time.Second, Enabled: true, TLSMode: monitor.TLSModeNone})
 	if err != nil {

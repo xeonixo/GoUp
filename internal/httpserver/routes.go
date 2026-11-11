@@ -211,6 +211,7 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("GET /api/v1/monitors/{id}/results", apiRead(http.HandlerFunc(s.handleAPIV1MonitorResults)))
 	mux.Handle("POST /api/v1/monitors/{id}/check-now", apiWrite(http.HandlerFunc(s.handleAPIV1CheckMonitorNow)))
 	mux.Handle("/settings/maintenance", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleSettingsMaintenance))))
+	mux.Handle("/settings/maintenance/export.ics", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleSettingsMaintenanceICS))))
 	mux.Handle("/settings/maintenance/save", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleSettingsMaintenanceSave))))
 	mux.Handle("/settings/maintenance/{id}/delete", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleSettingsMaintenanceDelete))))
 	mux.Handle("/settings/reports", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleSettingsReports))))

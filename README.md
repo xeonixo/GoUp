@@ -498,13 +498,13 @@ Each monitor has an **Repeat outage alert** setting (advanced section of the mon
 
 Tenant admins manage windows under **Settings → Maintenance windows** (`/{slug}/settings/maintenance`).
 
-- A window has a title, optional internal description, start and end, a repetition (**one time**, **daily**, **weekly**) and a scope: all monitors, selected groups, or selected monitors.
-- Recurring windows repeat the same span every 24 hours / 7 days. Occurrences are computed in plain UTC, so across a daylight-saving change the local wall-clock time shifts by one hour. A recurring window must not be longer than its period.
-- **Time zone:** start and end are entered in the browser's time zone; a small script converts them to UTC instants before submitting (hidden `starts_at`/`ends_at`), and times are displayed in the browser time zone as well. Without JavaScript the entered values are interpreted as UTC. Windows are stored in UTC.
+- A window has a title, optional internal description, start and end, an IANA **timezone** (default UTC), a repetition (**one time**, **daily**, **weekly**, **monthly**) and a scope: all monitors, selected groups, or selected monitors.
+- Recurring windows keep the same local wall-clock time in the window's timezone (calendar day / week / month). A recurring window must not be longer than its period (24 h / 7 d / 31 d).
+- **Time zone:** start and end are wall-clock times in the selected IANA timezone and are stored as UTC instants. Operators can download an `.ics` calendar of all windows from the settings page.
 - While a window covers a monitor, checks keep running and are stored with `in_maintenance = 1`. They count towards `total_checks` and `maintenance_checks` of the hourly rollup but not towards up/down/degraded, so they do not lower uptime. No notifications are sent, no incident or state-change event is created for downtime inside the window, and no reminders are sent.
 - When the window ends, one summary notification is sent if the monitor's status differs from its status before the window (same mechanism as the mute catch-up; the marker is `monitors.mute_start_status`).
 - The dashboard card, group header and detail page show a "Maintenance" status; the monitor menu has a quick action **Start maintenance (1 h)**.
-- The public status page lists running and upcoming (next 7 days) windows that affect at least one shown monitor (title and time range only) and shows "Maintenance" for covered monitors.
+- The public status page lists running and upcoming windows (within the tenant's `announce_hours`, default 24) that affect at least one shown monitor (title and time range only) and shows "Maintenance" for covered monitors.
 - Prometheus: `goup_monitor_in_maintenance` is 1 while a window covers the monitor.
 - The server caches the windows for up to 30 seconds; changes made through the UI take effect immediately.
 

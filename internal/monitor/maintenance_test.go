@@ -14,6 +14,7 @@ func TestMaintenanceWindowOccurrences(t *testing.T) {
 	once := MaintenanceWindow{StartsAt: utc(2026, 10, 24, 2, 0), EndsAt: utc(2026, 10, 24, 4, 0), Recurrence: RecurrenceNone, Scope: MaintenanceScopeAll}
 	daily := MaintenanceWindow{StartsAt: utc(2026, 10, 1, 23, 30), EndsAt: utc(2026, 10, 2, 0, 30), Recurrence: RecurrenceDaily, Scope: MaintenanceScopeAll}
 	weekly := MaintenanceWindow{StartsAt: utc(2026, 10, 3, 1, 0), EndsAt: utc(2026, 10, 3, 3, 0), Recurrence: RecurrenceWeekly, Scope: MaintenanceScopeAll}
+	monthly := MaintenanceWindow{StartsAt: utc(2026, 1, 31, 10, 0), EndsAt: utc(2026, 1, 31, 12, 0), Recurrence: RecurrenceMonthly, Scope: MaintenanceScopeAll}
 
 	for _, tc := range []struct {
 		name   string
@@ -32,6 +33,8 @@ func TestMaintenanceWindowOccurrences(t *testing.T) {
 		{"daily before first", daily, utc(2026, 9, 30, 23, 45), false, true, utc(2026, 10, 1, 23, 30)},
 		{"weekly next week", weekly, utc(2026, 10, 10, 2, 0), true, true, utc(2026, 10, 10, 1, 0)},
 		{"weekly other weekday", weekly, utc(2026, 10, 11, 2, 0), false, true, utc(2026, 10, 17, 1, 0)},
+		{"monthly clamps Jan 31 to Feb 28", monthly, utc(2026, 2, 28, 11, 0), true, true, utc(2026, 2, 28, 10, 0)},
+		{"monthly next after February", monthly, utc(2026, 3, 1, 0, 0), false, true, utc(2026, 3, 31, 10, 0)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			start, _, active, ok := tc.w.Occurrence(tc.now)
@@ -45,16 +48,14 @@ func TestMaintenanceWindowOccurrences(t *testing.T) {
 	}
 }
 
-// Recurrence is plain UTC arithmetic: a DST change in a local zone must not shift the UTC
-// occurrence (and must not panic or skip a day).
-func TestMaintenanceRecurrenceIsDSTSafe(t *testing.T) {
+// With Timezone=UTC, recurrence stays on fixed UTC intervals across a local DST change.
+func TestMaintenanceRecurrenceUTCIsDSTSafe(t *testing.T) {
 	berlin, err := time.LoadLocation("Europe/Berlin")
 	if err != nil {
 		t.Skip("tzdata unavailable")
 	}
-	// 02:00 Berlin on 2026-10-24 (CEST, UTC+2) = 00:00 UTC; the next days cross the DST end on 10-25.
 	start := time.Date(2026, 10, 24, 2, 0, 0, 0, berlin).UTC()
-	w := MaintenanceWindow{StartsAt: start, EndsAt: start.Add(time.Hour), Recurrence: RecurrenceDaily, Scope: MaintenanceScopeAll}
+	w := MaintenanceWindow{StartsAt: start, EndsAt: start.Add(time.Hour), Timezone: "UTC", Recurrence: RecurrenceDaily, Scope: MaintenanceScopeAll}
 	for day := 0; day < 5; day++ {
 		occ := start.Add(time.Duration(day) * 24 * time.Hour)
 		if !w.ActiveAt(occ.Add(30 * time.Minute)) {
@@ -63,6 +64,54 @@ func TestMaintenanceRecurrenceIsDSTSafe(t *testing.T) {
 		if w.ActiveAt(occ.Add(90 * time.Minute)) {
 			t.Fatalf("day %d: active after window", day)
 		}
+	}
+}
+
+// With an IANA timezone, daily recurrence keeps the same local wall-clock time across DST.
+func TestMaintenanceRecurrenceKeepsWallClockInTimezone(t *testing.T) {
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Skip("tzdata unavailable")
+	}
+	start := time.Date(2026, 10, 24, 3, 30, 0, 0, berlin)
+	w := MaintenanceWindow{
+		StartsAt: start.UTC(), EndsAt: start.Add(time.Hour).UTC(),
+		Timezone: "Europe/Berlin", Recurrence: RecurrenceDaily, Scope: MaintenanceScopeAll,
+	}
+	for _, day := range []int{0, 1, 2} {
+		local := time.Date(2026, 10, 24+day, 3, 45, 0, 0, berlin)
+		occStart, _, active, ok := w.Occurrence(local)
+		if !ok || !active {
+			t.Fatalf("day %d: expected active occurrence", day)
+		}
+		gotLocal := occStart.In(berlin)
+		if gotLocal.Hour() != 3 || gotLocal.Minute() != 30 {
+			t.Fatalf("day %d: wall clock = %s, want 03:30 Berlin", day, gotLocal.Format("15:04 MST"))
+		}
+	}
+}
+
+func TestMaintenanceMonthlyInTimezone(t *testing.T) {
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Skip("tzdata unavailable")
+	}
+	start := time.Date(2026, 1, 15, 9, 0, 0, 0, berlin)
+	w := MaintenanceWindow{
+		StartsAt: start.UTC(), EndsAt: start.Add(2 * time.Hour).UTC(),
+		Timezone: "Europe/Berlin", Recurrence: RecurrenceMonthly, Scope: MaintenanceScopeAll,
+	}
+	now := time.Date(2026, 3, 15, 9, 30, 0, 0, berlin)
+	occStart, occEnd, active, ok := w.Occurrence(now)
+	if !ok || !active {
+		t.Fatalf("expected active March occurrence, got ok=%v active=%v", ok, active)
+	}
+	local := occStart.In(berlin)
+	if local.Year() != 2026 || local.Month() != time.March || local.Day() != 15 || local.Hour() != 9 {
+		t.Fatalf("occurrence start = %v", local)
+	}
+	if !occEnd.Equal(occStart.Add(2 * time.Hour)) {
+		t.Fatalf("occurrence end = %v", occEnd)
 	}
 }
 
@@ -78,11 +127,11 @@ func TestMaintenanceCovers(t *testing.T) {
 func TestMaintenanceSetUpcoming(t *testing.T) {
 	now := utc(2026, 10, 23, 12, 0)
 	set := MaintenanceSet{Windows: []MaintenanceWindow{
-		{ID: 1, StartsAt: utc(2026, 10, 23, 11, 0), EndsAt: utc(2026, 10, 23, 13, 0), Scope: MaintenanceScopeAll},                          // active
-		{ID: 2, StartsAt: utc(2026, 10, 25, 1, 0), EndsAt: utc(2026, 10, 25, 2, 0), Scope: MaintenanceScopeAll},                            // in 7d
-		{ID: 3, StartsAt: utc(2026, 11, 25, 1, 0), EndsAt: utc(2026, 11, 25, 2, 0), Scope: MaintenanceScopeAll},                            // too far
-		{ID: 4, StartsAt: utc(2026, 10, 1, 1, 0), EndsAt: utc(2026, 10, 1, 2, 0), Scope: MaintenanceScopeAll},                              // past
-		{ID: 5, StartsAt: utc(2026, 10, 1, 5, 0), EndsAt: utc(2026, 10, 1, 6, 0), Recurrence: RecurrenceDaily, Scope: MaintenanceScopeAll}, // next 05:00
+		{ID: 1, StartsAt: utc(2026, 10, 23, 11, 0), EndsAt: utc(2026, 10, 23, 13, 0), Scope: MaintenanceScopeAll},
+		{ID: 2, StartsAt: utc(2026, 10, 25, 1, 0), EndsAt: utc(2026, 10, 25, 2, 0), Scope: MaintenanceScopeAll},
+		{ID: 3, StartsAt: utc(2026, 11, 25, 1, 0), EndsAt: utc(2026, 11, 25, 2, 0), Scope: MaintenanceScopeAll},
+		{ID: 4, StartsAt: utc(2026, 10, 1, 1, 0), EndsAt: utc(2026, 10, 1, 2, 0), Scope: MaintenanceScopeAll},
+		{ID: 5, StartsAt: utc(2026, 10, 1, 5, 0), EndsAt: utc(2026, 10, 1, 6, 0), Recurrence: RecurrenceDaily, Scope: MaintenanceScopeAll},
 	}}
 	got := set.Upcoming(now, now.Add(7*24*time.Hour))
 	ids := []int64{}
@@ -108,7 +157,6 @@ func TestNoNotificationDuringMaintenanceAndSingleSummaryAfter(t *testing.T) {
 	d.now = func() time.Time { return now }
 	up := &Result{Status: StatusUp}
 
-	// First check inside the window: goes down. Nothing is sent, nothing opens an incident.
 	snap := Snapshot{Monitor: Monitor{ID: 8, NotifyOnRecovery: true}, LastResult: up}
 	d.ProcessResult(context.Background(), snap, Result{MonitorID: 8, Status: StatusDown, CheckedAt: now})
 	if len(captured) != 0 {
@@ -124,20 +172,17 @@ func TestNoNotificationDuringMaintenanceAndSingleSummaryAfter(t *testing.T) {
 		t.Fatalf("catch-up marker = %q, want status before the window", store.markers[8])
 	}
 	if len(store.suppressed) != 0 {
-		// no notifier with endpoint set up for suppressed logging? notifierFunc has endpoint 1
 		if store.suppressed[0] != 8 {
 			t.Fatalf("suppressed = %v", store.suppressed)
 		}
 	}
 
-	// A later check inside the window keeps the original marker.
 	snap = Snapshot{Monitor: Monitor{ID: 8, MuteStartStatus: StatusUp, NotifyOnRecovery: true}, LastResult: &Result{Status: StatusDown}}
 	d.ProcessResult(context.Background(), snap, Result{MonitorID: 8, Status: StatusDown, CheckedAt: now.Add(time.Minute)})
 	if len(captured) != 0 || store.markers[8] != StatusUp {
 		t.Fatalf("second maintenance check changed state: %+v %v", captured, store.markers)
 	}
 
-	// Window over: exactly one catch-up summary, marker cleared.
 	store.inMaintenance = false
 	d.ProcessResult(context.Background(), snap, Result{MonitorID: 8, Status: StatusDown, CheckedAt: now.Add(time.Hour)})
 	if len(captured) != 1 || !captured[0].CatchUp || captured[0].Previous != StatusUp || captured[0].Current != StatusDown {
@@ -156,7 +201,6 @@ func TestNoSummaryWhenStatusUnchangedAfterMaintenance(t *testing.T) {
 	d.now = func() time.Time { return now }
 	snap := Snapshot{Monitor: Monitor{ID: 8, MuteStartStatus: StatusUp, NotifyOnRecovery: true}, LastResult: &Result{Status: StatusDown}}
 	d.ProcessResult(context.Background(), snap, Result{MonitorID: 8, Status: StatusUp, CheckedAt: now})
-	// down -> up with start=up: no summary, no transition for the recovery either.
 	if notifier.calls != 0 {
 		t.Fatalf("calls = %d, want 0", notifier.calls)
 	}

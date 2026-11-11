@@ -141,6 +141,11 @@ func TestMaintenanceWindowValidation(t *testing.T) {
 			w.Recurrence = monitor.RecurrenceDaily
 			w.EndsAt = w.StartsAt.Add(25 * time.Hour)
 		}, ErrMaintenanceTooLong},
+		"monthly > 31d": {func(w *monitor.MaintenanceWindow) {
+			w.Recurrence = monitor.RecurrenceMonthly
+			w.EndsAt = w.StartsAt.Add(32 * 24 * time.Hour)
+		}, ErrMaintenanceTooLong},
+		"bad timezone":  {func(w *monitor.MaintenanceWindow) { w.Timezone = "Not/AZone" }, ErrMaintenanceTimezone},
 		"monitors none": {func(w *monitor.MaintenanceWindow) { w.Scope = monitor.MaintenanceScopeMonitors }, ErrMaintenanceTargets},
 		"groups none":   {func(w *monitor.MaintenanceWindow) { w.Scope = monitor.MaintenanceScopeGroups }, ErrMaintenanceTargets},
 	} {

@@ -62,6 +62,11 @@
       <input type="checkbox" name="noindex" {{if $sp.NoIndex}}checked{{end}}>
       <span>{{index $.Translations "settings.status_page.noindex"}}</span>
     </label>
+    <label>
+      <span>{{index $.Translations "settings.status_page.announce_hours"}}</span>
+      <input type="number" name="announce_hours" min="1" max="720" step="1" value="{{$sp.AnnounceHours}}">
+      <small class="muted compact">{{index $.Translations "settings.status_page.announce_hours_hint"}}</small>
+    </label>
 
     <h3>{{index $.Translations "settings.status_page.access"}}</h3>
     <p class="muted compact">{{index $.Translations "settings.status_page.access_hint"}}</p>
