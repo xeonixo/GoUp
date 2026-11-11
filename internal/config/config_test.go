@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 func validConfig() Config {
 	return Config{
@@ -137,6 +140,26 @@ func TestValidateRejects31CharKey(t *testing.T) {
 	cfg.Auth.Mode = AuthModeLocal
 	if err := validate(cfg); err != nil {
 		t.Fatalf("32 char key must pass: %v", err)
+	}
+}
+
+func TestLoadReadsSSOSecretKeyPrevious(t *testing.T) {
+	t.Setenv("GOUP_ADDR", ":8080")
+	t.Setenv("GOUP_BASE_URL", "http://localhost:8080")
+	t.Setenv("GOUP_DATA_DIR", t.TempDir())
+	t.Setenv("GOUP_SESSION_KEY", "session-key-1234567890-abcdefghijkl")
+	t.Setenv("GOUP_SSO_SECRET_KEY", "sso-secret-key-123456-abcdefghijklmn")
+	t.Setenv("GOUP_CONTROL_PLANE_ADMIN_KEY", "admin-cookie-key-123456-abcdefghijklm")
+	t.Setenv("GOUP_SSO_SECRET_KEY_PREVIOUS", "previous-sso-secret-key-abcdefghijkl")
+	t.Setenv("GOUP_AUTH_MODE", "disabled")
+	_ = os.Unsetenv("GOUP_CONTROL_DB_PATH")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.SSOSecretKeyPrevious != "previous-sso-secret-key-abcdefghijkl" {
+		t.Fatalf("SSOSecretKeyPrevious = %q", cfg.SSOSecretKeyPrevious)
 	}
 }
 

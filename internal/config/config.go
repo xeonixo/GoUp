@@ -26,6 +26,9 @@ type Config struct {
 	LogLevel             string
 	SessionKey           string
 	SSOSecretKey         string
+	// SSOSecretKeyPrevious is an optional prior encryption key used only to
+	// decrypt secrets while rotating to SSOSecretKey (GOUP_SSO_SECRET_KEY_PREVIOUS).
+	SSOSecretKeyPrevious string
 	ControlPlaneAdminKey string
 	MonitorWorkers       int
 	Auth                 AuthConfig
@@ -66,6 +69,7 @@ func Load() (Config, error) {
 		LogLevel:             envOrDefault("GOUP_LOG_LEVEL", "info"),
 		SessionKey:           strings.TrimSpace(os.Getenv("GOUP_SESSION_KEY")),
 		SSOSecretKey:         strings.TrimSpace(os.Getenv("GOUP_SSO_SECRET_KEY")),
+		SSOSecretKeyPrevious: strings.TrimSpace(os.Getenv("GOUP_SSO_SECRET_KEY_PREVIOUS")),
 		ControlPlaneAdminKey: strings.TrimSpace(os.Getenv("GOUP_CONTROL_PLANE_ADMIN_KEY")),
 		MonitorWorkers:       envIntOrDefault("GOUP_MONITOR_WORKERS", 4),
 		SetupToken:           strings.TrimSpace(os.Getenv("GOUP_SETUP_TOKEN")),
