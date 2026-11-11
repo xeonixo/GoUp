@@ -38,7 +38,7 @@ func New(ctx context.Context) (*App, error) {
 		return nil, fmt.Errorf("create data dir: %w", err)
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: parseLogLevel(cfg.LogLevel)}))
+	logger := newLogger(cfg.LogLevel, cfg.LogFormat)
 	store.HardenDataDir(cfg.DataDir)
 	monitorrunner.SetAllowPrivateTargets(cfg.MonitorAllowPrivate)
 
@@ -209,6 +209,18 @@ func (a *App) Close() error {
 		}
 	}
 	return firstErr
+}
+
+func newLogger(level, format string) *slog.Logger {
+	opts := &slog.HandlerOptions{Level: parseLogLevel(level)}
+	var handler slog.Handler
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case config.LogFormatJSON:
+		handler = slog.NewJSONHandler(os.Stdout, opts)
+	default:
+		handler = slog.NewTextHandler(os.Stdout, opts)
+	}
+	return slog.New(handler)
 }
 
 func parseLogLevel(value string) slog.Level {

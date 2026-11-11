@@ -201,6 +201,7 @@ Configuration is provided through environment variables, typically via `.env` an
 | `GOUP_BASE_URL` | `http://localhost:8080` | External base URL used for CSRF validation, OIDC callbacks, and generated links |
 | `GOUP_DATA_DIR` | `/data` | Directory containing all SQLite database files |
 | `GOUP_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `GOUP_LOG_FORMAT` | `text` | Log format: `text` or `json` (structured `slog` JSON handler) |
 | `GOUP_MONITOR_WORKERS` | `4` | Maximum number of local monitor checks running concurrently |
 | `GOUP_TRUSTED_PROXIES` | _(empty)_ | Comma separated CIDRs/IPs of reverse proxies whose `X-Forwarded-For`, `X-Real-IP` and `X-Forwarded-Proto` headers are trusted. See [Running behind a reverse proxy](#running-behind-a-reverse-proxy). |
 | `GOUP_SETUP_TOKEN` | _(random)_ | Token required for the initial `/admin/setup` form. If unset, a random token is generated at startup and written to the server log while setup is pending. |
@@ -553,6 +554,17 @@ Exposed series, labelled with `monitor`, `monitor_id`, `kind` and `group`:
 | `goup_build_info{version=...}` | build information |
 
 Repeated requests with an invalid token are rate limited per client IP (HTTP 429). Monitor targets and hosts are never part of the output.
+
+### Process-level metrics
+
+Process observability (goroutines, memory stats, open DB count, remote-node last-seen summary, notification retry queue depth) is available separately so it does not conflict with tenant `/{slug}/metrics`:
+
+| Endpoint | Access |
+| --- | --- |
+| `GET /admin/system/metrics` | Control-plane admin session required |
+| `GET /metrics-internal` | Unauthenticated, loopback peers only |
+
+Every HTTP response also includes `X-Request-ID` (accepted from the client or generated). Request logs include that ID when present.
 
 ## Running behind a reverse proxy
 

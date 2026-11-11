@@ -27,6 +27,22 @@ func TestParseLogLevel(t *testing.T) {
 	}
 }
 
+func TestNewLoggerFormats(t *testing.T) {
+	text := newLogger("info", "text")
+	if text == nil {
+		t.Fatalf("text logger nil")
+	}
+	jsonLogger := newLogger("debug", "json")
+	if jsonLogger == nil {
+		t.Fatalf("json logger nil")
+	}
+	// Unknown format falls back to text handler.
+	fallback := newLogger("info", "weird")
+	if fallback == nil {
+		t.Fatalf("fallback logger nil")
+	}
+}
+
 func TestTenantHasAppDatabase(t *testing.T) {
 	tempDir := t.TempDir()
 	filePath := filepath.Join(tempDir, "tenant.db")

@@ -74,14 +74,17 @@ func (s *Server) logging(next http.Handler) http.Handler {
 		if status == 0 {
 			status = http.StatusOK
 		}
-		s.logger.Info(
-			"http request",
+		attrs := []any{
 			"method", r.Method,
 			"path", r.URL.Path,
 			"remote", s.clientIP(r),
 			"status", status,
 			"bytes", lw.bytesWritten,
 			"duration", time.Since(start).String(),
-		)
+		}
+		if id := requestIDFromContext(r.Context()); id != "" {
+			attrs = append(attrs, "request_id", id)
+		}
+		s.logger.Info("http request", attrs...)
 	})
 }

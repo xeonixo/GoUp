@@ -131,7 +131,7 @@ Offener Fokus danach: **Tier 3** (u. a. Remote-Node-mTLS).
 | **mTLS für Remote Nodes** | Explizit geplant in [remote-node/README.md](../remote-node/README.md); optionale Client-Certs, CA-Env, Verify auf `/node/*`. Hoher Ops-Aufwand; nach Token-Grace (T1.5). |
 | gRPC-Health / Prometheus-Query-Monitore | Höhere Dependencies; widerspricht stdlib-first in architecture.md |
 | Browser/Script-Checks (Playwright) | RAM/Prozess-Kosten kollidieren mit Single-Process-Ziel |
-| Process-Level-Metrics, JSON-Logs, Request-IDs | Nützlich für große Installationen; nicht blocker für Self-Host-MVP-Plus |
+| Process-Level-Metrics, JSON-Logs, Request-IDs | Nützlich für große Installationen; nicht blocker für Self-Host-MVP-Plus *(teilweise umgesetzt: `GOUP_LOG_FORMAT`, request IDs, `/admin/system/metrics`)* |
 | Status Custom Domain / Custom CSS | Nach Branding-MVP (T1.3) |
 | Persistente Lockouts über Restarts | Nur relevant bei Multi-Replica; heute Single-Process-Annahme |
 | Hash-only Access-Tokens / Bootstrap-Fingerprints | Defense-in-depth nach Grace + Rate-Limits |

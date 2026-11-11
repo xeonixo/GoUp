@@ -163,6 +163,53 @@ func TestLoadReadsSSOSecretKeyPrevious(t *testing.T) {
 	}
 }
 
+func TestLoadLogFormat(t *testing.T) {
+	t.Setenv("GOUP_ADDR", ":8080")
+	t.Setenv("GOUP_BASE_URL", "http://localhost:8080")
+	t.Setenv("GOUP_DATA_DIR", t.TempDir())
+	t.Setenv("GOUP_SESSION_KEY", "session-key-1234567890-abcdefghijkl")
+	t.Setenv("GOUP_SSO_SECRET_KEY", "sso-secret-key-123456-abcdefghijklmn")
+	t.Setenv("GOUP_CONTROL_PLANE_ADMIN_KEY", "admin-cookie-key-123456-abcdefghijklm")
+	t.Setenv("GOUP_AUTH_MODE", "disabled")
+	_ = os.Unsetenv("GOUP_CONTROL_DB_PATH")
+	_ = os.Unsetenv("GOUP_LOG_FORMAT")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.LogFormat != LogFormatText {
+		t.Fatalf("default LogFormat = %q", cfg.LogFormat)
+	}
+
+	t.Setenv("GOUP_LOG_FORMAT", "JSON")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load json: %v", err)
+	}
+	if cfg.LogFormat != LogFormatJSON {
+		t.Fatalf("LogFormat = %q", cfg.LogFormat)
+	}
+
+	t.Setenv("GOUP_LOG_FORMAT", "yaml")
+	if _, err := Load(); err == nil {
+		t.Fatalf("expected invalid GOUP_LOG_FORMAT to fail")
+	}
+}
+
+func TestValidateLogFormat(t *testing.T) {
+	cfg := validConfig()
+	cfg.Auth.Mode = AuthModeLocal
+	cfg.LogFormat = "xml"
+	if err := validate(cfg); err == nil {
+		t.Fatalf("expected invalid log format to fail")
+	}
+	cfg.LogFormat = LogFormatJSON
+	if err := validate(cfg); err != nil {
+		t.Fatalf("json format must pass: %v", err)
+	}
+}
+
 func TestLoadAuditRetentionDays(t *testing.T) {
 	t.Setenv("GOUP_ADDR", ":8080")
 	t.Setenv("GOUP_BASE_URL", "http://localhost:8080")

@@ -18,12 +18,19 @@ const (
 	AuthModeOIDC     AuthMode = "oidc"
 )
 
+const (
+	LogFormatText = "text"
+	LogFormatJSON = "json"
+)
+
 type Config struct {
 	Addr                 string
 	BaseURL              string
 	DataDir              string
 	ControlPlaneDBPath   string
 	LogLevel             string
+	// LogFormat selects slog output: "text" (default) or "json" (GOUP_LOG_FORMAT).
+	LogFormat            string
 	SessionKey           string
 	SSOSecretKey         string
 	// SSOSecretKeyPrevious is an optional prior encryption key used only to
@@ -70,6 +77,7 @@ func Load() (Config, error) {
 		DataDir:              envOrDefault("GOUP_DATA_DIR", "./data"),
 		ControlPlaneDBPath:   os.Getenv("GOUP_CONTROL_DB_PATH"),
 		LogLevel:             envOrDefault("GOUP_LOG_LEVEL", "info"),
+		LogFormat:            strings.ToLower(strings.TrimSpace(envOrDefault("GOUP_LOG_FORMAT", LogFormatText))),
 		SessionKey:           strings.TrimSpace(os.Getenv("GOUP_SESSION_KEY")),
 		SSOSecretKey:         strings.TrimSpace(os.Getenv("GOUP_SSO_SECRET_KEY")),
 		SSOSecretKeyPrevious: strings.TrimSpace(os.Getenv("GOUP_SSO_SECRET_KEY_PREVIOUS")),
@@ -105,6 +113,9 @@ func Load() (Config, error) {
 	}
 	if cfg.AuditRetentionDays <= 0 {
 		cfg.AuditRetentionDays = 90
+	}
+	if cfg.LogFormat == "" {
+		cfg.LogFormat = LogFormatText
 	}
 	if err := validate(cfg); err != nil {
 		return Config{}, err
@@ -150,6 +161,11 @@ func validate(cfg Config) error {
 	}
 	if cfg.AuditRetentionDays < 0 {
 		return errors.New("GOUP_AUDIT_RETENTION_DAYS must not be negative")
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.LogFormat)) {
+	case "", LogFormatText, LogFormatJSON:
+	default:
+		return fmt.Errorf("unsupported GOUP_LOG_FORMAT %q (want text or json)", cfg.LogFormat)
 	}
 
 	switch cfg.Auth.Mode {

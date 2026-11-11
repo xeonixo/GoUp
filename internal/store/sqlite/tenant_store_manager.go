@@ -70,6 +70,21 @@ func (m *TenantStoreManager) StoreForTenant(ctx context.Context, tenantID int64)
 	return store, nil
 }
 
+// OpenStoreCount returns how many tenant SQLite stores are currently open
+// (default store plus lazily opened per-tenant stores).
+func (m *TenantStoreManager) OpenStoreCount() int {
+	if m == nil {
+		return 0
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := len(m.stores)
+	if m.defaultStore != nil {
+		n++
+	}
+	return n
+}
+
 func (m *TenantStoreManager) Close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
