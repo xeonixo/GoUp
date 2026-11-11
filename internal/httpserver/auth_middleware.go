@@ -64,8 +64,9 @@ func (s *Server) requireUserManagement(next http.Handler) http.Handler {
 	})
 }
 
-// requireAdminWhenAuth blocks write operations for authenticated non-admin users.
-// When no session exists (auth-disabled tenant) the request is passed through.
+// requireAdminWhenAuth blocks write operations that change trust boundaries for
+// authenticated non-admin users. When no session exists (auth-disabled tenant)
+// the request is passed through.
 func (s *Server) requireAdminWhenAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		session, err := s.sessionForRequest(r)
@@ -86,6 +87,38 @@ func (s *Server) requireAdminWhenAuth(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// requireOperatorWhenAuth allows admin and operator write access for monitors,
+// groups, and maintenance. Viewers are rejected. Auth-disabled tenants pass through.
+func (s *Server) requireOperatorWhenAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		session, err := s.sessionForRequest(r)
+		if err == nil {
+			if tenantID := tenantIDFromRequest(r); tenantID > 0 && session.TenantID > 0 && session.TenantID != tenantID {
+				slug := tenantSlugFromRequest(r)
+				if slug != "" {
+					http.Redirect(w, r, "/"+slug+"/login", http.StatusSeeOther)
+				} else {
+					http.Redirect(w, r, "/", http.StatusSeeOther)
+				}
+				return
+			}
+			if !store.TenantRoleCanWrite(session.Role) {
+				http.Error(w, "forbidden: operator role required", http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func sessionIsAdmin(user *auth.UserSession) bool {
+	return user == nil || strings.EqualFold(strings.TrimSpace(user.Role), "admin")
+}
+
+func sessionCanWrite(user *auth.UserSession) bool {
+	return user == nil || store.TenantRoleCanWrite(user.Role)
 }
 
 func (s *Server) requireControlPlaneAdmin(next http.Handler) http.Handler {

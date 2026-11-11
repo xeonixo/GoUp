@@ -55,6 +55,8 @@ func (s *Server) handleSettingsProfile(w http.ResponseWriter, r *http.Request) {
 		Title:           "Einstellungen · Profil · GoUp",
 		UILanguage:      normalizeUILanguage(profileUser.PreferredLanguage),
 		User:            user,
+		IsAdmin:         sessionIsAdmin(user),
+		CanWrite:        sessionCanWrite(user),
 		AdminTenant:     tenant,
 		ProfileUser:     profileUser,
 		ProfileNotify:   notify,

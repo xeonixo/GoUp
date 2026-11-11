@@ -247,9 +247,11 @@ WHERE user_id = ?
 
 func (s *ControlPlaneStore) UpdateTenantUserRole(ctx context.Context, tenantID, userID int64, role string) error {
 	role = strings.ToLower(strings.TrimSpace(role))
-	if role != "viewer" && role != "admin" {
+	normalized := NormalizeTenantRole(role)
+	if !isValidTenantRole(strings.ToLower(strings.TrimSpace(role))) {
 		return fmt.Errorf("invalid role %q", role)
 	}
+	role = normalized
 
 	result, err := s.db.ExecContext(ctx, `
 UPDATE tenant_memberships

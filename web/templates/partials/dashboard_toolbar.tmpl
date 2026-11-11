@@ -5,7 +5,7 @@
     <button type="button" class="button button-small button-secondary" data-status-filter="problems" aria-pressed="false">{{index $.Translations "dashboard.filter.problems"}}</button>
     <button type="button" class="button button-small button-secondary" data-status-filter="paused" aria-pressed="false">{{index $.Translations "dashboard.filter.paused"}}</button>
   </div>
-  {{if .IsAdmin}}
+  {{if .CanWrite}}
   <button type="button" class="button button-small button-secondary" id="bulk-toggle" aria-pressed="false">{{index $.Translations "dashboard.bulk.select"}}</button>
   {{end}}
   <p class="muted compact board-filter-empty" id="board-filter-empty" hidden>{{index $.Translations "dashboard.filter.no_matches"}}</p>

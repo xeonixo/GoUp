@@ -8,11 +8,13 @@ import (
 	"time"
 )
 
-// NormalizeTenantRole returns "admin" or "viewer"; anything else yields "viewer".
+// NormalizeTenantRole returns "admin", "operator", or "viewer"; anything else yields "viewer".
 func NormalizeTenantRole(role string) string {
 	switch strings.ToLower(strings.TrimSpace(role)) {
 	case "admin":
 		return "admin"
+	case "operator":
+		return "operator"
 	default:
 		return "viewer"
 	}
@@ -20,10 +22,20 @@ func NormalizeTenantRole(role string) string {
 
 func isValidTenantRole(role string) bool {
 	switch strings.ToLower(strings.TrimSpace(role)) {
-	case "admin", "viewer":
+	case "admin", "operator", "viewer":
 		return true
 	}
 	return false
+}
+
+// TenantRoleCanWrite reports whether role may change monitors, groups, and maintenance.
+func TenantRoleCanWrite(role string) bool {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "admin", "operator":
+		return true
+	default:
+		return false
+	}
 }
 
 // RemoveUserFromTenant removes a user from a tenant. Users that have an OIDC

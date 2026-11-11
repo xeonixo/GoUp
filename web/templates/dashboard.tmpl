@@ -9,7 +9,7 @@
   <a href="{{$.AppBase}}?trend={{.Value}}" class="button button-small {{if not .Selected}}button-secondary{{end}}" role="tab" aria-selected="{{if .Selected}}true{{else}}false{{end}}" {{if .Selected}}aria-current="page"{{end}}>{{.Label}}</a>
   {{end}}
   </div>
-  {{if .IsAdmin}}
+  {{if .CanWrite}}
   <a href="{{$.AppBase}}monitors/export" class="button button-secondary button-small">{{index $.Translations "dashboard.topbar.export_monitors"}}</a>
   <a href="{{$.AppBase}}monitors/import" class="button button-secondary button-small">{{index $.Translations "dashboard.topbar.import_monitors"}}</a>
   <button class="button" type="button" id="open-create-monitor">{{index $.Translations "dashboard.topbar.create_monitor"}}</button>
@@ -25,7 +25,7 @@
 <section class="notice error">{{.Error}}</section>
 {{end}}
 
-<div id="dashboard-page" data-app-base="{{$.AppBase}}" data-trend-value="{{.TrendValue}}" data-state-owner="{{if .User}}{{if .User.Email}}{{.User.Email}}{{else}}{{.User.Name}}{{end}}{{end}}" data-is-admin="{{if .IsAdmin}}1{{else}}0{{end}}">
+<div id="dashboard-page" data-app-base="{{$.AppBase}}" data-trend-value="{{.TrendValue}}" data-state-owner="{{if .User}}{{if .User.Email}}{{.User.Email}}{{else}}{{.User.Name}}{{end}}{{end}}" data-is-admin="{{if .CanWrite}}1{{else}}0{{end}}">
 
 {{template "dashboard_stats" .}}
 

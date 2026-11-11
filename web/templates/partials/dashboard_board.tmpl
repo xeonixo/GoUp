@@ -5,7 +5,7 @@
       <div class="service-group-list">
         {{range .Services}}
         {{$serviceTitle := .Title}}
-        <details class="service-cluster" {{if .Open}}open{{end}} {{if $.IsAdmin}}draggable="true"{{end}} data-group="{{.Title}}">
+        <details class="service-cluster" {{if .Open}}open{{end}} {{if $.CanWrite}}draggable="true"{{end}} data-group="{{.Title}}">
           <summary class="service-cluster-header">
             <div class="service-summary">
               <div class="service-summary-top">
@@ -21,7 +21,7 @@
                 <div class="service-summary-right">
                   <span class="service-count" aria-label="{{printf (index $.Translations "dashboard.group.monitor_count_aria") (len .Monitors)}}">{{len .Monitors}}</span>
                   <span class="status-pill {{.StatusClass}}">{{if eq .StatusLabel "MAINTENANCE"}}{{index $.Translations "status.maintenance"}}{{else}}{{.StatusLabel}}{{end}}</span>
-                  {{if $.IsAdmin}}
+                  {{if $.CanWrite}}
                   <details class="action-menu">
                   <summary class="action-menu-trigger" aria-label="{{printf (index $.Translations "dashboard.group.actions_aria") .Title}}">⋯</summary>
                   <div class="action-menu-list">
@@ -66,16 +66,16 @@
           </summary>
           <div class="monitor-grid">
       {{range .Monitors}}
-      <article class="card monitor-card {{.StatusClass}}" {{if $.IsAdmin}}draggable="true"{{end}} data-monitor-id="{{.ID}}" data-group="{{$serviceTitle}}" data-interval-seconds="{{.IntervalSeconds}}" data-last-check="{{.LastCheckedAtRaw}}" data-status="{{.StatusClass}}" data-search="{{.Name}} {{.Target}} {{$serviceTitle}} {{.Kind}}">
+      <article class="card monitor-card {{.StatusClass}}" {{if $.CanWrite}}draggable="true"{{end}} data-monitor-id="{{.ID}}" data-group="{{$serviceTitle}}" data-interval-seconds="{{.IntervalSeconds}}" data-last-check="{{.LastCheckedAtRaw}}" data-status="{{.StatusClass}}" data-search="{{.Name}} {{.Target}} {{$serviceTitle}} {{.Kind}}">
         <div class="monitor-card-header">
-          {{if $.IsAdmin}}<input type="checkbox" class="bulk-select" value="{{.ID}}" aria-label="{{printf (index $.Translations "dashboard.bulk.select_aria") .Name}}">{{end}}
+          {{if $.CanWrite}}<input type="checkbox" class="bulk-select" value="{{.ID}}" aria-label="{{printf (index $.Translations "dashboard.bulk.select_aria") .Name}}">{{end}}
           <div>
               <h5><a class="monitor-detail-link" href="{{$.AppBase}}monitors/{{.ID}}">{{.Name}}</a></h5>
             <p class="muted compact">{{.Kind}}{{if .TLSMode}} / {{.TLSMode}}{{end}} · {{index $.Translations "dashboard.monitor.every"}} {{.Interval}} · {{index $.Translations "dashboard.monitor.timeout"}} {{.Timeout}}</p>
             {{if .Muted}}<span class="muted-badge" title="{{index $.Translations "dashboard.monitor.muted_until"}} {{.MutedUntilLabel}}">🔕 <time class="client-time" datetime="{{.MutedUntilRaw}}" data-format="hour">{{.MutedUntilLabel}}</time></span>{{end}}
           </div>
           <div class="monitor-header-right">
-            {{if and $.IsAdmin (ne .ExecutorKind "remote")}}
+            {{if and $.CanWrite (ne .ExecutorKind "remote")}}
             <button
               class="monitor-cycle-indicator monitor-cycle-trigger"
               type="button"
@@ -86,7 +86,7 @@
             <span class="monitor-cycle-indicator" aria-hidden="true"></span>
             {{end}}
             <span class="status-pill {{.StatusClass}}"{{if .InMaintenance}} title="{{.MaintenanceTitle}}"{{end}}>{{if .InMaintenance}}{{index $.Translations "status.maintenance"}}{{else}}{{.StatusLabel}}{{end}}</span>
-            {{if $.IsAdmin}}
+            {{if $.CanWrite}}
             <details class="action-menu">
               <summary class="action-menu-trigger" aria-label="{{printf (index $.Translations "dashboard.monitor.actions_aria") .Name}}">⋯</summary>
               <div class="action-menu-list">

@@ -52,7 +52,8 @@
     <div class="form-group">
       <label for="default_role">{{index $.Translations "admin.provider_form.default_role_label"}}</label>
       <select id="default_role" name="default_role">
-        <option value="viewer" {{if ne .AdminProvider.DefaultRole "admin"}}selected{{end}}>viewer</option>
+        <option value="viewer" {{if eq .AdminProvider.DefaultRole "viewer"}}selected{{end}}>viewer</option>
+        <option value="operator" {{if eq .AdminProvider.DefaultRole "operator"}}selected{{end}}>operator</option>
         <option value="admin" {{if eq .AdminProvider.DefaultRole "admin"}}selected{{end}}>admin</option>
       </select>
     </div>
