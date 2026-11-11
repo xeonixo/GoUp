@@ -2,9 +2,11 @@ package httpserver
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 func (s *Server) handleSaveGroup(w http.ResponseWriter, r *http.Request) {
@@ -89,6 +91,55 @@ func (s *Server) handleDeleteGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, s.redirectDashboardPath(r, strings.TrimSpace(r.FormValue("trend")), "Gruppe inkl. Monitore gelöscht", ""), http.StatusSeeOther)
+}
+
+
+func (s *Server) handleReassignGroupExecutor(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	base := s.tenantAppBase(r)
+	appStore, err := s.appStore(r)
+	if err != nil {
+		s.dashboardActionRedirect(w, r, base+"?error="+url.QueryEscape("Tenant konnte nicht aufgelöst werden"))
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.dashboardActionRedirect(w, r, base+"?error="+url.QueryEscape("Formular konnte nicht gelesen werden"))
+		return
+	}
+	groupName := strings.TrimSpace(r.FormValue("group"))
+	if groupName == "" {
+		s.dashboardActionRedirect(w, r, base+"?error="+url.QueryEscape("Ungültige Gruppe"))
+		return
+	}
+	executorKind, executorRef := parseMonitorExecutorSelection(strings.TrimSpace(r.FormValue("executor")))
+	offlineNotice := false
+	if executorKind == "remote" {
+		tenantID := tenantIDFromRequest(r)
+		if tenantID <= 0 {
+			s.dashboardActionRedirect(w, r, base+"?error="+url.QueryEscape("Tenant konnte nicht aufgelöst werden"))
+			return
+		}
+		node, err := s.controlStore.GetRemoteNodeByTenantAndNodeID(r.Context(), tenantID, executorRef)
+		if err != nil {
+			s.dashboardActionRedirect(w, r, base+"?error="+url.QueryEscape("Ausgewählte Remote-Node ist nicht verfügbar"))
+			return
+		}
+		offlineNotice = !node.IsOnline(time.Now().UTC())
+	}
+	updated, err := appStore.SetGroupMonitorsExecutor(r.Context(), groupName, executorKind, executorRef)
+	if err != nil {
+		s.dashboardActionRedirect(w, r, base+"?error="+url.QueryEscape("Gruppe konnte nicht neu zugewiesen werden"))
+		return
+	}
+	s.writeAudit(r, "group.reassign_executor", "tenant", tenantIDFromRequest(r), fmt.Sprintf("group=%s executor=%s:%s updated=%d", groupName, executorKind, executorRef, updated))
+	notice := fmt.Sprintf("%d Monitor(e) neu zugewiesen", updated)
+	if offlineNotice {
+		notice = fmt.Sprintf("%d Monitor(e) neu zugewiesen. Die gewählte Remote-Node ist derzeit offline.", updated)
+	}
+	s.dashboardActionRedirect(w, r, base+"?notice="+url.QueryEscape(notice))
 }
 
 func (s *Server) handleReorderGroup(w http.ResponseWriter, r *http.Request) {

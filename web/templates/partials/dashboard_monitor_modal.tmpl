@@ -53,10 +53,11 @@
       <span>{{index $.Translations "dashboard.modal.executor_label"}}</span>
       <select name="executor" id="monitor-executor">
         {{range .MonitorExecutors}}
-        <option value="{{.Value}}">{{.Label}}</option>
+        <option value="{{.Value}}" {{if not .Online}}data-offline="1"{{end}}>{{.Label}}</option>
         {{end}}
       </select>
       <small class="muted compact">{{index $.Translations "dashboard.modal.executor_hint"}}</small>
+      <small class="muted compact monitor-executor-offline-hint" id="monitor-executor-offline-hint" hidden>{{index $.Translations "dashboard.modal.executor_offline_warn"}}</small>
     </label>
     {{end}}
 

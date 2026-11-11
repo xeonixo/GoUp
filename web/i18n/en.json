@@ -1167,5 +1167,16 @@
   "matrix.reminder.headline": "{emoji} {name}: still DOWN for {duration}",
   "matrix.catchup": "Summary after mute or maintenance",
   "push.title.reminder": "🔴 {name} is still DOWN",
-  "push.body.reminder": "Down for {duration}"
+  "push.body.reminder": "Down for {duration}",
+  "dashboard.modal.executor_local": "Control plane (local)",
+  "dashboard.modal.executor_offline_warn": "This remote node is currently offline. Assigned checks will not run until it comes back online.",
+  "dashboard.group.reassign_label": "Run on",
+  "dashboard.group.reassign_submit": "Reassign group",
+  "dashboard.filter.node_aria": "Filter by remote node",
+  "dashboard.filter.node_all": "All nodes",
+  "flash.monitor_updated_node_offline": "Monitor updated. The selected remote node is currently offline.",
+  "flash.monitor_created_node_offline": "{kind} monitor created. The selected remote node is currently offline.",
+  "flash.monitors_reassigned": "{count} monitor(s) reassigned",
+  "flash.monitors_reassigned_node_offline": "{count} monitor(s) reassigned. The selected remote node is currently offline.",
+  "flash.group_reassign_failed": "Group could not be reassigned"
 }

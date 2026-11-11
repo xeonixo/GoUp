@@ -5,6 +5,18 @@
     <button type="button" class="button button-small button-secondary" data-status-filter="problems" aria-pressed="false">{{index $.Translations "dashboard.filter.problems"}}</button>
     <button type="button" class="button button-small button-secondary" data-status-filter="paused" aria-pressed="false">{{index $.Translations "dashboard.filter.paused"}}</button>
   </div>
+  {{if .HasRemoteNodes}}
+  <label class="board-node-filter">
+    <span class="sr-only">{{index $.Translations "dashboard.filter.node_aria"}}</span>
+    <select id="board-node-filter" aria-label="{{index $.Translations "dashboard.filter.node_aria"}}">
+      <option value="all">{{index $.Translations "dashboard.filter.node_all"}}</option>
+      <option value="local">{{index $.Translations "dashboard.modal.executor_local"}}</option>
+      {{range .MonitorExecutors}}{{if ne .Value "local"}}
+      <option value="{{.Value}}">{{.Label}}</option>
+      {{end}}{{end}}
+    </select>
+  </label>
+  {{end}}
   {{if .CanWrite}}
   <button type="button" class="button button-small button-secondary" id="bulk-toggle" aria-pressed="false">{{index $.Translations "dashboard.bulk.select"}}</button>
   {{end}}

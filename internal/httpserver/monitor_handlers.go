@@ -231,16 +231,19 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 	if kind == monitor.KindHeartbeat {
 		executorKind, executorRef = "local", ""
 	}
+	executorOffline := false
 	if executorKind == "remote" {
 		tenantID := tenantIDFromRequest(r)
 		if tenantID <= 0 {
 			http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Tenant konnte nicht aufgelöst werden"), http.StatusSeeOther)
 			return
 		}
-		if _, err := s.controlStore.GetRemoteNodeByTenantAndNodeID(r.Context(), tenantID, executorRef); err != nil {
+		node, err := s.controlStore.GetRemoteNodeByTenantAndNodeID(r.Context(), tenantID, executorRef)
+		if err != nil {
 			http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape("Ausgewählte Remote-Node ist nicht verfügbar"), http.StatusSeeOther)
 			return
 		}
+		executorOffline = !node.IsOnline(time.Now().UTC())
 	}
 
 	params := store.CreateMonitorParams{
@@ -288,7 +291,11 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		http.Redirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape("Monitor aktualisiert"), http.StatusSeeOther)
+		notice := "Monitor aktualisiert"
+		if executorOffline {
+			notice = "Monitor aktualisiert. Die gewählte Remote-Node ist derzeit offline."
+		}
+		http.Redirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape(notice), http.StatusSeeOther)
 		return
 	}
 
@@ -297,11 +304,15 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, s.tenantAppBase(r)+"?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
+	notice := monitorCreatedNotice(kind)
+	if executorOffline {
+		notice = notice + ". Die gewählte Remote-Node ist derzeit offline."
+	}
 	if kind == monitor.KindHeartbeat {
 		// The ping URL only exists now: show it on the detail page right away.
-		http.Redirect(w, r, s.tenantAppBase(r)+"monitors/"+strconv.FormatInt(createdID, 10)+"?notice="+url.QueryEscape(monitorCreatedNotice(kind)), http.StatusSeeOther)
+		http.Redirect(w, r, s.tenantAppBase(r)+"monitors/"+strconv.FormatInt(createdID, 10)+"?notice="+url.QueryEscape(notice), http.StatusSeeOther)
 		return
 	}
 
-	http.Redirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape(monitorCreatedNotice(kind)), http.StatusSeeOther)
+	http.Redirect(w, r, s.tenantAppBase(r)+"?notice="+url.QueryEscape(notice), http.StatusSeeOther)
 }

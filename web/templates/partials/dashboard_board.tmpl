@@ -31,6 +31,18 @@
                       data-group="{{.Title}}"
                       data-icon-slug="{{.IconSlug}}"
                       aria-label="{{printf (index $.Translations "dashboard.group.configure_icon_aria") .Title}}">{{index $.Translations "dashboard.group.settings"}}</button>
+                    {{if $.HasRemoteNodes}}
+                    <form method="post" action="{{$.AppBase}}groups/reassign-executor" class="action-menu-form js-async-action group-reassign-form">
+                      <input type="hidden" name="group" value="{{.Title}}">
+                      <span class="action-menu-label">{{index $.Translations "dashboard.group.reassign_label"}}</span>
+                      <select name="executor" class="group-reassign-executor" aria-label="{{index $.Translations "dashboard.group.reassign_label"}}">
+                        {{range $.MonitorExecutors}}
+                        <option value="{{.Value}}" {{if not .Online}}data-offline="1"{{end}}>{{.Label}}</option>
+                        {{end}}
+                      </select>
+                      <button class="action-menu-item" type="submit">{{index $.Translations "dashboard.group.reassign_submit"}}</button>
+                    </form>
+                    {{end}}
                     <form method="post" action="{{$.AppBase}}groups/delete" class="action-menu-form" data-confirm="{{index $.Translations "dashboard.group.delete_confirm"}}">
                       <input type="hidden" name="group" value="{{.Title}}">
                       <button class="action-menu-item action-menu-item-danger" type="submit">{{index $.Translations "dashboard.group.delete"}}</button>
@@ -66,7 +78,7 @@
           </summary>
           <div class="monitor-grid">
       {{range .Monitors}}
-      <article class="card monitor-card {{.StatusClass}}" {{if $.CanWrite}}draggable="true"{{end}} data-monitor-id="{{.ID}}" data-group="{{$serviceTitle}}" data-interval-seconds="{{.IntervalSeconds}}" data-last-check="{{.LastCheckedAtRaw}}" data-status="{{.StatusClass}}" data-search="{{.Name}} {{.Target}} {{$serviceTitle}} {{.Kind}}">
+      <article class="card monitor-card {{.StatusClass}}" {{if $.CanWrite}}draggable="true"{{end}} data-monitor-id="{{.ID}}" data-group="{{$serviceTitle}}" data-interval-seconds="{{.IntervalSeconds}}" data-last-check="{{.LastCheckedAtRaw}}" data-status="{{.StatusClass}}" data-executor="{{.ExecutorValue}}" data-search="{{.Name}} {{.Target}} {{$serviceTitle}} {{.Kind}}">
         <div class="monitor-card-header">
           {{if $.CanWrite}}<input type="checkbox" class="bulk-select" value="{{.ID}}" aria-label="{{printf (index $.Translations "dashboard.bulk.select_aria") .Name}}">{{end}}
           <div>

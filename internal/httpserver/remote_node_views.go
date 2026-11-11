@@ -35,6 +35,7 @@ type remoteNodeEventView struct {
 type monitorExecutorOptionView struct {
 	Value    string
 	Label    string
+	Online   bool
 	Selected bool
 }
 
@@ -128,13 +129,35 @@ func remoteNodeEventLabel(eventType string) string {
 	}
 }
 
-func buildMonitorExecutorOptions(nodes []store.RemoteNode) []monitorExecutorOptionView {
+func buildMonitorExecutorOptions(nodes []store.RemoteNode, now time.Time, localLabel, onlineLabel, offlineLabel string) []monitorExecutorOptionView {
+	if strings.TrimSpace(localLabel) == "" {
+		localLabel = "Control-Plane (lokal)"
+	}
+	if strings.TrimSpace(onlineLabel) == "" {
+		onlineLabel = "ONLINE"
+	}
+	if strings.TrimSpace(offlineLabel) == "" {
+		offlineLabel = "OFFLINE"
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
 	options := make([]monitorExecutorOptionView, 0, len(nodes)+1)
-	options = append(options, monitorExecutorOptionView{Value: "local", Label: "Control-Plane (lokal)", Selected: true})
+	options = append(options, monitorExecutorOptionView{Value: "local", Label: localLabel, Online: true, Selected: true})
 	for _, node := range nodes {
+		online := node.IsOnline(now)
+		status := onlineLabel
+		if !online {
+			status = offlineLabel
+		}
+		name := strings.TrimSpace(node.Name)
+		if name == "" {
+			name = strings.TrimSpace(node.NodeID)
+		}
 		options = append(options, monitorExecutorOptionView{
-			Value: "remote:" + node.NodeID,
-			Label: strings.TrimSpace(node.Name),
+			Value:  "remote:" + node.NodeID,
+			Label:  fmt.Sprintf("%s · %s", name, status),
+			Online: online,
 		})
 	}
 	return options

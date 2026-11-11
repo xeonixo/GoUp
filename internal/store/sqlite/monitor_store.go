@@ -339,6 +339,35 @@ WHERE executor_kind = 'remote' AND executor_ref = ?
 	return nil
 }
 
+// SetGroupMonitorsExecutor assigns all monitors in a group to local or a remote node.
+// Heartbeat monitors always stay on the control plane and are skipped.
+func (s *Store) SetGroupMonitorsExecutor(ctx context.Context, groupName, executorKind, executorRef string) (int64, error) {
+	groupName = strings.TrimSpace(groupName)
+	if groupName == "" {
+		return 0, errors.New("group name is required")
+	}
+	executorKind, executorRef = normalizeMonitorExecutor(executorKind, executorRef)
+	if executorKind != "local" && executorKind != "remote" {
+		return 0, errors.New("monitor executor must be local or remote")
+	}
+	if executorKind == "remote" && executorRef == "" {
+		return 0, errors.New("remote executor requires a node id")
+	}
+	result, err := s.db.ExecContext(ctx, `
+UPDATE monitors
+SET executor_kind = ?, executor_ref = ?, updated_at = ?
+WHERE TRIM(group_name) = ? AND kind <> 'heartbeat'
+`, executorKind, executorRef, time.Now().UTC(), groupName)
+	if err != nil {
+		return 0, fmt.Errorf("set group monitors executor: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("set group monitors executor rows affected: %w", err)
+	}
+	return affected, nil
+}
+
 // ClearMonitorMuteStartStatus drops the pending mute catch-up marker once it was handled.
 func (s *Store) ClearMonitorMuteStartStatus(ctx context.Context, monitorID int64) error {
 	if _, err := s.db.ExecContext(ctx, `UPDATE monitors SET mute_start_status = '' WHERE id = ?`, monitorID); err != nil {

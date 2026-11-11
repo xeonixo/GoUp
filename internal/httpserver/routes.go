@@ -155,6 +155,7 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/monitors/reorder", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleReorderMonitor))))
 	mux.Handle("/groups/save", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleSaveGroup))))
 	mux.Handle("/groups/delete", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleDeleteGroup))))
+	mux.Handle("/groups/reassign-executor", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleReassignGroupExecutor))))
 	mux.Handle("/groups/reorder", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleReorderGroup))))
 	mux.Handle("/icons/search", s.requireAuth(http.HandlerFunc(s.handleSearchDashboardIcons)))
 	mux.Handle("/icons/render", s.requireAuth(http.HandlerFunc(s.handleRenderIcon)))

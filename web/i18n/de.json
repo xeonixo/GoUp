@@ -1167,5 +1167,16 @@
   "matrix.reminder.headline": "{emoji} {name}: weiterhin DOWN seit {duration}",
   "matrix.catchup": "Zusammenfassung nach Stummschaltung oder Wartung",
   "push.title.reminder": "🔴 {name} ist weiterhin DOWN",
-  "push.body.reminder": "Seit {duration} down"
+  "push.body.reminder": "Seit {duration} down",
+  "dashboard.modal.executor_local": "Control-Plane (lokal)",
+  "dashboard.modal.executor_offline_warn": "Diese Remote-Node ist derzeit offline. Zugewiesene Checks laufen erst wieder, wenn die Node online ist.",
+  "dashboard.group.reassign_label": "Ausführen auf",
+  "dashboard.group.reassign_submit": "Gruppe neu zuweisen",
+  "dashboard.filter.node_aria": "Nach Remote-Node filtern",
+  "dashboard.filter.node_all": "Alle Nodes",
+  "flash.monitor_updated_node_offline": "Monitor aktualisiert. Die gewählte Remote-Node ist derzeit offline.",
+  "flash.monitor_created_node_offline": "{kind}-Monitor angelegt. Die gewählte Remote-Node ist derzeit offline.",
+  "flash.monitors_reassigned": "{count} Monitor(e) neu zugewiesen",
+  "flash.monitors_reassigned_node_offline": "{count} Monitor(e) neu zugewiesen. Die gewählte Remote-Node ist derzeit offline.",
+  "flash.group_reassign_failed": "Gruppe konnte nicht neu zugewiesen werden"
 }

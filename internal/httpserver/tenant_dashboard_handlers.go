@@ -77,11 +77,23 @@ func (s *Server) loadDashboardPageData(r *http.Request, appStore *store.Store, t
 	availableGroups := buildAvailableGroups(groupMetadata)
 	availableGroups = mergeAvailableGroups(availableGroups, monitorViews)
 	remoteNodeViews := buildRemoteNodeViews(remoteNodes, now, s.cfg.BaseURL, nil)
-	executorOptions := buildMonitorExecutorOptions(remoteNodes)
 
 	curUser := s.currentUser(r)
 	preferredLanguage := s.requestLanguage(r)
 	translations := s.translationsForLanguage(preferredLanguage)
+	localExecutorLabel := strings.TrimSpace(translations["dashboard.modal.executor_local"])
+	if localExecutorLabel == "" {
+		localExecutorLabel = "Control-Plane (lokal)"
+	}
+	onlineLabel := strings.TrimSpace(translations["admin.remote_nodes.online"])
+	if onlineLabel == "" {
+		onlineLabel = "ONLINE"
+	}
+	offlineLabel := strings.TrimSpace(translations["admin.remote_nodes.offline"])
+	if offlineLabel == "" {
+		offlineLabel = "OFFLINE"
+	}
+	executorOptions := buildMonitorExecutorOptions(remoteNodes, now, localExecutorLabel, onlineLabel, offlineLabel)
 	noticeLocalized := localizeFlashMessage(translations, noticeText)
 	errorLocalized := localizeFlashMessage(translations, errorText)
 

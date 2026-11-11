@@ -80,6 +80,8 @@ var flashMessageTranslationKeys = map[string]string{
 	"Ausgewählte Remote-Node ist nicht verfügbar":                                 "flash.selected_remote_node_unavailable",
 	"Monitor wurde nicht gefunden":                                                "flash.monitor_not_found",
 	"Monitor aktualisiert":                                                        "flash.monitor_updated",
+	"Monitor aktualisiert. Die gewählte Remote-Node ist derzeit offline.":         "flash.monitor_updated_node_offline",
+	"Gruppe konnte nicht neu zugewiesen werden":                                   "flash.group_reassign_failed",
 	"Monitor konnte nicht gelöscht werden":                                        "flash.monitor_delete_failed",
 	"Monitor gelöscht":                                                            "flash.monitor_deleted",
 	"Monitor konnte nicht aktualisiert werden":                                    "flash.monitor_update_failed",
