@@ -8,9 +8,9 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -307,30 +307,27 @@ func timeoutDuration(seconds int) time.Duration {
 	return d
 }
 
+// ValidateTargetURL applies the same SSRF policy as netguard.ValidateURL at
+// save time: https only, no credentials, and no private/loopback/metadata
+// destinations unless GOUP_ALLOW_PRIVATE_INTEGRATIONS=true. localhost /
+// *.localhost and AlwaysBlocked metadata addresses are rejected the same way
+// dial-time checks do. Monitor private policy (GOUP_MONITOR_ALLOW_PRIVATE) is
+// intentionally not used here.
 func ValidateTargetURL(raw string) (*url.URL, error) {
-	raw = strings.TrimSpace(raw)
-	parsed, err := url.Parse(raw)
+	parsed, err := netguard.ValidateURL(raw, netguard.AllowPrivateIntegrationsFromEnv())
 	if err != nil {
+		if errors.Is(err, netguard.ErrBlockedAddress) {
+			return nil, fmt.Errorf("webhook target address is blocked")
+		}
 		return nil, fmt.Errorf("invalid webhook url: %w", err)
-	}
-	if !strings.EqualFold(parsed.Scheme, "https") {
-		return nil, fmt.Errorf("webhook url must use https")
-	}
-	if parsed.User != nil {
-		return nil, fmt.Errorf("webhook url must not contain credentials")
-	}
-	if strings.TrimSpace(parsed.Hostname()) == "" {
-		return nil, fmt.Errorf("webhook url host is required")
-	}
-	if addr, err := netip.ParseAddr(parsed.Hostname()); err == nil && !netguard.IsPublicIP(addr) {
-		return nil, fmt.Errorf("webhook target address is blocked")
 	}
 	return parsed, nil
 }
 
 func newSecureHTTPClient(timeout time.Duration) *http.Client {
 	return netguard.NewHTTPClient(netguard.Options{
-		Timeout:     timeout,
-		UseEnvProxy: true,
+		Timeout:      timeout,
+		AllowPrivate: netguard.AllowPrivateIntegrationsFromEnv(),
+		UseEnvProxy:  true,
 	})
 }

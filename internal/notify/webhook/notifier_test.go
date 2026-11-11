@@ -35,14 +35,54 @@ func (s stubSecrets) GetTenantNotificationEndpointSecret(context.Context, int64,
 }
 
 func TestValidateTargetURL(t *testing.T) {
+	t.Setenv("GOUP_ALLOW_PRIVATE_INTEGRATIONS", "false")
+
 	if _, err := ValidateTargetURL("http://example.com/hook"); err == nil {
 		t.Fatalf("expected http url to be rejected")
 	}
-	if _, err := ValidateTargetURL("https://127.0.0.1/hook"); err == nil {
-		t.Fatalf("expected loopback target to be rejected")
+	if _, err := ValidateTargetURL("https://user:pass@example.com/hook"); err == nil {
+		t.Fatalf("expected credentialed url to be rejected")
 	}
+
+	blocked := []string{
+		"https://127.0.0.1/hook",
+		"https://[::1]/hook",
+		"https://10.0.0.5/hook",
+		"https://192.168.1.10/hook",
+		"https://169.254.169.254/hook",
+		"https://100.100.100.200/hook",
+		"https://localhost/hook",
+		"https://foo.localhost/hook",
+	}
+	for _, raw := range blocked {
+		if _, err := ValidateTargetURL(raw); err == nil {
+			t.Fatalf("expected %q to be rejected", raw)
+		}
+	}
+
 	if _, err := ValidateTargetURL("https://example.com/hook"); err != nil {
 		t.Fatalf("expected public https url to be accepted: %v", err)
+	}
+}
+
+func TestValidateTargetURLPrivateIntegrationsOptIn(t *testing.T) {
+	t.Setenv("GOUP_ALLOW_PRIVATE_INTEGRATIONS", "true")
+
+	if _, err := ValidateTargetURL("https://10.0.0.5/hook"); err != nil {
+		t.Fatalf("private literal should be allowed when opted in: %v", err)
+	}
+	if _, err := ValidateTargetURL("https://localhost/hook"); err != nil {
+		t.Fatalf("localhost should be allowed when opted in: %v", err)
+	}
+	// Metadata / AlwaysBlocked stays refused even with the opt-in.
+	for _, raw := range []string{
+		"https://169.254.169.254/hook",
+		"https://100.100.100.200/hook",
+		"https://[fd00:ec2::254]/hook",
+	} {
+		if _, err := ValidateTargetURL(raw); err == nil {
+			t.Fatalf("expected metadata %q to stay blocked", raw)
+		}
 	}
 }
 
