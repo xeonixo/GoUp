@@ -501,4 +501,12 @@ For future docs, consider adding:
 
 ---
 
+## 15. Current Improvement Roadmap
+
+This review (2026-04) and its P0–P2 backlog are partly historical: several items (remote-node fingerprint auth, body limits, multi-tenant maintenance, runner reconcile, WebSocket origin checks, lockout sweepers) were implemented afterwards.
+
+For the **current** prioritized product and security/ops backlog (roles, notification routing, status-page branding, `/api/v1`, remote-node token grace, backup/rekey, and later tiers), see **[improvements.md](improvements.md)**.
+
+---
+
 _End of documentation and review._

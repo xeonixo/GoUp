@@ -650,9 +650,15 @@ docs/                   Architecture notes and project documentation
 
 ## Roadmap
 
-- [ ] Public status page
-- [ ] Finer-grained roles and permissions
-- [ ] Additional monitor types
+Shipped since the early architecture notes (see [docs/improvements.md](docs/improvements.md) for the full prioritized backlog):
+
+- [x] Public status page (`/{slug}/status`)
+- [x] Additional monitor types (DNS, SDNS, UDP, WHOIS, heartbeat, and more)
+- [ ] Operator role and finer permissions
+- [ ] Notification routing and quiet hours
+- [ ] Versioned JSON API (`/api/v1`)
+- [ ] Remote-node token grace and mTLS
+- [ ] Online backup and secret rekey
 
 ---
 

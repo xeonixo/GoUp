@@ -276,3 +276,11 @@ Risiken:
 
 - Scope-Drift
 - unnötiger Ressourcenanstieg
+
+---
+
+## 11. Aktueller Stand und Weiterentwicklung
+
+Dieses Dokument beschreibt die **frühe Zielarchitektur**. Viele Phase-2-/Phase-3-Themen (Statusseite, Gruppen, mehrere Kanäle, Maintenance, Incident-Lifecycle, erweiterte Monitor-Typen) sind im Produkt bereits umgesetzt.
+
+Die priorisierte Weiterentwicklungsroadmap (Produktfeatures über diese SPEC hinaus sowie Security/Ops-Hardening) steht in **[improvements.md](improvements.md)**.
