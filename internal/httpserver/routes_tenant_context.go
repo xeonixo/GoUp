@@ -80,6 +80,12 @@ func (s *Server) handlePrettyTenantPath(w http.ResponseWriter, r *http.Request) 
 	case len(parts) == 2 && parts[1] == "status":
 		s.handleStatusPage(w, r)
 		return true
+	case len(parts) == 3 && parts[1] == "status" && parts[2] == "logo":
+		s.handleStatusPageLogo(w, r)
+		return true
+	case len(parts) == 3 && parts[1] == "status" && parts[2] == "brand.css":
+		s.handleStatusPageBrandCSS(w, r)
+		return true
 	case len(parts) == 2 && parts[1] == "metrics":
 		s.handleTenantMetrics(w, r)
 		return true

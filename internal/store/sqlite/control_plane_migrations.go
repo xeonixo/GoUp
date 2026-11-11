@@ -209,7 +209,7 @@ func (s *ControlPlaneStore) ensureControlPlaneAdminSessionVersionColumn(ctx cont
 
 func (s *ControlPlaneStore) tableHasColumn(ctx context.Context, tableName, columnName string) (bool, error) {
 	switch tableName {
-	case "tenants", "users", "tenant_memberships", "remote_nodes", "local_credentials", "control_plane_admins", "user_identities", "auth_providers":
+	case "tenants", "users", "tenant_memberships", "remote_nodes", "local_credentials", "control_plane_admins", "user_identities", "auth_providers", "api_tokens":
 	default:
 		return false, fmt.Errorf("unsupported table inspection: %s", tableName)
 	}

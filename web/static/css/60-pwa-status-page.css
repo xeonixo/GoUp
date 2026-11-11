@@ -99,14 +99,63 @@ a[target="_blank"]::after {
 
 /* Public status page and status/metrics settings */
 .status-page {
+  --status-brand: var(--primary-solid, #2563eb);
   display: grid;
   gap: 1rem;
   max-width: 48rem;
   margin: 0 auto;
 }
 
+.status-page-header {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.status-page-logo {
+  display: block;
+  max-height: 3rem;
+  max-width: 12rem;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
 .status-page-header h1 {
   margin: 0 0 0.25rem;
+  color: var(--status-brand);
+}
+
+.status-page-brand {
+  color: var(--status-brand);
+  font-weight: 700;
+}
+
+.status-incidents {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.status-incident-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.status-incident {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.35rem 1rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.status-incident.is-open {
+  border-color: rgba(var(--rgb-bad), 0.4);
 }
 
 .status-banner {
@@ -201,6 +250,12 @@ a[target="_blank"]::after {
 .status-page-footer {
   text-align: center;
   font-size: 0.85rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.status-page-powered {
+  font-size: 0.8rem;
 }
 
 .status-admin-list {

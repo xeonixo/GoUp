@@ -135,14 +135,10 @@ func TestStatusPageOverallPartialAndCacheInvalidation(t *testing.T) {
 	if strings.Contains(body, leakHost) || strings.Contains(body, leakMessage) {
 		t.Fatal("status page leaks internals")
 	}
-	// Disabling without invalidating keeps serving the cached page; invalidation yields 404.
+	// Enabled is checked before the body cache, so disable takes effect immediately.
 	if err := env.st.SaveStatusPageSettings(ctx, store.StatusPageSettings{Enabled: false}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if rec := env.get("/acme/status"); rec.Code != http.StatusOK {
-		t.Fatalf("expected cached page, got %d", rec.Code)
-	}
-	env.s.statusCache.invalidate()
 	if rec := env.get("/acme/status"); rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 after disable, got %d", rec.Code)
 	}
@@ -167,7 +163,7 @@ func TestMetricsAuthAndFormat(t *testing.T) {
 		t.Fatalf("wrong token: status = %d, want 401", rec.Code)
 	}
 
-	plain, tok, err := env.s.controlStore.CreateAPIToken(ctx, env.tenantID, "prom", store.APITokenScopeMetrics, "admin@example.com")
+	plain, tok, err := env.s.controlStore.CreateAPIToken(ctx, env.tenantID, "prom", store.APITokenScopeMetrics, "admin@example.com", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,13 +238,17 @@ func TestSettingsStatusPageTemplateRenders(t *testing.T) {
 	s.render(rec, "settings_status_page", pageData{User: user, AppBase: "/acme/", StatusAdmin: &statusPageAdminView{
 		PublicURL: "http://example.test/acme/status", NewToken: "goup_tok",
 		Monitors: []statusPageAdminMonitorView{{ID: 7, Name: "Web", DisplayName: "Web", Selected: true}},
-		Tokens:   []apiTokenView{{ID: 3, Name: "prom", CreatedAt: "2026-01-01 00:00 UTC"}},
+		Tokens:   []apiTokenView{{ID: 3, Name: "prom", Scope: "metrics", CreatedAt: "2026-01-01 00:00 UTC"}},
 	}})
 	body := rec.Body.String()
 	if rec.Code != 200 {
 		t.Fatalf("status %d", rec.Code)
 	}
-	for _, want := range []string{`name="monitor_7"`, `name="display_7"`, `/acme/settings/status-page/tokens/3/revoke`, `goup_tok`, `data-action="copy"`} {
+	for _, want := range []string{
+		`name="monitor_7"`, `name="display_7"`, `name="ttl_days"`, `name="access_mode"`, `name="brand_color"`,
+		`/acme/settings/status-page/tokens/3/revoke`, `/acme/settings/status-page/tokens/3/rotate`,
+		`goup_tok`, `data-action="copy"`, `enctype="multipart/form-data"`,
+	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q", want)
 		}
@@ -257,3 +257,64 @@ func TestSettingsStatusPageTemplateRenders(t *testing.T) {
 		t.Error("inline style found")
 	}
 }
+
+func TestStatusPageTokenGateAndNoIndex(t *testing.T) {
+	env := newStatusTestEnv(t)
+	ctx := context.Background()
+	plain, hash, err := store.GenerateStatusPageAccessToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := env.st.SaveStatusPageSettings(ctx, store.StatusPageSettings{
+		Enabled: true, Title: "Secret Status", AccessMode: "token", AccessTokenHash: hash, NoIndex: true,
+	}, []store.StatusPageMonitor{{MonitorID: env.upID, DisplayName: "Online Shop"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if rec := env.get("/acme/status"); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("no token: status = %d", rec.Code)
+	}
+	if rec := env.get("/acme/status", "Authorization", "Bearer wrong"); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong token: status = %d", rec.Code)
+	}
+	rec := env.get("/acme/status", "Authorization", "Bearer "+plain)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("valid token: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if robots := rec.Header().Get("X-Robots-Tag"); robots != "noindex, nofollow" {
+		t.Fatalf("robots = %q", robots)
+	}
+	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
+		t.Fatalf("cache-control = %q", cc)
+	}
+	if !strings.Contains(rec.Body.String(), "Online Shop") {
+		t.Fatal("expected monitor on gated page")
+	}
+}
+
+func TestStatusPageIncidentsScrubCause(t *testing.T) {
+	env := newStatusTestEnv(t)
+	ctx := context.Background()
+	cause := "dial tcp 10.9.8.7:5432: connection refused"
+	if err := env.st.RecordMonitorState(ctx, env.upID, monitor.StatusDown, cause, time.Now().UTC().Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := env.st.SaveStatusPageSettings(ctx, store.StatusPageSettings{Enabled: true, Title: "Acme Status"},
+		[]store.StatusPageMonitor{{MonitorID: env.upID, DisplayName: "Online Shop"}}); err != nil {
+		t.Fatal(err)
+	}
+	rec := env.get("/acme/status")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "Online Shop") || !strings.Contains(body, "Recent incidents") {
+		t.Fatalf("expected public incident list, got: %s", body)
+	}
+	for _, leak := range []string{cause, "10.9.8.7", leakHost, leakMessage} {
+		if strings.Contains(body, leak) {
+			t.Errorf("incident list leaks %q", leak)
+		}
+	}
+}
+

@@ -64,7 +64,7 @@ func maxBodyBytesForPath(path string) int64 {
 		return heartbeatBodyLimit
 	case strings.HasSuffix(path, "/monitors/import/preview"), strings.HasSuffix(path, "/monitors/import/confirm"):
 		return importRequestBodyBytes
-	case strings.HasSuffix(path, "/groups/save"):
+	case strings.HasSuffix(path, "/groups/save"), strings.HasSuffix(path, "/settings/status-page/save"):
 		return groupIconRequestBodyBytes
 	}
 	return defaultMaxRequestBodyBytes

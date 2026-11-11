@@ -192,6 +192,7 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/settings/status-page/save", s.requireUserManagement(http.HandlerFunc(s.handleSettingsStatusPageSave)))
 	mux.Handle("/settings/status-page/tokens/create", s.requireUserManagement(http.HandlerFunc(s.handleSettingsAPITokenCreate)))
 	mux.Handle("/settings/status-page/tokens/{id}/revoke", s.requireUserManagement(http.HandlerFunc(s.handleSettingsAPITokenRevoke)))
+	mux.Handle("/settings/status-page/tokens/{id}/rotate", s.requireUserManagement(http.HandlerFunc(s.handleSettingsAPITokenRotate)))
 	mux.Handle("/settings/maintenance", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleSettingsMaintenance))))
 	mux.Handle("/settings/maintenance/save", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleSettingsMaintenanceSave))))
 	mux.Handle("/settings/maintenance/{id}/delete", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleSettingsMaintenanceDelete))))
