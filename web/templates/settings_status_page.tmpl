@@ -140,6 +140,14 @@
         <input type="text" name="name" maxlength="80" required>
       </label>
       <label>
+        <span>{{index $.Translations "settings.status_page.token_scope"}}</span>
+        <select name="scope">
+          <option value="metrics">metrics</option>
+          <option value="monitors:read">monitors:read</option>
+          <option value="monitors:write">monitors:write</option>
+        </select>
+      </label>
+      <label>
         <span>{{index $.Translations "settings.status_page.token_ttl_days"}}</span>
         <input type="number" name="ttl_days" min="0" max="3650" step="1" placeholder="0" value="">
       </label>

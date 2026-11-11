@@ -70,6 +70,7 @@ func newStatusTestEnv(t *testing.T) *statusTestEnv {
 	s.store = st
 	s.cfg = config.Config{BaseURL: "http://example.test"}
 	s.bootstrapAttempts = make(map[string]localLoginAttempt)
+	s.appMux = s.buildAppMux()
 	env.s = s
 	return env
 }
@@ -245,9 +246,9 @@ func TestSettingsStatusPageTemplateRenders(t *testing.T) {
 		t.Fatalf("status %d", rec.Code)
 	}
 	for _, want := range []string{
-		`name="monitor_7"`, `name="display_7"`, `name="ttl_days"`, `name="access_mode"`, `name="brand_color"`,
+		`name="monitor_7"`, `name="display_7"`, `name="ttl_days"`, `name="scope"`, `name="access_mode"`, `name="brand_color"`,
 		`/acme/settings/status-page/tokens/3/revoke`, `/acme/settings/status-page/tokens/3/rotate`,
-		`goup_tok`, `data-action="copy"`, `enctype="multipart/form-data"`,
+		`goup_tok`, `data-action="copy"`, `enctype="multipart/form-data"`, `monitors:write`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q", want)

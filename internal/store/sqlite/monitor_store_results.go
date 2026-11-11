@@ -2,11 +2,78 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"goup/internal/monitor"
 	"strings"
 	"time"
 )
+
+// ListMonitorResults returns a monitor's most recent raw results, newest first.
+func (s *Store) ListMonitorResults(ctx context.Context, monitorID int64, limit int) ([]monitor.Result, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, monitor_id, checked_at, status, latency_ms, message,
+	http_status_code, tls_valid, tls_not_after, tls_days_remaining, in_maintenance
+FROM monitor_results
+WHERE monitor_id = ?
+ORDER BY checked_at DESC, id DESC
+LIMIT ?
+`, monitorID, limit)
+	if err != nil {
+		if isMalformedSQLiteError(err) {
+			return []monitor.Result{}, nil
+		}
+		return nil, fmt.Errorf("list monitor results: %w", err)
+	}
+	defer rows.Close()
+	items := make([]monitor.Result, 0, limit)
+	for rows.Next() {
+		var (
+			item             monitor.Result
+			latencyMs        int
+			httpStatus       sql.NullInt64
+			tlsValid         sql.NullInt64
+			tlsNotAfter      sql.NullTime
+			tlsDaysRemaining sql.NullInt64
+			inMaintenance    int
+		)
+		if err := rows.Scan(
+			&item.ID, &item.MonitorID, &item.CheckedAt, &item.Status, &latencyMs, &item.Message,
+			&httpStatus, &tlsValid, &tlsNotAfter, &tlsDaysRemaining, &inMaintenance,
+		); err != nil {
+			return nil, fmt.Errorf("scan monitor result: %w", err)
+		}
+		item.Latency = time.Duration(latencyMs) * time.Millisecond
+		if httpStatus.Valid {
+			v := int(httpStatus.Int64)
+			item.HTTPStatusCode = &v
+		}
+		if tlsValid.Valid {
+			v := tlsValid.Int64 == 1
+			item.TLSValid = &v
+		}
+		if tlsNotAfter.Valid {
+			t := tlsNotAfter.Time
+			item.TLSNotAfter = &t
+		}
+		if tlsDaysRemaining.Valid {
+			v := int(tlsDaysRemaining.Int64)
+			item.TLSDaysRemaining = &v
+		}
+		item.InMaintenance = inMaintenance == 1
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate monitor results: %w", err)
+	}
+	return items, nil
+}
 
 // RecentMonitorStatuses returns the latest result statuses of a monitor, newest first.
 func (s *Store) RecentMonitorStatuses(ctx context.Context, monitorID int64, limit int) ([]monitor.Status, error) {

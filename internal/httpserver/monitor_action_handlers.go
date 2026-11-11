@@ -1,9 +1,9 @@
 package httpserver
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"goup/internal/monitor"
 	"net/http"
@@ -225,47 +225,21 @@ func (s *Server) handleCheckMonitorNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	snapshots, err := appStore.ListMonitorSnapshots(r.Context())
+	result, err := s.runMonitorCheckNow(r.Context(), appStore, id)
 	if err != nil {
-		http.Error(w, "unable to load monitor", http.StatusInternalServerError)
-		return
-	}
-
-	var selected *monitor.Snapshot
-	for i := range snapshots {
-		if snapshots[i].Monitor.ID == id {
-			selected = &snapshots[i]
-			break
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			http.Error(w, "monitor not found", http.StatusNotFound)
+		case errors.Is(err, errRemoteCheckDisabled):
+			http.Error(w, err.Error(), http.StatusConflict)
+		case errors.Is(err, errUnsupportedMonitorKind):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		default:
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
-	}
-	if selected == nil {
-		http.Error(w, "monitor not found", http.StatusNotFound)
 		return
 	}
-	if strings.EqualFold(strings.TrimSpace(selected.Monitor.ExecutorKind), "remote") {
-		http.Error(w, "manual checks are disabled for remote-node monitors", http.StatusConflict)
-		return
-	}
-
-	checker, ok := checkerForMonitorKind(selected.Monitor.Kind)
-	if !ok {
-		http.Error(w, "monitor kind is not supported", http.StatusBadRequest)
-		return
-	}
-
-	runCtx, cancel := context.WithTimeout(r.Context(), selected.Monitor.Timeout+2*time.Second)
-	result := checker.Check(runCtx, selected.Monitor)
-	cancel()
-
-	if err := appStore.SaveMonitorResult(r.Context(), result); err != nil {
-		http.Error(w, "unable to store check result", http.StatusInternalServerError)
-		return
-	}
-	if err := appStore.RecordMonitorState(r.Context(), selected.Monitor.ID, result.Status, result.Message, result.CheckedAt); err != nil {
-		http.Error(w, "unable to store monitor state", http.StatusInternalServerError)
-		return
-	}
-	s.writeAudit(r, "monitor.check_now", "tenant", tenantIDFromRequest(r), fmt.Sprintf("monitor_id=%d", selected.Monitor.ID))
+	s.writeAudit(r, "monitor.check_now", "tenant", tenantIDFromRequest(r), fmt.Sprintf("monitor_id=%d", id))
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(struct {

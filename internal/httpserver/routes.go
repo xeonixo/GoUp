@@ -193,6 +193,18 @@ func (s *Server) buildAppMux() http.Handler {
 	mux.Handle("/settings/status-page/tokens/create", s.requireUserManagement(http.HandlerFunc(s.handleSettingsAPITokenCreate)))
 	mux.Handle("/settings/status-page/tokens/{id}/revoke", s.requireUserManagement(http.HandlerFunc(s.handleSettingsAPITokenRevoke)))
 	mux.Handle("/settings/status-page/tokens/{id}/rotate", s.requireUserManagement(http.HandlerFunc(s.handleSettingsAPITokenRotate)))
+
+	// Versioned automation API: bearer tokens only (no session cookie).
+	apiRead := s.requireAPIToken(store.APITokenScopeMonitorsRead, store.APITokenScopeMonitorsWrite)
+	apiWrite := s.requireAPIToken(store.APITokenScopeMonitorsWrite)
+	mux.Handle("GET /api/v1/monitors", apiRead(http.HandlerFunc(s.handleAPIV1ListMonitors)))
+	mux.Handle("POST /api/v1/monitors", apiWrite(http.HandlerFunc(s.handleAPIV1CreateMonitor)))
+	mux.Handle("GET /api/v1/monitors/{id}", apiRead(http.HandlerFunc(s.handleAPIV1GetMonitor)))
+	mux.Handle("PUT /api/v1/monitors/{id}", apiWrite(http.HandlerFunc(s.handleAPIV1UpdateMonitor)))
+	mux.Handle("DELETE /api/v1/monitors/{id}", apiWrite(http.HandlerFunc(s.handleAPIV1DeleteMonitor)))
+	mux.Handle("GET /api/v1/monitors/{id}/incidents", apiRead(http.HandlerFunc(s.handleAPIV1MonitorIncidents)))
+	mux.Handle("GET /api/v1/monitors/{id}/results", apiRead(http.HandlerFunc(s.handleAPIV1MonitorResults)))
+	mux.Handle("POST /api/v1/monitors/{id}/check-now", apiWrite(http.HandlerFunc(s.handleAPIV1CheckMonitorNow)))
 	mux.Handle("/settings/maintenance", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleSettingsMaintenance))))
 	mux.Handle("/settings/maintenance/save", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleSettingsMaintenanceSave))))
 	mux.Handle("/settings/maintenance/{id}/delete", s.requireAuth(s.requireOperatorWhenAuth(http.HandlerFunc(s.handleSettingsMaintenanceDelete))))
