@@ -46,6 +46,9 @@ type Config struct {
 	// AllowPrivateIntegrations permits private destinations for the Matrix
 	// homeserver and OIDC issuer URLs (GOUP_ALLOW_PRIVATE_INTEGRATIONS).
 	AllowPrivateIntegrations bool
+	// AuditRetentionDays is how long control-plane audit_events are kept
+	// (GOUP_AUDIT_RETENTION_DAYS, default 90).
+	AuditRetentionDays int
 }
 
 type AuthConfig struct {
@@ -76,6 +79,7 @@ func Load() (Config, error) {
 
 		MonitorAllowPrivate:      envBoolOrDefault("GOUP_MONITOR_ALLOW_PRIVATE", true),
 		AllowPrivateIntegrations: envBoolOrDefault("GOUP_ALLOW_PRIVATE_INTEGRATIONS", false),
+		AuditRetentionDays:       envIntOrDefault("GOUP_AUDIT_RETENTION_DAYS", 90),
 		Auth: AuthConfig{
 			Mode: AuthMode(envOrDefault("GOUP_AUTH_MODE", string(AuthModeDisabled))),
 			OIDC: OIDCConfig{
@@ -98,6 +102,9 @@ func Load() (Config, error) {
 	}
 	if cfg.Auth.OIDC.RedirectURL == "" {
 		cfg.Auth.OIDC.RedirectURL = cfg.BaseURL + "/auth/callback"
+	}
+	if cfg.AuditRetentionDays <= 0 {
+		cfg.AuditRetentionDays = 90
 	}
 	if err := validate(cfg); err != nil {
 		return Config{}, err
@@ -140,6 +147,9 @@ func validate(cfg Config) error {
 	}
 	if cfg.MonitorWorkers < 0 {
 		return errors.New("GOUP_MONITOR_WORKERS must not be negative")
+	}
+	if cfg.AuditRetentionDays < 0 {
+		return errors.New("GOUP_AUDIT_RETENTION_DAYS must not be negative")
 	}
 
 	switch cfg.Auth.Mode {

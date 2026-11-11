@@ -432,6 +432,8 @@
   "admin.settings.target_type": "Target Type",
   "admin.settings.all_target_types": "All Target Types",
   "admin.settings.apply_filter": "Apply Filter",
+  "admin.settings.export_csv": "Export CSV",
+  "admin.settings.export_json": "Export JSON",
   "admin.settings.target": "Target",
   "admin.settings.no_audit_entries": "No audit entries yet.",
   "admin.tenants.new_tenant": "New Tenant",

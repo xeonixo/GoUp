@@ -21,19 +21,37 @@ type RemoteNodeEvent struct {
 
 type ControlPlaneMaintenanceResult struct {
 	DeletedRemoteNodeEvents int64
+	DeletedAuditEvents      int64
 	Vacuumed                bool
 	CompactionSkipped       string
 }
 
-// RunMaintenance prunes remote node events and compacts the control-plane database.
-func (s *ControlPlaneStore) RunMaintenance(ctx context.Context, now time.Time) (ControlPlaneMaintenanceResult, error) {
+// ControlPlaneMaintenanceOptions configures control-plane maintenance retention.
+type ControlPlaneMaintenanceOptions struct {
+	AuditRetentionDays int
+}
+
+// RunMaintenance prunes remote node events and audit events, then compacts the
+// control-plane database.
+func (s *ControlPlaneStore) RunMaintenance(ctx context.Context, now time.Time, options ...ControlPlaneMaintenanceOptions) (ControlPlaneMaintenanceResult, error) {
 	result := ControlPlaneMaintenanceResult{}
+	opts := ControlPlaneMaintenanceOptions{}
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	auditRetentionDays := NormalizeAuditRetentionDays(opts.AuditRetentionDays)
 
 	deleted, err := s.pruneRemoteNodeEvents(ctx, now.UTC().AddDate(0, 0, -remoteNodeEventRetentionDays))
 	if err != nil {
 		return result, err
 	}
 	result.DeletedRemoteNodeEvents = deleted
+
+	auditDeleted, err := s.PruneAuditEvents(ctx, now.UTC().AddDate(0, 0, -auditRetentionDays))
+	if err != nil {
+		return result, err
+	}
+	result.DeletedAuditEvents = auditDeleted
 
 	vacuumed, err := compactDatabase(ctx, s.db)
 	if err != nil {

@@ -163,7 +163,10 @@ Use **+ Monitor** in the tenant dashboard to create checks. New monitors are sch
 
 ```text
 http://localhost:8080/healthz
+http://localhost:8080/readyz
 ```
+
+`/healthz` is a shallow liveness check. `/readyz` also pings the control-plane DB, active tenant stores, and monitor runners (JSON `{"status":"ok"}` or `503` with reasons).
 
 ### Updating an existing installation
 
@@ -203,6 +206,7 @@ Configuration is provided through environment variables, typically via `.env` an
 | `GOUP_SETUP_TOKEN` | _(random)_ | Token required for the initial `/admin/setup` form. If unset, a random token is generated at startup and written to the server log while setup is pending. |
 | `GOUP_MONITOR_ALLOW_PRIVATE` | `true` | Allow monitors to reach private/loopback networks. Cloud metadata addresses (`169.254.169.254`, `fd00:ec2::254`, `100.100.100.200`) are always blocked. |
 | `GOUP_ALLOW_PRIVATE_INTEGRATIONS` | `false` | Allow the Matrix homeserver URL and OIDC issuer URLs to point at private/loopback addresses. Default is public https only (SSRF protection). **Set to `true` if your Keycloak/Matrix runs on your LAN.** |
+| `GOUP_AUDIT_RETENTION_DAYS` | `90` | How long control-plane `audit_events` are retained before maintenance prunes them |
 | `GOUP_REMOTE_NODE_ALLOW_INSECURE` | `false` | Remote-node agent only: permit a plain `http://` control-plane URL (otherwise https is required, except `localhost`/`127.0.0.1`). |
 
 ### Security-related settings

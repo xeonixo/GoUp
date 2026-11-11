@@ -29,6 +29,9 @@ type Dependencies struct {
 	Sessions       *auth.SessionManager
 	// RunnerLookup returns the running monitor runner of a tenant (nil if none); used by the system page.
 	RunnerLookup func(tenantID int64) *monitor.Runner
+	// ReadyCheck returns non-empty failure reasons when the process is not ready
+	// (used by GET /readyz). When nil, Server falls back to local shallow checks.
+	ReadyCheck func(ctx context.Context) []string
 }
 
 type Server struct {
@@ -69,6 +72,7 @@ type Server struct {
 	statusCache         statusPageCache
 	startedAt           time.Time
 	runnerFor           func(tenantID int64) *monitor.Runner
+	readyCheck          func(ctx context.Context) []string
 	memCache            systemMemCache
 }
 
@@ -94,6 +98,7 @@ func New(deps Dependencies) (*Server, error) {
 		sessions:            deps.Sessions,
 		startedAt:           time.Now().UTC(),
 		runnerFor:           deps.RunnerLookup,
+		readyCheck:          deps.ReadyCheck,
 		dynamicOIDC:         auth.NewDynamicOIDCManager(deps.Config.AllowPrivateIntegrations),
 		templates:           templates,
 		iconAssets:          make(map[string]dashboardIconAsset),
