@@ -23,6 +23,12 @@ type CreateMonitorParams struct {
 	TLSMode            monitor.TLSMode
 	ExpectedStatusCode *int
 	ExpectedText       string
+	HTTPMethod         string
+	RequestHeaders     string
+	RequestBody        string
+	JSONPath           string
+	JSONPathExpected   string
+	CheckMode          string
 	NotifyOnRecovery   bool
 	RetryCount         int
 	RetryInterval      time.Duration
@@ -65,9 +71,9 @@ INSERT INTO monitors (
 	name, group_name, sort_order, executor_kind, executor_ref, kind, target, interval_seconds, timeout_seconds, enabled,
     tls_mode, expected_status_code, expected_text, notify_on_recovery,
     retry_count, retry_interval_seconds, cert_warning_days, confirm_after, remind_every_minutes,
-    created_at, updated_at, heartbeat_token
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, params.Name, strings.TrimSpace(params.Group), nextSortOrder, executorKind, executorRef, string(params.Kind), params.Target, int(params.Interval.Seconds()), int(params.Timeout.Seconds()), boolToInt(params.Enabled), string(params.TLSMode), params.ExpectedStatusCode, strings.TrimSpace(params.ExpectedText), boolToInt(params.NotifyOnRecovery), params.RetryCount, int(params.RetryInterval.Seconds()), normalizeCertWarningDays(params.CertWarningDays), normalizeConfirmAfter(params.ConfirmAfter), params.RemindEveryMinutes, now, now, heartbeatToken)
+    config_json, created_at, updated_at, heartbeat_token
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, params.Name, strings.TrimSpace(params.Group), nextSortOrder, executorKind, executorRef, string(params.Kind), params.Target, int(params.Interval.Seconds()), int(params.Timeout.Seconds()), boolToInt(params.Enabled), string(params.TLSMode), params.ExpectedStatusCode, strings.TrimSpace(params.ExpectedText), boolToInt(params.NotifyOnRecovery), params.RetryCount, int(params.RetryInterval.Seconds()), normalizeCertWarningDays(params.CertWarningDays), normalizeConfirmAfter(params.ConfirmAfter), params.RemindEveryMinutes, encodeMonitorConfigJSON(params), now, now, heartbeatToken)
 	if err != nil {
 		return 0, fmt.Errorf("create monitor: %w", err)
 	}
@@ -123,6 +129,7 @@ SET
     cert_warning_days = ?,
     confirm_after = ?,
     remind_every_minutes = ?,
+    config_json = ?,
     heartbeat_token = CASE WHEN ? = 'heartbeat' THEN COALESCE(NULLIF(heartbeat_token, ''), ?) ELSE '' END,
     updated_at = ?
 WHERE id = ?
@@ -145,6 +152,7 @@ WHERE id = ?
 		normalizeCertWarningDays(params.CertWarningDays),
 		normalizeConfirmAfter(params.ConfirmAfter),
 		params.RemindEveryMinutes,
+		encodeMonitorConfigJSON(params.CreateMonitorParams),
 		string(params.Kind),
 		newToken,
 		now,

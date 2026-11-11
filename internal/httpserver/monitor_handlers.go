@@ -66,6 +66,12 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 
 	var expectedStatusCode *int
 	expectedText := ""
+	httpMethod := ""
+	requestHeaders := ""
+	requestBody := ""
+	jsonPath := ""
+	jsonPathExpected := ""
+	checkMode := ""
 	kind := monitor.Kind(strings.ToLower(strings.TrimSpace(r.FormValue("kind"))))
 	if kind == "" {
 		kind = monitor.KindHTTPS
@@ -81,6 +87,14 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 	}
 	if kind == monitor.KindHTTPS || kind == monitor.KindDNS || kind == monitor.KindUDP || kind == monitor.KindSDNS {
 		expectedText = strings.TrimSpace(r.FormValue("expected_text"))
+	}
+	if kind == monitor.KindHTTPS {
+		httpMethod = strings.TrimSpace(r.FormValue("http_method"))
+		requestHeaders = strings.TrimSpace(r.FormValue("request_headers"))
+		requestBody = r.FormValue("request_body")
+		jsonPath = strings.TrimSpace(r.FormValue("json_path"))
+		jsonPathExpected = strings.TrimSpace(r.FormValue("json_path_expected"))
+		checkMode = monitor.NormalizeHTTPSCheckMode(r.FormValue("check_mode"))
 	}
 
 	target := strings.TrimSpace(r.FormValue("target"))
@@ -242,6 +256,12 @@ func (s *Server) handleSaveMonitor(w http.ResponseWriter, r *http.Request) {
 		TLSMode:            tlsMode,
 		ExpectedStatusCode: expectedStatusCode,
 		ExpectedText:       expectedText,
+		HTTPMethod:         httpMethod,
+		RequestHeaders:     requestHeaders,
+		RequestBody:        requestBody,
+		JSONPath:           jsonPath,
+		JSONPathExpected:   jsonPathExpected,
+		CheckMode:          checkMode,
 		NotifyOnRecovery:   r.FormValue("notify_on_recovery") == "on",
 		RetryCount:         func() int { v, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("retry_count"))); return v }(),
 		RetryInterval: func() time.Duration {

@@ -1,15 +1,17 @@
 import {
-  dnsHostField, dnsRecordTypeField, dnsServerField, dnsTargetRow, expectedStatusField,
+  checkModeField, dnsHostField, dnsRecordTypeField, dnsServerField, dnsTargetRow, expectedStatusField,
   sdnsEndpointField, sdnsEndpointHint, sdnsFamilyRow, sdnsHostField, sdnsMethodField, sdnsMethodRow,
   sdnsRecordTypeField, sdnsTargetRow, sdnsTransportField,
   expectedStatusRow, expectedTextField, expectedTextHintField, expectedTextLabelField,
-  expectedTextRow, httpHostField, httpPathField, httpPortField, httpSchemeField,
-  httpSkipVerifyField, httpSkipVerifyLabelField, httpSkipVerifyRow, httpsFamilyRow, httpsModeRow,
-  httpsTargetRow, httpsVerifyRow, icmpFamilyRow, kindField, mailFamilyRow, mailHostField,
-  mailPortField, mailTargetRow, mailVerifyField, mailVerifyLabelField, mailVerifyRow, targetField,
-  targetHintField, targetRow, tcpFamilyRow, tcpHostField, tcpPortField, tcpTargetRow, tlsModeField,
-  tlsModeRow, udpCheckField, udpCheckRow, udpFamilyRow, udpHostField, udpPortField, udpTargetRow,
-  useHTTPSField, useHTTPSLabelField, verifyCertField, verifyCertLabelField
+  expectedTextRow, httpHostField, httpMethodField, httpPathField, httpPortField, httpSchemeField,
+  httpSkipVerifyField, httpSkipVerifyLabelField, httpSkipVerifyRow, httpsBodyRow, httpsCheckModeRow,
+  httpsFamilyRow, httpsHeadersRow, httpsJsonPathRow, httpsMethodRow, httpsModeRow, httpsTargetRow,
+  httpsVerifyRow, icmpFamilyRow, jsonPathExpectedField, jsonPathField, kindField, mailFamilyRow,
+  mailHostField, mailPortField, mailTargetRow, mailVerifyField, mailVerifyLabelField, mailVerifyRow,
+  requestBodyField, requestHeadersField, targetField, targetHintField, targetRow, tcpFamilyRow,
+  tcpHostField, tcpPortField, tcpTargetRow, tlsModeField, tlsModeRow, udpCheckField, udpCheckRow,
+  udpFamilyRow, udpHostField, udpPortField, udpTargetRow, useHTTPSField, useHTTPSLabelField,
+  verifyCertField, verifyCertLabelField
 } from './dom.js';
 import {
   expectedKeywordsHintFallback, expectedKeywordsOptionalFallback, monitorSkipCertFallback,
@@ -44,6 +46,8 @@ export const applyKindRules = () => {
   const mailTLSSelection = String(tlsModeField?.value || '').toLowerCase();
   const mailEncryptionEnabled = isMail && (mailTLSSelection === 'tls' || mailTLSSelection === 'starttls');
   const showExpectedText = isHTTPMonitor || isDNS || isSDNS;
+  const httpsTLSOnly = isHTTPMonitor && String(checkModeField?.value || 'http').toLowerCase() === 'tls';
+  const httpsContentChecks = isHTTPMonitor && !httpsTLSOnly;
 
   if (targetRow) {
     targetRow.hidden = isTCPMonitor || isHTTPMonitor || isUDP || isMail || isDNS || isSDNS || isHeartbeat;
@@ -115,12 +119,40 @@ export const applyKindRules = () => {
   if (httpSkipVerifyRow) {
     httpSkipVerifyRow.hidden = !isHTTPMonitor || !isHTTPSEnabled;
   }
-  expectedStatusRow.hidden = !isHTTPMonitor;
-  expectedTextRow.hidden = !showExpectedText;
+  if (httpsCheckModeRow) {
+    httpsCheckModeRow.hidden = !isHTTPMonitor || !isHTTPSEnabled;
+  }
+  if (httpsMethodRow) {
+    httpsMethodRow.hidden = !httpsContentChecks;
+  }
+  if (httpsHeadersRow) {
+    httpsHeadersRow.hidden = !httpsContentChecks;
+  }
+  if (httpsBodyRow) {
+    const method = String(httpMethodField?.value || 'GET').toUpperCase();
+    httpsBodyRow.hidden = !httpsContentChecks || method === 'GET' || method === 'HEAD';
+  }
+  if (httpsJsonPathRow) {
+    httpsJsonPathRow.hidden = !httpsContentChecks;
+  }
+  expectedStatusRow.hidden = !httpsContentChecks;
+  expectedTextRow.hidden = httpsContentChecks ? false : !showExpectedText || isHTTPMonitor;
+
+  if (!isHTTPMonitor) {
+    if (checkModeField) checkModeField.value = 'http';
+    if (httpMethodField) httpMethodField.value = 'GET';
+    if (requestHeadersField) requestHeadersField.value = '';
+    if (requestBodyField) requestBodyField.value = '';
+    if (jsonPathField) jsonPathField.value = '';
+    if (jsonPathExpectedField) jsonPathExpectedField.value = '';
+  }
 
   if (isHTTPMonitor) {
     if (!httpSchemeField || !httpSkipVerifyField) {
       return;
+    }
+    if (!isHTTPSEnabled && checkModeField) {
+      checkModeField.value = 'http';
     }
     if (httpSkipVerifyLabelField) {
       httpSkipVerifyLabelField.textContent = tr('monitorSkipCert', monitorSkipCertFallback);

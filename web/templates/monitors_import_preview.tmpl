@@ -44,6 +44,12 @@
                 <input type="hidden" name="tls_mode_{{$i}}"               value="{{.TLSMode}}">
                 <input type="hidden" name="expected_status_code_{{$i}}"   value="{{.ExpectedStatusCode}}">
                 <input type="hidden" name="expected_text_{{$i}}"          value="{{.ExpectedText}}">
+                <input type="hidden" name="http_method_{{$i}}"            value="{{.HTTPMethod}}">
+                <input type="hidden" name="request_headers_{{$i}}"        value="{{.RequestHeaders}}">
+                <input type="hidden" name="request_body_{{$i}}"           value="{{.RequestBody}}">
+                <input type="hidden" name="json_path_{{$i}}"              value="{{.JSONPath}}">
+                <input type="hidden" name="json_path_expected_{{$i}}"     value="{{.JSONPathExpected}}">
+                <input type="hidden" name="check_mode_{{$i}}"             value="{{.CheckMode}}">
                 <input type="hidden" name="notify_on_recovery_{{$i}}"     value="{{if .NotifyOnRecovery}}on{{end}}">
                 <input type="hidden" name="retry_count_{{$i}}"            value="{{.RetryCount}}">
                 <input type="hidden" name="retry_interval_seconds_{{$i}}" value="{{.RetryIntervalSeconds}}">

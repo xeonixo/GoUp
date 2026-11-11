@@ -110,6 +110,12 @@ func (s *Server) handleRemoteNodePoll(w http.ResponseWriter, r *http.Request) {
 			TLSMode:            string(item.TLSMode),
 			ExpectedStatusCode: item.ExpectedStatusCode,
 			ExpectedText:       item.ExpectedText,
+			HTTPMethod:         item.HTTPMethod,
+			RequestHeaders:     item.RequestHeaders,
+			RequestBody:        item.RequestBody,
+			JSONPath:           item.JSONPath,
+			JSONPathExpected:   item.JSONPathExpected,
+			CheckMode:          item.CheckMode,
 			NotifyOnRecovery:   item.NotifyOnRecovery,
 		})
 	}

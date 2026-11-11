@@ -61,6 +61,32 @@ func validateCreateMonitorParams(params CreateMonitorParams) error {
 	if expectedText != "" && params.Kind != monitor.KindHTTPS && params.Kind != monitor.KindDNS && params.Kind != monitor.KindUDP && params.Kind != monitor.KindSDNS {
 		return errors.New("expected value is only valid for HTTPS, DNS, secure DNS and UDP monitors")
 	}
+	if params.Kind != monitor.KindHTTPS {
+		if strings.TrimSpace(params.HTTPMethod) != "" || strings.TrimSpace(params.RequestHeaders) != "" ||
+			params.RequestBody != "" || strings.TrimSpace(params.JSONPath) != "" ||
+			strings.TrimSpace(params.JSONPathExpected) != "" ||
+			(strings.TrimSpace(params.CheckMode) != "" && monitor.NormalizeHTTPSCheckMode(params.CheckMode) != monitor.CheckModeHTTP) {
+			return errors.New("HTTP method, headers, body, JSONPath and check mode are only valid for HTTPS monitors")
+		}
+	} else {
+		if method := strings.TrimSpace(params.HTTPMethod); method != "" && monitor.NormalizeHTTPSMethod(method) == "" {
+			return errors.New("unsupported HTTP method")
+		}
+		if _, err := monitor.ParseHTTPRequestHeaders(params.RequestHeaders); err != nil {
+			return err
+		}
+		if path := strings.TrimSpace(params.JSONPath); path != "" {
+			if err := monitor.ValidateSimpleJSONPath(path); err != nil {
+				return fmt.Errorf("invalid JSONPath: %w", err)
+			}
+		}
+		if monitor.NormalizeHTTPSCheckMode(params.CheckMode) == monitor.CheckModeTLS {
+			httpsTLSMode, _, _ := monitor.ParseHTTPSTLSMode(params.TLSMode)
+			if httpsTLSMode == monitor.TLSModeNone {
+				return errors.New("TLS-only check requires HTTPS (not plain HTTP)")
+			}
+		}
+	}
 	return validateMonitorKindSettings(params.Kind, params.Target, params.TLSMode, params.ExpectedStatusCode)
 }
 

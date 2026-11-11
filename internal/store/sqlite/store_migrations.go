@@ -8,6 +8,14 @@ import (
 	"strings"
 )
 
+// ensureMonitorConfigJSONColumn adds the optional HTTPS assertion JSON blob for older databases.
+func (s *Store) ensureMonitorConfigJSONColumn(ctx context.Context) error {
+	if _, err := s.ensureColumn(ctx, "monitors", "config_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
+		return err
+	}
+	return nil
+}
+
 // ensurePhase2Columns adds the data-quality columns: rollup unknown/maintenance counters,
 // per-monitor flapping protection and mute catch-up state, and the suppressed notification flag.
 func (s *Store) ensurePhase2Columns(ctx context.Context) error {

@@ -1,12 +1,14 @@
 import {
-  dialog, dnsHostField, dnsRecordTypeField, dnsServerField, enabledField, expectedStatusField,
-  expectedTextField, groupField, httpHostField, httpPathField, httpPortField, httpSchemeField,
-  httpSkipVerifyField, httpsFamilyField, icmpFamilyField, idField, intervalField, kindField,
-  mailFamilyField, mailHostField, mailPortField, mailVerifyField, monitorExecutorField, nameField,
-  notifyField, retryCountField, retryIntervalField, sdnsEndpointField, sdnsFamilyField, sdnsHostField,
-  sdnsMethodField, sdnsRecordTypeField, sdnsSNIField, sdnsSkipCertField, sdnsTransportField, targetField,
-  tcpFamilyField, tcpHostField, tcpPortField, timeoutField, title, tlsModeField, udpCheckField,
-  udpFamilyField, udpHostField, udpPortField, useHTTPSField, verifyCertField
+  checkModeField, dialog, dnsHostField, dnsRecordTypeField, dnsServerField, enabledField,
+  expectedStatusField, expectedTextField, groupField, httpHostField, httpMethodField, httpPathField,
+  httpPortField, httpSchemeField, httpSkipVerifyField, httpsFamilyField, icmpFamilyField, idField,
+  intervalField, jsonPathExpectedField, jsonPathField, kindField, mailFamilyField, mailHostField,
+  mailPortField, mailVerifyField, monitorExecutorField, nameField, notifyField, requestBodyField,
+  requestHeadersField, retryCountField, retryIntervalField, sdnsEndpointField, sdnsFamilyField,
+  sdnsHostField, sdnsMethodField, sdnsRecordTypeField, sdnsSNIField, sdnsSkipCertField,
+  sdnsTransportField, targetField, tcpFamilyField, tcpHostField, tcpPortField, timeoutField, title,
+  tlsModeField, udpCheckField, udpFamilyField, udpHostField, udpPortField, useHTTPSField,
+  verifyCertField
 } from './dom.js';
 import { monitorCreateTitleFallback, monitorEditTitleFallback, tr } from './i18n.js';
 import { fillHeartbeat, resetHeartbeat } from './monitor-heartbeat.js';
@@ -121,6 +123,12 @@ export const openCreate = () => {
   timeoutField.value = '10';
   expectedStatusField.value = '';
   expectedTextField.value = '';
+  if (checkModeField) checkModeField.value = 'http';
+  if (httpMethodField) httpMethodField.value = 'GET';
+  if (requestHeadersField) requestHeadersField.value = '';
+  if (requestBodyField) requestBodyField.value = '';
+  if (jsonPathField) jsonPathField.value = '';
+  if (jsonPathExpectedField) jsonPathExpectedField.value = '';
   useHTTPSField.checked = true;
   verifyCertField.checked = true;
   enabledField.checked = true;
@@ -408,6 +416,12 @@ export const openEdit = (button) => {
   timeoutField.value = button.dataset.timeout || '10';
   expectedStatusField.value = button.dataset.expectedStatus || '';
   expectedTextField.value = button.dataset.expectedText || '';
+  if (checkModeField) checkModeField.value = button.dataset.checkMode === 'tls' ? 'tls' : 'http';
+  if (httpMethodField) httpMethodField.value = (button.dataset.httpMethod || 'GET').toUpperCase();
+  if (requestHeadersField) requestHeadersField.value = button.dataset.requestHeaders || '';
+  if (requestBodyField) requestBodyField.value = button.dataset.requestBody || '';
+  if (jsonPathField) jsonPathField.value = button.dataset.jsonPath || '';
+  if (jsonPathExpectedField) jsonPathExpectedField.value = button.dataset.jsonPathExpected || '';
   const tlsModeRaw = String(button.dataset.tlsMode || 'tls').toLowerCase();
   const tlsMode = tlsModeRaw.endsWith('_ipv4') || tlsModeRaw.endsWith('_ipv6') || tlsModeRaw.endsWith('_dual')
     ? tlsModeRaw.replace(/_(ipv4|ipv6|dual)$/, '')

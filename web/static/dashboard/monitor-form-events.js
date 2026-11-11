@@ -1,10 +1,10 @@
 import {
-  cancelButton, dialog, dnsHostField, dnsRecordTypeField, dnsServerField, httpHostField,
-  httpPathField, httpPortField, httpSchemeField, httpSkipVerifyField, httpsFamilyField,
-  icmpFamilyField, kindField, mailFamilyField, mailHostField, mailPortField, mailVerifyField,
-  monitorCloseButton, monitorForm, openCreateButton, sdnsEndpointField, sdnsFamilyField, sdnsTransportField,
-  targetField, tcpFamilyField, tcpHostField, tcpPortField, tlsModeField, udpCheckField, udpFamilyField,
-  udpHostField, udpPortField, useHTTPSField, verifyCertField
+  cancelButton, checkModeField, dialog, dnsHostField, dnsRecordTypeField, dnsServerField,
+  httpHostField, httpMethodField, httpPathField, httpPortField, httpSchemeField, httpSkipVerifyField,
+  httpsFamilyField, icmpFamilyField, kindField, mailFamilyField, mailHostField, mailPortField,
+  mailVerifyField, monitorCloseButton, monitorForm, openCreateButton, sdnsEndpointField, sdnsFamilyField,
+  sdnsTransportField, targetField, tcpFamilyField, tcpHostField, tcpPortField, tlsModeField,
+  udpCheckField, udpFamilyField, udpHostField, udpPortField, useHTTPSField, verifyCertField
 } from './dom.js';
 import { initHeartbeatForm } from './monitor-heartbeat.js';
 import { openCreate } from './monitor-dialog.js';
@@ -148,6 +148,16 @@ export function initMonitorForm() {
     }
   });
   httpsFamilyField?.addEventListener('change', () => {
+    if (kindField?.value === 'https') {
+      applyKindRules();
+    }
+  });
+  checkModeField?.addEventListener('change', () => {
+    if (kindField?.value === 'https') {
+      applyKindRules();
+    }
+  });
+  httpMethodField?.addEventListener('change', () => {
     if (kindField?.value === 'https') {
       applyKindRules();
     }

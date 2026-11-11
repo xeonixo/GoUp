@@ -53,9 +53,23 @@ type Monitor struct {
 	TLSMode            TLSMode
 	ExpectedStatusCode *int
 	ExpectedText       string
-	NotifyOnRecovery   bool
-	RetryCount         int
-	RetryInterval      time.Duration
+	// HTTPMethod overrides the HTTPS request method (GET when empty).
+	HTTPMethod string
+	// RequestHeaders is optional request headers for HTTPS monitors: a JSON object
+	// map or multiline "Name: value" / "Name=value" pairs.
+	RequestHeaders string
+	// RequestBody is an optional HTTPS request body (ignored for GET/HEAD).
+	RequestBody string
+	// JSONPath is an optional JSONPath-like assertion path on the HTTPS response body
+	// (for example "$.status" or "$.data.items[0].id").
+	JSONPath string
+	// JSONPathExpected is the expected value at JSONPath. When empty, only existence is checked.
+	JSONPathExpected string
+	// CheckMode selects HTTPS check semantics: "http" (default) or "tls" (certificate only).
+	CheckMode        string
+	NotifyOnRecovery bool
+	RetryCount       int
+	RetryInterval    time.Duration
 	// MutedUntil suppresses notifications (checks keep running) until this time.
 	MutedUntil *time.Time
 	// CertWarningDays marks a monitor degraded when its certificate expires within this many days.

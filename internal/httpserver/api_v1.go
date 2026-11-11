@@ -59,6 +59,12 @@ func snapshotToAPIMonitor(snap monitor.Snapshot) apiMonitorDTO {
 			TLSMode:              string(m.TLSMode),
 			ExpectedStatusCode:   m.ExpectedStatusCode,
 			ExpectedText:         m.ExpectedText,
+			HTTPMethod:           m.HTTPMethod,
+			RequestHeaders:       m.RequestHeaders,
+			RequestBody:          m.RequestBody,
+			JSONPath:             m.JSONPath,
+			JSONPathExpected:     m.JSONPathExpected,
+			CheckMode:            m.CheckMode,
 			NotifyOnRecovery:     m.NotifyOnRecovery,
 			RetryCount:           m.RetryCount,
 			RetryIntervalSeconds: int(m.RetryInterval.Seconds()),
@@ -98,6 +104,12 @@ func exportRecordToCreateParams(rec monitorExportRecord) store.CreateMonitorPara
 		TLSMode:            monitor.TLSMode(tlsMode),
 		ExpectedStatusCode: rec.ExpectedStatusCode,
 		ExpectedText:       strings.TrimSpace(rec.ExpectedText),
+		HTTPMethod:         strings.TrimSpace(rec.HTTPMethod),
+		RequestHeaders:     strings.TrimSpace(rec.RequestHeaders),
+		RequestBody:        rec.RequestBody,
+		JSONPath:           strings.TrimSpace(rec.JSONPath),
+		JSONPathExpected:   strings.TrimSpace(rec.JSONPathExpected),
+		CheckMode:          strings.TrimSpace(rec.CheckMode),
 		NotifyOnRecovery:   rec.NotifyOnRecovery,
 		RetryCount:         rec.RetryCount,
 		RetryInterval:      time.Duration(rec.RetryIntervalSeconds) * time.Second,
@@ -361,15 +373,15 @@ func (s *Server) handleAPIV1MonitorResults(w http.ResponseWriter, r *http.Reques
 	out := make([]apiResultDTO, 0, len(items))
 	for _, item := range items {
 		dto := apiResultDTO{
-			ID:             item.ID,
-			CheckedAt:      item.CheckedAt.UTC().Format(time.RFC3339),
-			Status:         string(item.Status),
-			LatencyMs:      item.Latency.Milliseconds(),
-			Message:        item.Message,
-			HTTPStatusCode: item.HTTPStatusCode,
-			TLSValid:       item.TLSValid,
+			ID:               item.ID,
+			CheckedAt:        item.CheckedAt.UTC().Format(time.RFC3339),
+			Status:           string(item.Status),
+			LatencyMs:        item.Latency.Milliseconds(),
+			Message:          item.Message,
+			HTTPStatusCode:   item.HTTPStatusCode,
+			TLSValid:         item.TLSValid,
 			TLSDaysRemaining: item.TLSDaysRemaining,
-			InMaintenance:  item.InMaintenance,
+			InMaintenance:    item.InMaintenance,
 		}
 		if item.TLSNotAfter != nil {
 			v := item.TLSNotAfter.UTC().Format(time.RFC3339)
@@ -420,7 +432,7 @@ func (s *Server) handleAPIV1CheckMonitorNow(w http.ResponseWriter, r *http.Reque
 }
 
 var (
-	errRemoteCheckDisabled   = errors.New("manual checks are disabled for remote-node monitors")
+	errRemoteCheckDisabled    = errors.New("manual checks are disabled for remote-node monitors")
 	errUnsupportedMonitorKind = errors.New("monitor kind is not supported")
 )
 
