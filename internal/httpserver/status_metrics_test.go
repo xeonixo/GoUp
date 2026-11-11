@@ -319,3 +319,116 @@ func TestStatusPageIncidentsScrubCause(t *testing.T) {
 	}
 }
 
+func TestStatusPageAtomFeed(t *testing.T) {
+	env := newStatusTestEnv(t)
+	ctx := context.Background()
+	cause := "dial tcp 10.9.8.7:5432: connection refused"
+	if err := env.st.RecordMonitorState(ctx, env.upID, monitor.StatusDown, cause, time.Now().UTC().Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := env.st.SaveStatusPageSettings(ctx, store.StatusPageSettings{Enabled: true, Title: "Acme Status"},
+		[]store.StatusPageMonitor{{MonitorID: env.upID, DisplayName: "Online Shop"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if rec := env.get("/acme/status/feed.xml"); rec.Code != http.StatusOK {
+		t.Fatalf("feed = %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec := env.get("/acme/status/feed.atom", "Accept-Language", "en")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("atom alias = %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/atom+xml") {
+		t.Fatalf("content-type = %q", ct)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`xmlns="http://www.w3.org/2005/Atom"`,
+		"<title>Acme Status",
+		"Online Shop",
+		`rel="self"`,
+		"/acme/status/feed.xml",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("feed missing %q", want)
+		}
+	}
+	for _, leak := range []string{cause, "10.9.8.7", leakHost, leakMessage, "Secret DB"} {
+		if strings.Contains(body, leak) {
+			t.Errorf("feed leaks %q", leak)
+		}
+	}
+}
+
+func TestStatusPageAtomFeedTokenGateAndDisabled(t *testing.T) {
+	env := newStatusTestEnv(t)
+	ctx := context.Background()
+	if rec := env.get("/acme/status/feed.xml"); rec.Code != http.StatusNotFound {
+		t.Fatalf("disabled feed = %d", rec.Code)
+	}
+	plain, hash, err := store.GenerateStatusPageAccessToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := env.st.SaveStatusPageSettings(ctx, store.StatusPageSettings{
+		Enabled: true, Title: "Secret", AccessMode: "token", AccessTokenHash: hash,
+	}, []store.StatusPageMonitor{{MonitorID: env.upID, DisplayName: "Online Shop"}}); err != nil {
+		t.Fatal(err)
+	}
+	if rec := env.get("/acme/status/feed.xml"); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("no token feed = %d", rec.Code)
+	}
+	rec := env.get("/acme/status/feed.xml", "Authorization", "Bearer "+plain)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("authed feed = %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "Online Shop") && !strings.Contains(rec.Body.String(), "Secret") {
+		t.Fatalf("unexpected feed body: %s", rec.Body.String())
+	}
+}
+
+func TestStatusPageShowsSubscribeAndFeedLinks(t *testing.T) {
+	env := newStatusTestEnv(t)
+	ctx := context.Background()
+	if err := env.st.SaveStatusPageSettings(ctx, store.StatusPageSettings{Enabled: true, Title: "Acme Status"},
+		[]store.StatusPageMonitor{{MonitorID: env.upID, DisplayName: "Online Shop"}}); err != nil {
+		t.Fatal(err)
+	}
+	rec := env.get("/acme/status")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`/acme/status/feed.xml`,
+		"Atom feed",
+		"Online Shop",
+		"Email subscriptions are not configured",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+
+	if err := env.s.controlStore.ConfigureSecretKeys("test-secret-key-1234567890abcdef"); err != nil {
+		t.Fatal(err)
+	}
+	if err := env.s.controlStore.UpsertGlobalSMTPSettings(ctx, store.GlobalSMTPSettings{
+		Host: "smtp.example.com", Port: 587, FromEmail: "noreply@example.com", TLSMode: "starttls",
+	}, "smtp-password"); err != nil {
+		t.Fatal(err)
+	}
+	rec = env.get("/acme/status")
+	body = rec.Body.String()
+	for _, want := range []string{
+		`action="/acme/status/subscribe"`,
+		`name="email"`,
+		`name="monitor_id"`,
+		`value="` + strconv.FormatInt(env.upID, 10) + `"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("with smtp missing %q", want)
+		}
+	}
+}
+

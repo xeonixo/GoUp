@@ -80,6 +80,18 @@ func (s *Server) handlePrettyTenantPath(w http.ResponseWriter, r *http.Request) 
 	case len(parts) == 2 && parts[1] == "status":
 		s.handleStatusPage(w, r)
 		return true
+	case statusPageFeedPath(parts):
+		s.handleStatusPageFeed(w, r)
+		return true
+	case len(parts) == 3 && parts[1] == "status" && parts[2] == "subscribe":
+		s.handleStatusPageSubscribe(w, r)
+		return true
+	case len(parts) == 4 && parts[1] == "status" && parts[2] == "subscribe" && parts[3] == "confirm":
+		s.handleStatusPageSubscribeConfirm(w, r)
+		return true
+	case len(parts) == 4 && parts[1] == "status" && parts[2] == "subscribe" && parts[3] == "unsubscribe":
+		s.handleStatusPageUnsubscribe(w, r)
+		return true
 	case len(parts) == 3 && parts[1] == "status" && parts[2] == "logo":
 		s.handleStatusPageLogo(w, r)
 		return true

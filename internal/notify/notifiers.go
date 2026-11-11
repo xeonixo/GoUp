@@ -10,6 +10,7 @@ import (
 	"goup/internal/monitor"
 	emailnotify "goup/internal/notify/email"
 	matrixnotify "goup/internal/notify/matrix"
+	statuspagenotify "goup/internal/notify/statuspage"
 	webhooknotify "goup/internal/notify/webhook"
 	webpushnotify "goup/internal/notify/webpush"
 	store "goup/internal/store/sqlite"
@@ -48,6 +49,10 @@ func Build(ctx context.Context, controlStore *store.ControlPlaneStore, appStore 
 	if err != nil {
 		return nil, fmt.Errorf("webpush: %w", err)
 	}
+	statusPageID, err := appStore.EnsureSystemNotificationEndpoint(ctx, statuspagenotify.EndpointKind, statuspagenotify.EndpointName, `{}`, true)
+	if err != nil {
+		return nil, fmt.Errorf("status page subscriptions: %w", err)
+	}
 	sender := webpushnotify.NewSender(controlStore, opts.BaseURL)
 	var matrix, email, push monitor.Notifier
 	if opts.AdminOnly {
@@ -59,10 +64,12 @@ func Build(ctx context.Context, controlStore *store.ControlPlaneStore, appStore 
 		matrix = matrixnotify.NewTenantNotifier(controlStore, matrixID, opts.TenantID)
 		email = emailnotify.NewNotifier(controlStore, emailID, opts.TenantID, opts.BaseURL, opts.TenantSlug)
 	}
+	statusPage := statuspagenotify.NewNotifier(controlStore, appStore, statusPageID, opts.BaseURL, opts.TenantSlug)
 	return []monitor.Notifier{
 		matrix,
 		email,
 		push,
+		statusPage,
 		webhooknotify.NewNotifier(appStore, controlStore, opts.TenantID),
 	}, nil
 }
