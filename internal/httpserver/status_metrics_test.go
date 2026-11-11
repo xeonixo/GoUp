@@ -247,6 +247,7 @@ func TestSettingsStatusPageTemplateRenders(t *testing.T) {
 	}
 	for _, want := range []string{
 		`name="monitor_7"`, `name="display_7"`, `name="ttl_days"`, `name="scope"`, `name="access_mode"`, `name="brand_color"`,
+		`name="custom_css"`, `name="custom_domain"`,
 		`/acme/settings/status-page/tokens/3/revoke`, `/acme/settings/status-page/tokens/3/rotate`,
 		`goup_tok`, `data-action="copy"`, `enctype="multipart/form-data"`, `monitors:write`,
 	} {

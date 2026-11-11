@@ -27,7 +27,7 @@ func (s *Server) statusSubscriptionsEnabled(r *http.Request) bool {
 }
 
 func (s *Server) statusPageRedirect(w http.ResponseWriter, r *http.Request, slug, kind, messageKey string) {
-	target := "/" + slug + "/status"
+	target := statusPagePublicPathPrefix(r, slug)
 	if kind != "" && messageKey != "" {
 		target += "?" + kind + "=" + url.QueryEscape(messageKey)
 	}

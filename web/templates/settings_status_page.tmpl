@@ -67,6 +67,16 @@
       <input type="number" name="announce_hours" min="1" max="720" step="1" value="{{$sp.AnnounceHours}}">
       <small class="muted compact">{{index $.Translations "settings.status_page.announce_hours_hint"}}</small>
     </label>
+    <label>
+      <span>{{index $.Translations "settings.status_page.custom_css"}}</span>
+      <textarea name="custom_css" rows="8" maxlength="16384" spellcheck="false" placeholder="{{index $.Translations "settings.status_page.custom_css_placeholder"}}">{{$sp.CustomCSS}}</textarea>
+      <small class="muted compact">{{index $.Translations "settings.status_page.custom_css_hint"}}</small>
+    </label>
+    <label>
+      <span>{{index $.Translations "settings.status_page.custom_domain"}}</span>
+      <input type="text" name="custom_domain" maxlength="253" placeholder="status.example.com" value="{{$sp.CustomDomain}}" autocomplete="off">
+      <small class="muted compact">{{index $.Translations "settings.status_page.custom_domain_hint"}}</small>
+    </label>
 
     <h3>{{index $.Translations "settings.status_page.access"}}</h3>
     <p class="muted compact">{{index $.Translations "settings.status_page.access_hint"}}</p>
@@ -112,6 +122,14 @@
       <button type="button" class="button button-secondary" data-action="copy" data-copy-target="status-public-url" data-copied-label="{{index $.Translations "settings.status_page.copied"}}">{{index $.Translations "settings.status_page.copy_url"}}</button>
       <a class="button button-secondary" href="{{$sp.PublicURL}}" target="_blank" rel="noopener noreferrer">{{index $.Translations "settings.status_page.open"}}</a>
     </div>
+    {{if $sp.CustomDomainURL}}
+    <p class="muted compact">{{index $.Translations "settings.status_page.custom_domain_url"}}</p>
+    <div class="status-url-row">
+      <input type="text" id="status-custom-domain-url" readonly value="{{$sp.CustomDomainURL}}">
+      <button type="button" class="button button-secondary" data-action="copy" data-copy-target="status-custom-domain-url" data-copied-label="{{index $.Translations "settings.status_page.copied"}}">{{index $.Translations "settings.status_page.copy_url"}}</button>
+      <a class="button button-secondary" href="{{$sp.CustomDomainURL}}" target="_blank" rel="noopener noreferrer">{{index $.Translations "settings.status_page.open"}}</a>
+    </div>
+    {{end}}
   </section>
 
   {{if $sp.NewAccessToken}}

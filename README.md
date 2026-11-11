@@ -515,6 +515,19 @@ Each tenant can publish an opt-in status page at `/{slug}/status`. It needs no l
 
 1. Sign in as a tenant admin and open **Settings → Status & metrics**.
 2. Enable the page, set a title and optional description, tick the monitors to show and give each a public display name (defaults to the monitor name). Use **Copy public URL** to share the link.
+3. Optional branding: logo, brand color, custom CSS (size-capped, sanitized, injected only as a `<style>` block on the public page), and a custom domain.
+
+### Custom domain
+
+Set **Custom domain** to a hostname such as `status.example.com`. When a request’s `Host` matches that hostname and the status page is enabled, GoUp serves the page at `/` (and `/status`) without a tenant slug in the path. Asset/feed paths under `/status/...` work the same way.
+
+The reverse proxy in front of GoUp must route that hostname to the GoUp process and forward the original `Host` header (SNI/TLS termination for the custom domain is also the proxy’s job). Example (Caddy):
+
+```caddy
+status.example.com {
+  reverse_proxy goup:8080
+}
+```
 
 The page shows an overall banner, each monitor's current status, 90-day daily uptime bars with the percentage (computed from the hourly rollups, so unknown and maintenance checks do not count) and the time of the last update. It never exposes targets, hosts, URLs, error messages or latencies. If a selected monitor belongs to a monitor group, the group name is shown as a heading. The response is cached on the server for 30 seconds and sent with `Cache-Control: public, max-age=30`, so changes appear after at most about 30 seconds. A disabled page or an inactive tenant returns 404.
 
@@ -691,7 +704,7 @@ docs/                   Architecture notes and project documentation
 
 Shipped since the early architecture notes (see [docs/improvements.md](docs/improvements.md) for the full prioritized backlog):
 
-- [x] Public status page (`/{slug}/status`) with branding, incidents, and optional token access
+- [x] Public status page (`/{slug}/status`) with branding, custom CSS/domain, incidents, and optional token access
 - [x] Additional monitor types (DNS, SDNS, UDP, WHOIS, heartbeat, and more)
 - [x] Operator role (`admin` / `operator` / `viewer`)
 - [x] Notification routing and quiet hours

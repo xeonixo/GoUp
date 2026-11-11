@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"html/template"
 	"io"
 	"net/http"
 	"os"
@@ -71,6 +72,7 @@ type statusPageView struct {
 	Description    string
 	LogoURL        string
 	BrandCSSURL    string
+	CustomCSS      template.CSS
 	FeedURL        string
 	SubscribeURL   string
 	HideGoUpFooter bool
@@ -312,7 +314,8 @@ func (s *Server) buildStatusPage(r *http.Request, tenantID int64, settings store
 	}
 	translations := s.translationsForLanguage(lang)
 	slug := tenantSlugFromRequest(r)
-	view := buildStatusPageView(settings, selected, snapshots, rollups, incidents, tenantName, translations, now, appStore.MaintenanceSet(r.Context()), slug)
+	pathPrefix := statusPagePublicPathPrefix(r, slug)
+	view := buildStatusPageView(settings, selected, snapshots, rollups, incidents, tenantName, translations, now, appStore.MaintenanceSet(r.Context()), pathPrefix)
 	view.SubscriptionsOn = s.statusSubscriptionsEnabled(r)
 	view.Notice = resolveStatusPageFlash(translations, r.URL.Query().Get("notice"))
 	view.Error = resolveStatusPageFlash(translations, r.URL.Query().Get("error"))
@@ -339,7 +342,18 @@ func (s *Server) buildStatusPage(r *http.Request, tenantID int64, settings store
 	return buf.Bytes(), nil
 }
 
-func buildStatusPageView(settings store.StatusPageSettings, selected []store.StatusPageMonitor, snapshots []monitor.Snapshot, rollups []store.MonitorHourlyRollup, incidents []store.StatusPageIncident, tenantName string, tr map[string]string, now time.Time, maintenance monitor.MaintenanceSet, slug string) statusPageView {
+func statusPagePublicPathPrefix(r *http.Request, slug string) string {
+	if statusPageCustomDomainFromRequest(r) {
+		return "/status"
+	}
+	slug = strings.TrimSpace(slug)
+	if slug != "" {
+		return "/" + slug + "/status"
+	}
+	return "/status"
+}
+
+func buildStatusPageView(settings store.StatusPageSettings, selected []store.StatusPageMonitor, snapshots []monitor.Snapshot, rollups []store.MonitorHourlyRollup, incidents []store.StatusPageIncident, tenantName string, tr map[string]string, now time.Time, maintenance monitor.MaintenanceSet, pathPrefix string) statusPageView {
 	byID := make(map[int64]monitor.Snapshot, len(snapshots))
 	for _, snap := range snapshots {
 		byID[snap.Monitor.ID] = snap
@@ -352,22 +366,27 @@ func buildStatusPageView(settings store.StatusPageSettings, selected []store.Sta
 		HideGoUpFooter: settings.HideGoUpFooter,
 		UpdatedAt:      now.UTC().Format("2006-01-02 15:04 UTC"),
 	}
+	if css := store.SanitizeStatusPageCustomCSS(settings.CustomCSS); css != "" {
+		view.CustomCSS = template.CSS(css)
+	}
 	if view.Title == "" {
 		view.Title = strings.TrimSpace(tenantName)
 	}
 	if view.Title == "" {
 		view.Title = "Status"
 	}
-	if strings.TrimSpace(settings.LogoRef) != "" && slug != "" {
-		view.LogoURL = "/" + slug + "/status/logo"
+	pathPrefix = strings.TrimRight(strings.TrimSpace(pathPrefix), "/")
+	if pathPrefix == "" {
+		pathPrefix = "/status"
 	}
-	if strings.TrimSpace(settings.BrandColor) != "" && slug != "" {
-		view.BrandCSSURL = "/" + slug + "/status/brand.css"
+	if strings.TrimSpace(settings.LogoRef) != "" {
+		view.LogoURL = pathPrefix + "/logo"
 	}
-	if slug != "" {
-		view.FeedURL = "/" + slug + "/status/feed.xml"
-		view.SubscribeURL = "/" + slug + "/status/subscribe"
+	if strings.TrimSpace(settings.BrandColor) != "" {
+		view.BrandCSSURL = pathPrefix + "/brand.css"
 	}
+	view.FeedURL = pathPrefix + "/feed.xml"
+	view.SubscribeURL = pathPrefix + "/subscribe"
 	for _, item := range selected {
 		name := strings.TrimSpace(item.DisplayName)
 		if name == "" {

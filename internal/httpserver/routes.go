@@ -135,6 +135,11 @@ func serveEmbeddedFile(fsys fs.FS, fileName string) http.HandlerFunc {
 }
 
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	// Custom-domain status hosting is resolved from Host before slug routing so
+	// status.example.com/ (and /status) work without /{slug} in the path.
+	if s.handleCustomDomainStatus(w, r) {
+		return
+	}
 	if r.URL.Path != "/" {
 		if s.handlePrettyTenantPath(w, r) {
 			return

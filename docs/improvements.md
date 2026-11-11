@@ -132,7 +132,7 @@ Offener Fokus danach: **Tier 3** (u. a. Remote-Node-mTLS).
 | gRPC-Health / Prometheus-Query-Monitore | Höhere Dependencies; widerspricht stdlib-first in architecture.md |
 | Browser/Script-Checks (Playwright) | RAM/Prozess-Kosten kollidieren mit Single-Process-Ziel |
 | Process-Level-Metrics, JSON-Logs, Request-IDs | Nützlich für große Installationen; nicht blocker für Self-Host-MVP-Plus *(teilweise umgesetzt: `GOUP_LOG_FORMAT`, request IDs, `/admin/system/metrics`)* |
-| Status Custom Domain / Custom CSS | Nach Branding-MVP (T1.3) |
+| **Status Custom Domain / Custom CSS** | Umgesetzt: `custom_css` (≤16 KB, sanitisiert als `<style>`) + `custom_domain` mit Host-basiertem Routing unter `/` und `/status` (Reverse-Proxy muss Host an GoUp weiterreichen). |
 | Persistente Lockouts über Restarts | Nur relevant bei Multi-Replica; heute Single-Process-Annahme |
 | Hash-only Access-Tokens / Bootstrap-Fingerprints | Defense-in-depth nach Grace + Rate-Limits |
 | VAPID-Key-Rotation-UX | Create-once heute; Rotation braucht Re-Subscribe-Guidance |

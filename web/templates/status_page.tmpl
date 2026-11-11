@@ -1,6 +1,7 @@
 {{define "content"}}
 {{$sp := .StatusPage}}
 {{if $sp.BrandCSSURL}}<link rel="stylesheet" href="{{$sp.BrandCSSURL}}">{{end}}
+{{if $sp.CustomCSS}}<style>{{$sp.CustomCSS}}</style>{{end}}
 <div class="status-page">
   <header class="status-page-header">
     {{if $sp.LogoURL}}
