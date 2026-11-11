@@ -58,76 +58,43 @@ func (s *Store) backfillMonitorLatestResults(ctx context.Context) error {
 		// Incomplete legacy schemas are repaired later; skip until columns exist.
 		return nil
 	}
-	hasMessage, err := s.tableHasColumn(ctx, "monitor_results", "message")
-	if err != nil {
-		return err
-	}
-	hasHTTP, err := s.tableHasColumn(ctx, "monitor_results", "http_status_code")
-	if err != nil {
-		return err
-	}
-	hasTLSValid, err := s.tableHasColumn(ctx, "monitor_results", "tls_valid")
-	if err != nil {
-		return err
-	}
-	hasTLSNotAfter, err := s.tableHasColumn(ctx, "monitor_results", "tls_not_after")
-	if err != nil {
-		return err
-	}
-	hasTLSDays, err := s.tableHasColumn(ctx, "monitor_results", "tls_days_remaining")
-	if err != nil {
-		return err
-	}
 
-	latencyExpr := "COALESCE((SELECT mr.latency_ms FROM monitor_results mr WHERE mr.monitor_id = monitors.id ORDER BY mr.checked_at DESC, mr.id DESC LIMIT 1), 0)"
-	messageExpr := "''"
-	if hasMessage {
-		messageExpr = "COALESCE((SELECT mr.message FROM monitor_results mr WHERE mr.monitor_id = monitors.id ORDER BY mr.checked_at DESC, mr.id DESC LIMIT 1), '')"
-	}
-	httpExpr := "NULL"
-	if hasHTTP {
-		httpExpr = "(SELECT mr.http_status_code FROM monitor_results mr WHERE mr.monitor_id = monitors.id ORDER BY mr.checked_at DESC, mr.id DESC LIMIT 1)"
-	}
-	tlsValidExpr := "NULL"
-	if hasTLSValid {
-		tlsValidExpr = "(SELECT mr.tls_valid FROM monitor_results mr WHERE mr.monitor_id = monitors.id ORDER BY mr.checked_at DESC, mr.id DESC LIMIT 1)"
-	}
-	tlsNotAfterExpr := "NULL"
-	if hasTLSNotAfter {
-		tlsNotAfterExpr = "(SELECT mr.tls_not_after FROM monitor_results mr WHERE mr.monitor_id = monitors.id ORDER BY mr.checked_at DESC, mr.id DESC LIMIT 1)"
-	}
-	tlsDaysExpr := "NULL"
-	if hasTLSDays {
-		tlsDaysExpr = "(SELECT mr.tls_days_remaining FROM monitor_results mr WHERE mr.monitor_id = monitors.id ORDER BY mr.checked_at DESC, mr.id DESC LIMIT 1)"
-	}
-
+	// One index seek per monitor via idx_monitor_results_latest, instead of nine
+	// correlated subqueries that re-walk history for each column.
 	_, err = s.db.ExecContext(ctx, `
 UPDATE monitors
 SET
-    last_result_id = (
-        SELECT mr.id FROM monitor_results mr
-        WHERE mr.monitor_id = monitors.id
-        ORDER BY mr.checked_at DESC, mr.id DESC LIMIT 1
-    ),
-    last_checked_at = (
-        SELECT mr.checked_at FROM monitor_results mr
-        WHERE mr.monitor_id = monitors.id
-        ORDER BY mr.checked_at DESC, mr.id DESC LIMIT 1
-    ),
-    last_status = COALESCE((
-        SELECT mr.status FROM monitor_results mr
-        WHERE mr.monitor_id = monitors.id
-        ORDER BY mr.checked_at DESC, mr.id DESC LIMIT 1
-    ), ''),
-    last_latency_ms = `+latencyExpr+`,
-    last_message = `+messageExpr+`,
-    last_http_status_code = `+httpExpr+`,
-    last_tls_valid = `+tlsValidExpr+`,
-    last_tls_not_after = `+tlsNotAfterExpr+`,
-    last_tls_days_remaining = `+tlsDaysExpr+`
-WHERE EXISTS (
-    SELECT 1 FROM monitor_results mr WHERE mr.monitor_id = monitors.id
-)
+    last_result_id = latest.id,
+    last_checked_at = latest.checked_at,
+    last_status = COALESCE(latest.status, ''),
+    last_latency_ms = COALESCE(latest.latency_ms, 0),
+    last_message = COALESCE(latest.message, ''),
+    last_http_status_code = latest.http_status_code,
+    last_tls_valid = latest.tls_valid,
+    last_tls_not_after = latest.tls_not_after,
+    last_tls_days_remaining = latest.tls_days_remaining
+FROM (
+    SELECT
+        m.id AS monitor_id,
+        r.id,
+        r.checked_at,
+        r.status,
+        r.latency_ms,
+        r.message,
+        r.http_status_code,
+        r.tls_valid,
+        r.tls_not_after,
+        r.tls_days_remaining
+    FROM monitors m
+    JOIN monitor_results r ON r.id = (
+        SELECT mr.id
+        FROM monitor_results mr
+        WHERE mr.monitor_id = m.id
+        ORDER BY mr.checked_at DESC, mr.id DESC
+        LIMIT 1
+    )
+) AS latest
+WHERE monitors.id = latest.monitor_id
 `)
 	if err != nil {
 		if isMalformedSQLiteError(err) {

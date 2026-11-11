@@ -6,23 +6,28 @@ import (
 	"net"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	mdns "github.com/miekg/dns"
 )
 
-// Well-known root server addresses used when the parent of a name is the DNS root.
-// Used only to bootstrap authoritative TLD lookups; answers themselves are not cached.
-var dnsRootHints = []string{
-	"192.5.5.241:53",    // F.ROOT-SERVERS.NET
-	"198.41.0.4:53",     // A.ROOT-SERVERS.NET
-	"192.203.230.10:53", // E.ROOT-SERVERS.NET
-	"199.9.14.201:53",   // B.ROOT-SERVERS.NET
-}
+const (
+	dnsNSPerServerTimeout = 2 * time.Second
+	dnsNSMaxParentServers = 4
+)
 
-// lookupDNSNS resolves NS records via the parent zone's authoritative servers so
-// recursive resolver TTLs cannot hide nameserver changes. Falls back to a
-// recursive query when the authoritative path yields nothing.
+// lookupDNSNS resolves NS records without relying on recursive answer caches.
+//
+// Strategy (Docker/firewall friendly):
+//  1. Ask the configured/system recursive resolvers with RD=false. Public
+//     resolvers typically return a parent referral (or an AA answer) quickly.
+//  2. Query up to a few referred parent nameservers in parallel with a short
+//     per-server timeout.
+//  3. Fall back to a normal recursive (RD=true) lookup.
+//
+// Root-hint spraying is avoided: many container networks allow DNS only to the
+// configured resolvers and would otherwise stall on UDP timeouts.
 func lookupDNSNS(ctx context.Context, host string, preferredServer string, timeout time.Duration) ([]string, error) {
 	host = strings.Trim(strings.TrimSpace(host), ".")
 	if host == "" {
@@ -32,7 +37,14 @@ func lookupDNSNS(ctx context.Context, host string, preferredServer string, timeo
 		timeout = 10 * time.Second
 	}
 
-	if records, err := lookupDNSNSAuthoritative(ctx, host, preferredServer, timeout); err == nil && len(records) > 0 {
+	resolvers := dnsResolverServers(preferredServer)
+	if records, err := lookupDNSNSFromResolvers(ctx, host, resolvers, false, timeout); err == nil && len(records) > 0 {
+		return records, nil
+	} else if err != nil && ctx.Err() != nil {
+		return nil, err
+	}
+
+	if records, err := lookupDNSNSViaParentReferral(ctx, host, preferredServer, resolvers, timeout); err == nil && len(records) > 0 {
 		return records, nil
 	} else if err != nil && ctx.Err() != nil {
 		return nil, err
@@ -45,33 +57,22 @@ func lookupDNSNS(ctx context.Context, host string, preferredServer string, timeo
 	return formatNSRecords(records), nil
 }
 
-func lookupDNSNSAuthoritative(ctx context.Context, host string, preferredServer string, timeout time.Duration) ([]string, error) {
-	// Only trust a configured server when it answers authoritatively (AA).
-	// Recursive resolvers may still return TTL-cached Answer sections with RD=false.
-	if normalized, err := NormalizeDNSServer(preferredServer); err == nil && normalized != "" {
-		if records, aa, err := exchangeNSAuthoritative(ctx, normalized, host, timeout); err == nil && aa && len(records) > 0 {
-			return records, nil
-		} else if err != nil && ctx.Err() != nil {
-			return nil, err
-		}
+func lookupDNSNSFromResolvers(ctx context.Context, host string, resolvers []string, recursionDesired bool, timeout time.Duration) ([]string, error) {
+	if len(resolvers) == 0 {
+		return nil, fmt.Errorf("no dns resolvers")
 	}
-
-	parent := dnsParentName(host)
-	parentServers, glue, err := lookupParentAuthoritativeServersFn(ctx, parent, preferredServer, timeout)
-	if err != nil {
-		return nil, err
-	}
-	if len(parentServers) == 0 {
-		return nil, fmt.Errorf("no authoritative parent servers for %q", parent)
+	perTry := dnsNSPerServerTimeout
+	if timeout < perTry {
+		perTry = timeout
 	}
 
 	var lastErr error
-	for _, server := range parentServers {
-		records, _, exchangeErr := exchangeNSAuthoritative(ctx, server, host, timeout)
-		if exchangeErr != nil {
-			lastErr = exchangeErr
+	for _, server := range resolvers {
+		records, _, err := exchangeNS(ctx, server, host, recursionDesired, perTry)
+		if err != nil {
+			lastErr = err
 			if ctx.Err() != nil {
-				return nil, exchangeErr
+				return nil, err
 			}
 			continue
 		}
@@ -79,65 +80,128 @@ func lookupDNSNSAuthoritative(ctx context.Context, host string, preferredServer 
 			return records, nil
 		}
 	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("no NS records from resolvers")
+}
 
-	// Rare: parent referral listed hosts without usable addresses on the first pass.
-	for _, nsHost := range glue {
-		for _, addr := range resolveDNSHostPortsFn(ctx, nsHost, timeout) {
-			records, _, exchangeErr := exchangeNSAuthoritative(ctx, addr, host, timeout)
-			if exchangeErr != nil {
-				lastErr = exchangeErr
-				continue
-			}
-			if len(records) > 0 {
-				return records, nil
-			}
-		}
+func lookupDNSNSViaParentReferral(ctx context.Context, host string, preferredServer string, resolvers []string, timeout time.Duration) ([]string, error) {
+	parent := dnsParentName(host)
+	if parent == "" {
+		return nil, fmt.Errorf("no parent zone")
 	}
 
+	parentNSHosts, err := lookupParentNSHosts(ctx, parent, preferredServer, resolvers, timeout)
+	if err != nil {
+		return nil, err
+	}
+	if len(parentNSHosts) == 0 {
+		return nil, fmt.Errorf("parent %q has no NS records", parent)
+	}
+
+	servers := make([]string, 0, dnsNSMaxParentServers)
+	seen := make(map[string]struct{}, dnsNSMaxParentServers)
+	for _, nsHost := range parentNSHosts {
+		for _, addr := range resolveDNSHostPortsFn(ctx, nsHost, minDuration(timeout, dnsNSPerServerTimeout)) {
+			if _, ok := seen[addr]; ok {
+				continue
+			}
+			seen[addr] = struct{}{}
+			servers = append(servers, addr)
+			if len(servers) >= dnsNSMaxParentServers {
+				break
+			}
+		}
+		if len(servers) >= dnsNSMaxParentServers {
+			break
+		}
+	}
+	if len(servers) == 0 {
+		return nil, fmt.Errorf("could not resolve parent nameservers for %q", parent)
+	}
+
+	return exchangeNSFirstSuccess(ctx, servers, host, false, timeout)
+}
+
+func lookupParentNSHosts(ctx context.Context, parent string, preferredServer string, resolvers []string, timeout time.Duration) ([]string, error) {
+	if parent == "." {
+		// Ask a recursive resolver for the root NS set instead of hard-coded root hints.
+		records, err := lookupDNSNSFromResolvers(ctx, ".", resolvers, true, timeout)
+		if err != nil {
+			return nil, err
+		}
+		return records, nil
+	}
+	rrs, err := lookupDNSRawRR(ctx, parent, mdns.TypeNS, preferredServer, timeout)
+	if err != nil {
+		return nil, err
+	}
+	return formatNSRecords(rrs), nil
+}
+
+func exchangeNSFirstSuccess(ctx context.Context, servers []string, host string, recursionDesired bool, timeout time.Duration) ([]string, error) {
+	if len(servers) == 0 {
+		return nil, fmt.Errorf("no servers")
+	}
+	perTry := dnsNSPerServerTimeout
+	if timeout < perTry {
+		perTry = timeout
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	type result struct {
+		records []string
+		err     error
+	}
+	results := make(chan result, len(servers))
+	var wg sync.WaitGroup
+	for _, server := range servers {
+		wg.Add(1)
+		go func(server string) {
+			defer wg.Done()
+			records, _, err := exchangeNS(ctx, server, host, recursionDesired, perTry)
+			if err != nil {
+				results <- result{err: err}
+				return
+			}
+			if len(records) == 0 {
+				results <- result{err: fmt.Errorf("empty NS answer from %s", server)}
+				return
+			}
+			results <- result{records: records}
+		}(server)
+	}
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var lastErr error
+	for item := range results {
+		if item.err != nil {
+			lastErr = item.err
+			continue
+		}
+		cancel()
+		return item.records, nil
+	}
 	if lastErr != nil {
 		return nil, lastErr
 	}
 	return nil, fmt.Errorf("authoritative NS lookup returned no records")
 }
 
-// Test seams for authoritative NS lookup (production defaults below).
-var (
-	lookupParentAuthoritativeServersFn = lookupParentAuthoritativeServers
-	resolveDNSHostPortsFn              = resolveDNSHostPorts
-)
-
-func lookupParentAuthoritativeServers(ctx context.Context, parent string, preferredServer string, timeout time.Duration) ([]string, []string, error) {
-	if parent == "." || parent == "" {
-		return append([]string{}, dnsRootHints...), nil, nil
-	}
-
-	parentRecords, err := lookupDNSRawRR(ctx, parent, mdns.TypeNS, preferredServer, timeout)
-	if err != nil {
-		return nil, nil, err
-	}
-	nsHosts := formatNSRecords(parentRecords)
-	if len(nsHosts) == 0 {
-		return nil, nil, fmt.Errorf("parent %q has no NS records", parent)
-	}
-
-	servers := make([]string, 0, len(nsHosts)*2)
-	seen := make(map[string]struct{}, len(nsHosts)*2)
-	for _, nsHost := range nsHosts {
-		for _, addr := range resolveDNSHostPortsFn(ctx, nsHost, timeout) {
-			if _, ok := seen[addr]; ok {
-				continue
-			}
-			seen[addr] = struct{}{}
-			servers = append(servers, addr)
-		}
-	}
-	return servers, nsHosts, nil
-}
-
-func exchangeNSAuthoritative(ctx context.Context, server string, host string, timeout time.Duration) ([]string, bool, error) {
+func exchangeNS(ctx context.Context, server string, host string, recursionDesired bool, timeout time.Duration) ([]string, bool, error) {
 	question := new(mdns.Msg)
-	question.SetQuestion(mdns.Fqdn(host), mdns.TypeNS)
-	question.RecursionDesired = false
+	qname := "."
+	if host != "" && host != "." {
+		qname = host
+	}
+	question.SetQuestion(mdns.Fqdn(qname), mdns.TypeNS)
+	question.RecursionDesired = recursionDesired
 	client := &mdns.Client{Net: "udp", Timeout: timeout}
 	response, _, err := client.ExchangeContext(ctx, question, server)
 	if err != nil {
@@ -150,16 +214,19 @@ func exchangeNSAuthoritative(ctx context.Context, server string, host string, ti
 		return nil, false, fmt.Errorf("dns rcode %s from %s", mdns.RcodeToString[response.Rcode], server)
 	}
 
-	records := collectNSRecords(response.Answer, host)
+	records := collectNSRecords(response.Answer, qname)
 	if len(records) == 0 {
 		// Parent referrals put the delegation NS set in the authority section.
-		records = collectNSRecords(response.Ns, host)
+		records = collectNSRecords(response.Ns, qname)
 	}
 	return records, response.Authoritative, nil
 }
 
 func collectNSRecords(section []mdns.RR, host string) []string {
 	want := strings.ToLower(strings.Trim(mdns.Fqdn(host), "."))
+	if want == "" {
+		want = "."
+	}
 	results := make([]string, 0, len(section))
 	seen := make(map[string]struct{}, len(section))
 	for _, rr := range section {
@@ -168,7 +235,10 @@ func collectNSRecords(section []mdns.RR, host string) []string {
 			continue
 		}
 		owner := strings.ToLower(strings.Trim(ns.Header().Name, "."))
-		if owner != want && owner != strings.ToLower(host) {
+		if owner == "" {
+			owner = "."
+		}
+		if owner != want && owner != strings.ToLower(strings.Trim(host, ".")) {
 			continue
 		}
 		trimmed := strings.TrimSpace(strings.TrimSuffix(ns.Ns, "."))
@@ -221,6 +291,36 @@ func dnsParentName(host string) string {
 	return strings.Join(parts[1:], ".")
 }
 
+func dnsResolverServers(preferredServer string) []string {
+	servers := make([]string, 0, 4)
+	seen := make(map[string]struct{}, 4)
+	add := func(server string) {
+		normalized, err := NormalizeDNSServer(server)
+		if err != nil || normalized == "" {
+			return
+		}
+		if _, ok := seen[normalized]; ok {
+			return
+		}
+		seen[normalized] = struct{}{}
+		servers = append(servers, normalized)
+	}
+	add(preferredServer)
+	if cfg, err := mdns.ClientConfigFromFile("/etc/resolv.conf"); err == nil {
+		port := strings.TrimSpace(cfg.Port)
+		if port == "" {
+			port = "53"
+		}
+		for _, srv := range cfg.Servers {
+			add(net.JoinHostPort(strings.TrimSpace(srv), port))
+		}
+	}
+	if len(servers) == 0 {
+		add("1.1.1.1:53")
+	}
+	return servers
+}
+
 func resolveDNSHostPorts(ctx context.Context, host string, timeout time.Duration) []string {
 	host = strings.Trim(strings.TrimSpace(host), ".")
 	if host == "" {
@@ -252,3 +352,13 @@ func resolveDNSHostPorts(ctx context.Context, host string, timeout time.Duration
 	}
 	return addrs
 }
+
+func minDuration(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// Test seams for authoritative NS lookup (production defaults below).
+var resolveDNSHostPortsFn = resolveDNSHostPorts

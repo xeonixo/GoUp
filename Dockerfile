@@ -41,5 +41,6 @@ ENV GOUP_ADDR=:8080 \
     GOUP_BASE_URL=http://localhost:8080 \
     GOUP_MODE=server \
     GOUP_AUTH_MODE=disabled
-HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD if [ "$GOUP_MODE" = "remote-node" ]; then pidof remote-node >/dev/null; else wget -qO- http://127.0.0.1:8080/healthz || exit 1; fi
+# Longer start-period covers first-boot schema backfills on existing /data volumes.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 CMD if [ "$GOUP_MODE" = "remote-node" ]; then pidof remote-node >/dev/null; else wget -qO- http://127.0.0.1:8080/healthz || exit 1; fi
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
