@@ -705,16 +705,17 @@ docs/                   Architecture notes and project documentation
 Shipped since the early architecture notes (see [docs/improvements.md](docs/improvements.md) for the full prioritized backlog):
 
 - [x] Public status page (`/{slug}/status`) with branding, custom CSS/domain, incidents, and optional token access
-- [x] Additional monitor types (DNS, SDNS, UDP, WHOIS, heartbeat, and more)
+- [x] Additional monitor types (DNS, SDNS, UDP, WHOIS, heartbeat, prometheus, gRPC health, and more)
 - [x] Operator role (`admin` / `operator` / `viewer`)
 - [x] Notification routing and quiet hours
 - [x] Versioned JSON API (`/api/v1`) with scoped bearer tokens
-- [x] Remote-node previous-token grace and failed-auth rate limits
+- [x] Remote-node previous-token grace, fingerprint-only tokens, and optional mTLS
 - [x] Online backup and secret rekey
 - [x] HTTPS assertions (method/headers/JSONPath/TLS-only), reports/SLA, maintenance TZ
 - [x] Remote-node assignment UX, status feed/subscriptions, webhook secret rotate
 - [x] `/readyz`, audit retention/export, SSRF align, hardened remote-node compose
-- [ ] Remote-node mTLS (Tier 3)
+- [x] JSON logs, request IDs, process metrics, persistent lockouts, VAPID rotate
+- [ ] Browser/script monitors (Playwright) — intentionally out of scope
 
 ---
 

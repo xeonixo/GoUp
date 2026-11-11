@@ -14,15 +14,15 @@ GoUp ist funktional deutlich weiter als die frühe Zielarchitektur in [architect
 |---|---|
 | Tenancy | Control-Plane + per-Tenant-SQLite, Runner-Reconcile ohne Restart |
 | Auth | Control-Plane-Admin, lokale Tenant-User, OIDC, TOTP, Rollen `admin` / `operator` / `viewer` |
-| Monitore | HTTPS, TCP, ICMP, SMTP, IMAP, DNS, SDNS, UDP, WHOIS, Heartbeat |
-| Status | Statusseite mit Branding/Incidents/optionalem Token-Gate, Metrics-/API-Tokens |
-| Ops-Features | Maintenance, Mute, Outage-Reminders, Import/Export, `goup backup` / Rekey |
-| Remote Nodes | Outbound HTTPS, Bootstrap + Token-Rotation + Previous-Token-Grace, Fingerprint-Auth |
+| Monitore | HTTPS, TCP, ICMP, SMTP, IMAP, DNS, SDNS, UDP, WHOIS, Heartbeat, Prometheus, gRPC Health |
+| Status | Branding/Incidents/Token-Gate, Custom CSS/Domain, Feed/Subscriptions |
+| Ops-Features | Maintenance, Mute, Reminders, Import/Export, Backup/Rekey, Reports |
+| Remote Nodes | Outbound HTTPS, Token-Grace, Fingerprint-only Secrets, optional mTLS |
 | Notifications | Email, Matrix, Webhooks, Web Push inkl. Routing/Quiet Hours |
 | API | Scoped `/{slug}/api/v1` Bearer-API (`monitors:read|write`, `metrics`) |
-| Security-Baseline | HMAC-Sessions, Origin/Referer, CSP, Lockouts, AES-GCM-Secrets, Netguard/SSRF |
+| Security-Baseline | HMAC-Sessions, Origin/Referer, CSP, persistente Lockouts, AES-GCM/Fingerprints, Netguard |
 
-Die Review in [review.md](review.md) und Teile von [documentation.md](documentation.md) beschreiben teils bereits umgesetzte P0–P2-Punkte (Token-Fingerprint, Body-Limits, Multi-Tenant-Maintenance, Runner-Reconcile, WS-Origin, Lockout-Sweeper). **Tier 1 (T1.1–T1.6) ist umgesetzt**; Abschnitte unten bleiben als Spezifikation der gelieferten Arbeit. Offener Fokus: Tier 2/3.
+Die Review in [review.md](review.md) und Teile von [documentation.md](documentation.md) beschreiben teils bereits umgesetzte P0–P2-Punkte. **Tier 1–3 sind umgesetzt** (Playwright bewusst ausgenommen); Abschnitte unten bleiben als Spezifikation.
 
 ---
 
@@ -120,22 +120,22 @@ flowchart LR
 | T2.8 | Docker Remote-Node Harden | Medium | Compose: `cap_drop` / `read_only` / tmpfs | done |
 | T2.9 | SSRF Align | Medium | Webhook-URL-Validierung via netguard | done |
 
-Offener Fokus danach: **Tier 3** (u. a. Remote-Node-mTLS).
+Offener Fokus danach: bewusst **kein Playwright**; übriges Tier 3 ist umgesetzt.
 
 ---
 
-## 4. Tier 3 — bewusst später / spekulative Kosten
+## 4. Tier 3 — spekulative / teure Themen (**größtenteils umgesetzt**)
 
-| Thema | Begründung |
-|---|---|
-| **mTLS für Remote Nodes** | Umgesetzt (optional): `GOUP_REMOTE_NODE_MTLS_CA_FILE` / `GOUP_REMOTE_NODE_MTLS_REQUIRE` + Agent `REMOTE_NODE_TLS_*`; Verify auf `/node/*`, additiv zu Token-Auth. Siehe [remote-node/README.md](../remote-node/README.md). |
-| gRPC-Health / Prometheus-Query-Monitore | Höhere Dependencies; widerspricht stdlib-first in architecture.md |
-| Browser/Script-Checks (Playwright) | RAM/Prozess-Kosten kollidieren mit Single-Process-Ziel |
-| Process-Level-Metrics, JSON-Logs, Request-IDs | Nützlich für große Installationen; nicht blocker für Self-Host-MVP-Plus *(teilweise umgesetzt: `GOUP_LOG_FORMAT`, request IDs, `/admin/system/metrics`)* |
-| **Status Custom Domain / Custom CSS** | Umgesetzt: `custom_css` (≤16 KB, sanitisiert als `<style>`) + `custom_domain` mit Host-basiertem Routing unter `/` und `/status` (Reverse-Proxy muss Host an GoUp weiterreichen). |
-| Persistente Lockouts über Restarts | Nur relevant bei Multi-Replica; heute Single-Process-Annahme |
-| Hash-only Access-Tokens / Bootstrap-Fingerprints | Defense-in-depth nach Grace + Rate-Limits |
-| VAPID-Key-Rotation-UX | Create-once heute; Rotation braucht Re-Subscribe-Guidance |
+| Thema | Status | Hinweis |
+|---|---|---|
+| **mTLS für Remote Nodes** | done | Optional via `GOUP_REMOTE_NODE_MTLS_*` + Agent-Client-Certs |
+| gRPC-Health / Prometheus-Query-Monitore | done | Kinds `grpc` und `prometheus` |
+| Browser/Script-Checks (Playwright) | **bewusst nicht** | RAM/Prozess-Kosten kollidieren mit Single-Process-Ziel |
+| Process-Level-Metrics, JSON-Logs, Request-IDs | done | `GOUP_LOG_FORMAT`, Request-ID-Middleware, `/admin/system/metrics` |
+| Status Custom Domain / Custom CSS | done | Host-Mapping + sanitisiertes Custom-CSS |
+| Persistente Lockouts über Restarts | done | `rate_limit_attempts` in Control-Plane-DB |
+| Hash-only Access-Tokens / Bootstrap-Fingerprints | done | Fingerprint-only Storage inkl. Legacy-Fallback |
+| VAPID-Key-Rotation-UX | done | Admin-Rotate + Resubscribe-Hinweis |
 
 ---
 
@@ -171,3 +171,4 @@ Kurzform für die öffentliche README (siehe auch Root-[README.md](../README.md)
 - [x] Remote-node mTLS *(Tier 3)*
 - [x] Online backup and secret rekey *(T1.6)*
 - [x] Tier 2 parity/ops items *(T2.1–T2.9)*
+- [x] Tier 3 hardening/observability/monitors *(ohne Playwright)*
