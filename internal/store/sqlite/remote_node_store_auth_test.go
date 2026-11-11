@@ -54,3 +54,50 @@ func TestAuthenticateRemoteNodeAccessToken(t *testing.T) {
 		t.Fatalf("wrong token error = %v, want sql.ErrNoRows", err)
 	}
 }
+
+func TestRemoteNodeAccessTokenGraceAcceptsPreviousToken(t *testing.T) {
+	ctx := context.Background()
+	cp, dir := openTestControlPlane(t)
+	if err := cp.ConfigureSecretKey("test-secret-key-for-node-auth-grace"); err != nil {
+		t.Fatal(err)
+	}
+	tenant, err := cp.CreateTenant(ctx, "grace", "Grace", filepath.Join(dir, "grace.db"))
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	node, _, err := cp.CreateRemoteNode(ctx, tenant.ID, "edge-grace", 120)
+	if err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+
+	oldToken, _, err := cp.IssueRemoteNodeAccessToken(ctx, node.ID, 5*time.Minute)
+	if err != nil {
+		t.Fatalf("issue first token: %v", err)
+	}
+	newToken, _, err := cp.IssueRemoteNodeAccessToken(ctx, node.ID, 5*time.Minute)
+	if err != nil {
+		t.Fatalf("issue rotated token: %v", err)
+	}
+	if oldToken == newToken {
+		t.Fatal("expected rotated token to differ")
+	}
+
+	if _, err := cp.AuthenticateRemoteNodeAccessToken(ctx, newToken); err != nil {
+		t.Fatalf("authenticate current token: %v", err)
+	}
+	if _, err := cp.AuthenticateRemoteNodeAccessToken(ctx, oldToken); err != nil {
+		t.Fatalf("authenticate previous token during grace: %v", err)
+	}
+
+	_, err = cp.db.ExecContext(ctx, `
+UPDATE remote_nodes
+SET previous_access_token_expires_at = ?
+WHERE id = ?
+`, time.Now().UTC().Add(-time.Second), node.ID)
+	if err != nil {
+		t.Fatalf("expire previous token: %v", err)
+	}
+	if _, err := cp.AuthenticateRemoteNodeAccessToken(ctx, oldToken); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expired previous token error = %v, want sql.ErrNoRows", err)
+	}
+}

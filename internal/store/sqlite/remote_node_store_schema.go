@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS remote_nodes (
 	if err := s.ensureRemoteNodeAccessTokenFingerprintColumn(ctx); err != nil {
 		return err
 	}
+	if err := s.ensureRemoteNodePreviousAccessTokenColumns(ctx); err != nil {
+		return err
+	}
 	if err := s.ensureRemoteNodeAgentVersionColumns(ctx); err != nil {
 		return err
 	}
@@ -58,6 +61,9 @@ CREATE TABLE IF NOT EXISTS remote_node_events (
 	if _, err := s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_remote_nodes_access_token_fingerprint ON remote_nodes(access_token_fingerprint, enabled, access_token_expires_at)`); err != nil {
 		return fmt.Errorf("create remote_nodes access token fingerprint index: %w", err)
 	}
+	if _, err := s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_remote_nodes_previous_access_token_fingerprint ON remote_nodes(previous_access_token_fingerprint, enabled, previous_access_token_expires_at)`); err != nil {
+		return fmt.Errorf("create remote_nodes previous access token fingerprint index: %w", err)
+	}
 	if _, err := s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_remote_node_events_tenant_node_created ON remote_node_events(tenant_id, node_id, created_at DESC)`); err != nil {
 		return fmt.Errorf("create remote_node_events tenant-node-created index: %w", err)
 	}
@@ -82,6 +88,30 @@ func (s *ControlPlaneStore) ensureRemoteNodeAccessTokenFingerprintColumn(ctx con
 	}
 	if err := s.backfillRemoteNodeAccessTokenFingerprints(ctx); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (s *ControlPlaneStore) ensureRemoteNodePreviousAccessTokenColumns(ctx context.Context) error {
+	columns := []struct {
+		name string
+		ddl  string
+	}{
+		{name: "previous_access_token_ciphertext", ddl: `ALTER TABLE remote_nodes ADD COLUMN previous_access_token_ciphertext TEXT NOT NULL DEFAULT ''`},
+		{name: "previous_access_token_fingerprint", ddl: `ALTER TABLE remote_nodes ADD COLUMN previous_access_token_fingerprint TEXT NOT NULL DEFAULT ''`},
+		{name: "previous_access_token_expires_at", ddl: `ALTER TABLE remote_nodes ADD COLUMN previous_access_token_expires_at DATETIME`},
+	}
+	for _, column := range columns {
+		hasColumn, err := s.tableHasColumn(ctx, "remote_nodes", column.name)
+		if err != nil {
+			return fmt.Errorf("inspect remote_nodes %s column: %w", column.name, err)
+		}
+		if hasColumn {
+			continue
+		}
+		if _, err := s.db.ExecContext(ctx, column.ddl); err != nil {
+			return fmt.Errorf("add remote_nodes %s column: %w", column.name, err)
+		}
 	}
 	return nil
 }
