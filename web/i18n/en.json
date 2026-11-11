@@ -175,7 +175,7 @@
   "dashboard.modal.dns_record_type_soa": "SOA",
   "dashboard.modal.dns_server_label": "DNS server (optional)",
   "dashboard.modal.dns_server_placeholder": "1.1.1.1 or 2606:4700:4700::1111",
-  "dashboard.modal.dns_server_hint": "Leave empty to use the system resolver. Optional with port, e.g. 1.1.1.1:53.",
+  "dashboard.modal.dns_server_hint": "Leave empty to use the system resolver. Optional with port, e.g. 1.1.1.1:53. NS checks query the parent zone authoritatively so recursive TTL caches cannot hide nameserver changes.",
   "dashboard.modal.sdns_target_label": "Secure DNS target",
   "dashboard.modal.sdns_query_label": "Name to resolve",
   "dashboard.modal.sdns_transport_label": "Transport",
