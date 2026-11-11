@@ -32,6 +32,7 @@ WHERE monitor_id = ? AND resolved_at IS NULL
 			return fmt.Errorf("resolve incident rows affected: %w", err)
 		}
 		if affected > 0 {
+			s.bumpDashboardRevision()
 			return nil
 		}
 
@@ -62,6 +63,7 @@ WHERE id = ?
 		if err != nil {
 			return fmt.Errorf("fallback resolve incident: %w", err)
 		}
+		s.bumpDashboardRevision()
 		return nil
 	}
 
@@ -82,6 +84,7 @@ VALUES (?, ?, NULL, ?, ?)
 			if insertErr != nil {
 				return fmt.Errorf("create incident: %w", insertErr)
 			}
+			s.bumpDashboardRevision()
 			return nil
 		}
 		return fmt.Errorf("lookup open incident: %w", err)
@@ -96,6 +99,7 @@ WHERE id = ?
 		return fmt.Errorf("update incident: %w", err)
 	}
 
+	s.bumpDashboardRevision()
 	return nil
 }
 
@@ -153,5 +157,6 @@ VALUES (?, ?, ?, ?, ?)
 		return fmt.Errorf("insert monitor state transition: %w", err)
 	}
 
+	s.bumpDashboardRevision()
 	return nil
 }

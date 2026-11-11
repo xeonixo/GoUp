@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -20,6 +21,8 @@ type Store struct {
 	maintenanceMu     sync.Mutex
 	maintenanceCache  monitor.MaintenanceSet
 	maintenanceLoaded time.Time
+
+	dashboardRevision atomic.Uint64
 }
 
 type DashboardStats struct {

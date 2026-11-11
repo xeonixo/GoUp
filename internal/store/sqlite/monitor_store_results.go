@@ -163,7 +163,7 @@ func (s *Store) SaveMonitorResult(ctx context.Context, result monitor.Result) er
 	}
 	defer tx.Rollback()
 
-	_, err = tx.ExecContext(ctx, `
+	insertResult, err := tx.ExecContext(ctx, `
 INSERT INTO monitor_results (
     monitor_id, checked_at, status, latency_ms, message,
     http_status_code, tls_valid, tls_not_after, tls_days_remaining, in_maintenance
@@ -172,8 +172,18 @@ INSERT INTO monitor_results (
 	if err != nil {
 		return fmt.Errorf("save monitor result: %w", err)
 	}
+	resultID, err := insertResult.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("read monitor result id: %w", err)
+	}
 
+	if err := updateMonitorLatestResult(ctx, tx, resultID, result, checkedAt); err != nil {
+		return err
+	}
 	if err := upsertHourlyRollup(ctx, tx, result.MonitorID, checkedAt, result.Status, int(result.Latency.Milliseconds()), result.InMaintenance); err != nil {
+		return err
+	}
+	if err := upsertDailyRollup(ctx, tx, result.MonitorID, checkedAt, result.Status, int(result.Latency.Milliseconds()), result.InMaintenance); err != nil {
 		return err
 	}
 
@@ -181,5 +191,6 @@ INSERT INTO monitor_results (
 		return fmt.Errorf("commit monitor result transaction: %w", err)
 	}
 
+	s.bumpDashboardRevision()
 	return nil
 }

@@ -50,26 +50,19 @@ SELECT
     m.created_at,
     m.updated_at,
     COALESCE(m.config_json, '{}'),
-    r.id,
-    r.checked_at,
-    r.status,
-    r.latency_ms,
-    r.message,
-    r.http_status_code,
-    r.tls_valid,
-    r.tls_not_after,
-    r.tls_days_remaining,
+    m.last_result_id,
+    m.last_checked_at,
+    CASE WHEN m.last_result_id IS NULL THEN NULL ELSE m.last_status END,
+    CASE WHEN m.last_result_id IS NULL THEN NULL ELSE m.last_latency_ms END,
+    CASE WHEN m.last_result_id IS NULL THEN NULL ELSE m.last_message END,
+    m.last_http_status_code,
+    m.last_tls_valid,
+    m.last_tls_not_after,
+    m.last_tls_days_remaining,
     m.heartbeat_token,
     m.last_heartbeat_at,
     m.last_heartbeat_ok
 FROM monitors m
-LEFT JOIN monitor_results r ON r.id = (
-    SELECT mr.id
-    FROM monitor_results mr
-    WHERE mr.monitor_id = m.id
-    ORDER BY mr.checked_at DESC, mr.id DESC
-    LIMIT 1
-)
 `
 
 func (s *Store) listMonitorSnapshotsWithResults(ctx context.Context) ([]monitor.Snapshot, error) {

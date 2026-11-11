@@ -67,6 +67,10 @@ func (s *Store) RunMaintenance(ctx context.Context, now time.Time, options ...Ma
 	}
 	result.BackfilledHourlyRollups = backfilled
 
+	if _, err := s.ensureDailyRollupBackfill(ctx, now); err != nil {
+		return result, err
+	}
+
 	if err := s.ensureHourlyRollupMinRepair(ctx, now); err != nil {
 		return result, err
 	}
@@ -82,6 +86,10 @@ func (s *Store) RunMaintenance(ctx context.Context, now time.Time, options ...Ma
 		return result, err
 	}
 	result.DeletedHourlyRollups = deletedRollups
+
+	if _, err := s.pruneDailyRollupsIfDue(ctx, now); err != nil {
+		return result, err
+	}
 
 	deletedStateEvents, deletedNotificationEvents, err := s.pruneEventsIfDue(ctx, now, opts)
 	if err != nil {

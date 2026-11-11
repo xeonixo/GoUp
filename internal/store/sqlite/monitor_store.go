@@ -83,6 +83,7 @@ INSERT INTO monitors (
 		return 0, fmt.Errorf("read monitor id: %w", err)
 	}
 
+	s.bumpDashboardRevision()
 	return id, nil
 }
 
@@ -170,6 +171,7 @@ WHERE id = ?
 		return sql.ErrNoRows
 	}
 
+	s.bumpDashboardRevision()
 	return nil
 }
 
@@ -187,6 +189,7 @@ func (s *Store) DeleteMonitor(ctx context.Context, id int64) error {
 		return sql.ErrNoRows
 	}
 
+	s.bumpDashboardRevision()
 	return nil
 }
 
@@ -212,6 +215,7 @@ WHERE id = ?
 		return sql.ErrNoRows
 	}
 
+	s.bumpDashboardRevision()
 	return nil
 }
 
@@ -252,7 +256,14 @@ WHERE id IN (`+placeholders+`)
 	if err != nil {
 		return 0, fmt.Errorf("set monitor muted_until: %w", err)
 	}
-	return result.RowsAffected()
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if affected > 0 {
+		s.bumpDashboardRevision()
+	}
+	return affected, nil
 }
 
 // MaxConfirmAfter bounds the flapping-protection setting.
@@ -320,6 +331,7 @@ WHERE id = ?
 		return sql.ErrNoRows
 	}
 
+	s.bumpDashboardRevision()
 	return nil
 }
 
@@ -336,6 +348,7 @@ WHERE executor_kind = 'remote' AND executor_ref = ?
 	if err != nil {
 		return fmt.Errorf("reassign remote node monitors: %w", err)
 	}
+	s.bumpDashboardRevision()
 	return nil
 }
 
@@ -364,6 +377,9 @@ WHERE TRIM(group_name) = ? AND kind <> 'heartbeat'
 	affected, err := result.RowsAffected()
 	if err != nil {
 		return 0, fmt.Errorf("set group monitors executor rows affected: %w", err)
+	}
+	if affected > 0 {
+		s.bumpDashboardRevision()
 	}
 	return affected, nil
 }

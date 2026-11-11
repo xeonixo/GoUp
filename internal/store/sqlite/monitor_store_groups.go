@@ -52,6 +52,7 @@ func (s *Store) DeleteMonitorGroup(ctx context.Context, groupName string) error 
 		return fmt.Errorf("commit delete monitor group transaction: %w", err)
 	}
 
+	s.bumpDashboardRevision()
 	return nil
 }
 
@@ -68,9 +69,6 @@ func (s *Store) ListMonitorGroups(ctx context.Context) ([]string, error) {
 }
 
 func (s *Store) ListMonitorGroupMetadata(ctx context.Context) ([]MonitorGroup, error) {
-	if err := s.syncMonitorGroups(ctx); err != nil {
-		return nil, err
-	}
 	rows, err := s.db.QueryContext(ctx, `
 SELECT name, icon_slug, sort_order
 FROM monitor_groups
@@ -102,9 +100,6 @@ func (s *Store) MoveMonitorGroup(ctx context.Context, groupName string, directio
 		return errors.New("group name is required")
 	}
 	if err := s.ensureMonitorGroupExists(ctx, groupName); err != nil {
-		return err
-	}
-	if err := s.syncMonitorGroups(ctx); err != nil {
 		return err
 	}
 
@@ -159,6 +154,7 @@ LIMIT 1
 		return fmt.Errorf("commit monitor group move transaction: %w", err)
 	}
 
+	s.bumpDashboardRevision()
 	return nil
 }
 
@@ -185,6 +181,7 @@ WHERE name = ?
 	if affected == 0 {
 		return sql.ErrNoRows
 	}
+	s.bumpDashboardRevision()
 	return nil
 }
 
@@ -221,7 +218,11 @@ FROM monitor_groups WHERE name = ?
 	); err != nil {
 		return fmt.Errorf("delete old group: %w", err)
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.bumpDashboardRevision()
+	return nil
 }
 
 func (s *Store) ReorderMonitorGroups(ctx context.Context, draggedGroup string, targetGroup string) error {
@@ -251,6 +252,8 @@ func (s *Store) ReorderMonitorGroups(ctx context.Context, draggedGroup string, t
 	return s.setMonitorGroupOrder(ctx, reordered)
 }
 
+// syncMonitorGroups inserts any monitor group_name values that are missing from
+// monitor_groups. It never renumbers sort_order; that only happens on explicit reorder.
 func (s *Store) syncMonitorGroups(ctx context.Context) error {
 	now := time.Now().UTC()
 	if _, err := s.db.ExecContext(ctx, `
@@ -267,46 +270,6 @@ GROUP BY TRIM(group_name)
 `, now, now); err != nil {
 		return fmt.Errorf("sync monitor groups insert: %w", err)
 	}
-
-	rows, err := s.db.QueryContext(ctx, `
-SELECT name
-FROM monitor_groups
-ORDER BY sort_order ASC, name COLLATE NOCASE ASC
-`)
-	if err != nil {
-		return fmt.Errorf("select monitor groups for normalize: %w", err)
-	}
-	defer rows.Close()
-
-	names := make([]string, 0)
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return fmt.Errorf("scan monitor group for normalize: %w", err)
-		}
-		names = append(names, name)
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterate monitor groups for normalize: %w", err)
-	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("close monitor groups normalize rows: %w", err)
-	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin monitor groups normalize transaction: %w", err)
-	}
-	defer tx.Rollback()
-	for idx, name := range names {
-		if _, err := tx.ExecContext(ctx, `UPDATE monitor_groups SET sort_order = ? WHERE name = ?`, idx+1, name); err != nil {
-			return fmt.Errorf("update monitor group sort order during normalize: %w", err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit monitor groups normalize transaction: %w", err)
-	}
-
 	return nil
 }
 

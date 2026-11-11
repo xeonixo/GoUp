@@ -46,6 +46,7 @@ INSERT INTO notification_events (
 		return fmt.Errorf("record notification event: %w", err)
 	}
 
+	s.bumpDashboardRevision()
 	return nil
 }
 
@@ -65,6 +66,7 @@ VALUES (?, ?, ?, ?, NULL, ?, 1)
 		}
 		return fmt.Errorf("record suppressed notification event: %w", err)
 	}
+	s.bumpDashboardRevision()
 	return nil
 }
 

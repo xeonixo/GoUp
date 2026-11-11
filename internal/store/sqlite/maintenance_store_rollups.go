@@ -7,13 +7,7 @@ import (
 	"time"
 )
 
-// upsertHourlyRollup adds one check to its hourly bucket. Latency sum/min/max only
-// cover up and degraded checks (matching the backfill); down and unknown checks carry no
-// meaningful latency and must not pull the minimum down to 0.
-func upsertHourlyRollup(ctx context.Context, execer sqlExecutor, monitorID int64, checkedAt time.Time, status monitor.Status, latencyMS int, inMaintenance bool) error {
-	hourBucket := checkedAt.UTC().Truncate(time.Hour)
-	upChecks, downChecks, degradedChecks, unknownChecks, maintenanceChecks := 0, 0, 0, 0, 0
-	latencySumMS, latencyMinMS, latencyMaxMS := 0, 0, 0
+func rollupStatusCounters(status monitor.Status, latencyMS int, inMaintenance bool) (upChecks, downChecks, degradedChecks, unknownChecks, maintenanceChecks, latencySumMS, latencyMinMS, latencyMaxMS int) {
 	// Checks inside a maintenance window only count in total_checks and maintenance_checks.
 	switch {
 	case inMaintenance:
@@ -32,6 +26,15 @@ func upsertHourlyRollup(ctx context.Context, execer sqlExecutor, monitorID int64
 			unknownChecks = 1
 		}
 	}
+	return
+}
+
+// upsertHourlyRollup adds one check to its hourly bucket. Latency sum/min/max only
+// cover up and degraded checks (matching the backfill); down and unknown checks carry no
+// meaningful latency and must not pull the minimum down to 0.
+func upsertHourlyRollup(ctx context.Context, execer sqlExecutor, monitorID int64, checkedAt time.Time, status monitor.Status, latencyMS int, inMaintenance bool) error {
+	hourBucket := checkedAt.UTC().Truncate(time.Hour)
+	upChecks, downChecks, degradedChecks, unknownChecks, maintenanceChecks, latencySumMS, latencyMinMS, latencyMaxMS := rollupStatusCounters(status, latencyMS, inMaintenance)
 
 	_, err := execer.ExecContext(ctx, `
 INSERT INTO monitor_hourly_rollups (
@@ -68,6 +71,52 @@ ON CONFLICT(monitor_id, hour_bucket) DO UPDATE SET
 `, monitorID, hourBucket, upChecks, downChecks, degradedChecks, unknownChecks, maintenanceChecks, latencySumMS, latencyMinMS, latencyMaxMS, checkedAt.UTC(), checkedAt.UTC())
 	if err != nil {
 		return fmt.Errorf("upsert hourly rollup: %w", err)
+	}
+
+	return nil
+}
+
+// upsertDailyRollup adds one check to its UTC day bucket.
+func upsertDailyRollup(ctx context.Context, execer sqlExecutor, monitorID int64, checkedAt time.Time, status monitor.Status, latencyMS int, inMaintenance bool) error {
+	checked := checkedAt.UTC()
+	dayBucket := time.Date(checked.Year(), checked.Month(), checked.Day(), 0, 0, 0, 0, time.UTC)
+	upChecks, downChecks, degradedChecks, unknownChecks, maintenanceChecks, latencySumMS, latencyMinMS, latencyMaxMS := rollupStatusCounters(status, latencyMS, inMaintenance)
+
+	_, err := execer.ExecContext(ctx, `
+INSERT INTO monitor_daily_rollups (
+    monitor_id,
+    day_bucket,
+    total_checks,
+    up_checks,
+    down_checks,
+    degraded_checks,
+    unknown_checks,
+    maintenance_checks,
+    latency_sum_ms,
+    latency_min_ms,
+    latency_max_ms,
+    first_checked_at,
+    last_checked_at
+) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(monitor_id, day_bucket) DO UPDATE SET
+    total_checks = monitor_daily_rollups.total_checks + 1,
+    up_checks = monitor_daily_rollups.up_checks + excluded.up_checks,
+    down_checks = monitor_daily_rollups.down_checks + excluded.down_checks,
+    degraded_checks = monitor_daily_rollups.degraded_checks + excluded.degraded_checks,
+    unknown_checks = monitor_daily_rollups.unknown_checks + excluded.unknown_checks,
+    maintenance_checks = monitor_daily_rollups.maintenance_checks + excluded.maintenance_checks,
+    latency_sum_ms = monitor_daily_rollups.latency_sum_ms + excluded.latency_sum_ms,
+    latency_min_ms = CASE
+        WHEN excluded.up_checks + excluded.degraded_checks = 0 THEN monitor_daily_rollups.latency_min_ms
+        WHEN monitor_daily_rollups.up_checks + monitor_daily_rollups.degraded_checks = 0 THEN excluded.latency_min_ms
+        ELSE MIN(monitor_daily_rollups.latency_min_ms, excluded.latency_min_ms)
+    END,
+    latency_max_ms = MAX(monitor_daily_rollups.latency_max_ms, excluded.latency_max_ms),
+    first_checked_at = MIN(monitor_daily_rollups.first_checked_at, excluded.first_checked_at),
+    last_checked_at = MAX(monitor_daily_rollups.last_checked_at, excluded.last_checked_at)
+`, monitorID, dayBucket, upChecks, downChecks, degradedChecks, unknownChecks, maintenanceChecks, latencySumMS, latencyMinMS, latencyMaxMS, checked, checked)
+	if err != nil {
+		return fmt.Errorf("upsert daily rollup: %w", err)
 	}
 
 	return nil
@@ -174,6 +223,83 @@ ON CONFLICT(monitor_id, hour_bucket) DO UPDATE SET
 
 	if err := s.setSetting(ctx, hourlyRollupBackfillSettingKey, now.Format(time.RFC3339Nano)); err != nil {
 		return false, fmt.Errorf("mark hourly rollup backfill complete: %w", err)
+	}
+
+	return true, nil
+}
+
+func (s *Store) ensureDailyRollupBackfill(ctx context.Context, now time.Time) (bool, error) {
+	alreadyDone, err := s.hasSetting(ctx, dailyRollupBackfillSettingKey)
+	if err != nil {
+		return false, fmt.Errorf("check daily rollup backfill setting: %w", err)
+	}
+	if alreadyDone {
+		return false, nil
+	}
+
+	hasLatency, err := s.tableHasColumn(ctx, "monitor_results", "latency_ms")
+	if err != nil {
+		return false, err
+	}
+	hasMaintenance, err := s.tableHasColumn(ctx, "monitor_results", "in_maintenance")
+	if err != nil {
+		return false, err
+	}
+	if !hasLatency || !hasMaintenance {
+		return false, nil
+	}
+
+	_, err = s.db.ExecContext(ctx, `
+INSERT INTO monitor_daily_rollups (
+    monitor_id,
+    day_bucket,
+    total_checks,
+    up_checks,
+    down_checks,
+    degraded_checks,
+    unknown_checks,
+    maintenance_checks,
+    latency_sum_ms,
+    latency_min_ms,
+    latency_max_ms,
+    first_checked_at,
+    last_checked_at
+)
+SELECT
+    monitor_id,
+    substr(checked_at, 1, 10) || ' 00:00:00',
+    COUNT(*),
+    SUM(CASE WHEN in_maintenance = 0 AND status = 'up' THEN 1 ELSE 0 END),
+    SUM(CASE WHEN in_maintenance = 0 AND status = 'down' THEN 1 ELSE 0 END),
+    SUM(CASE WHEN in_maintenance = 0 AND status = 'degraded' THEN 1 ELSE 0 END),
+    SUM(CASE WHEN in_maintenance = 0 AND status NOT IN ('up', 'down', 'degraded') THEN 1 ELSE 0 END),
+    SUM(CASE WHEN in_maintenance = 1 THEN 1 ELSE 0 END),
+	SUM(CASE WHEN in_maintenance = 0 AND status IN ('up', 'degraded') THEN latency_ms ELSE 0 END),
+	COALESCE(MIN(CASE WHEN in_maintenance = 0 AND status IN ('up', 'degraded') THEN latency_ms END), 0),
+	COALESCE(MAX(CASE WHEN in_maintenance = 0 AND status IN ('up', 'degraded') THEN latency_ms END), 0),
+    MIN(checked_at),
+    MAX(checked_at)
+FROM monitor_results
+GROUP BY monitor_id, substr(checked_at, 1, 10)
+ON CONFLICT(monitor_id, day_bucket) DO UPDATE SET
+    total_checks = excluded.total_checks,
+    up_checks = excluded.up_checks,
+    down_checks = excluded.down_checks,
+    degraded_checks = excluded.degraded_checks,
+    unknown_checks = excluded.unknown_checks,
+    maintenance_checks = excluded.maintenance_checks,
+    latency_sum_ms = excluded.latency_sum_ms,
+    latency_min_ms = excluded.latency_min_ms,
+    latency_max_ms = excluded.latency_max_ms,
+    first_checked_at = excluded.first_checked_at,
+    last_checked_at = excluded.last_checked_at
+`)
+	if err != nil {
+		return false, fmt.Errorf("backfill daily rollups: %w", err)
+	}
+
+	if err := s.setSetting(ctx, dailyRollupBackfillSettingKey, now.Format(time.RFC3339Nano)); err != nil {
+		return false, fmt.Errorf("mark daily rollup backfill complete: %w", err)
 	}
 
 	return true, nil

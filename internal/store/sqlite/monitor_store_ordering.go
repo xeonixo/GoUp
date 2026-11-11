@@ -94,6 +94,7 @@ ORDER BY sort_order ASC, id ASC
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit monitor reorder transaction: %w", err)
 	}
+	s.bumpDashboardRevision()
 	return nil
 }
 
@@ -113,6 +114,7 @@ func (s *Store) setMonitorGroupOrder(ctx context.Context, orderedNames []string)
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit monitor group reorder transaction: %w", err)
 	}
+	s.bumpDashboardRevision()
 	return nil
 }
 
@@ -166,5 +168,6 @@ func (s *Store) swapMonitorSortOrder(ctx context.Context, firstID int64, firstSo
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit monitor move transaction: %w", err)
 	}
+	s.bumpDashboardRevision()
 	return nil
 }
